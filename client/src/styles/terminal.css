@@ -1,0 +1,236 @@
+/* AS500 Terminal Styles - Green Screen Aesthetic */
+
+:root {
+  --bg-color: #0a0a0a;
+  --text-color: #33ff33;
+  --text-bright: #00ff00;
+  --text-dim: #1a8c1a;
+  --field-bg: #0f1f0f;
+  --field-border: #33ff33;
+  --error-color: #ff3333;
+  --warning-color: #ffff33;
+  --info-color: #33ffff;
+  --scanline-opacity: 0.03;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: #000;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+}
+
+.app {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #0d1a0d 0%, #000 100%);
+}
+
+/* Terminal Container */
+.terminal-container {
+  background-color: var(--bg-color);
+  border: 3px solid #1a3a1a;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 
+    0 0 20px rgba(51, 255, 51, 0.1),
+    inset 0 0 60px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+/* CRT screen effect */
+.terminal-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    transparent 50%,
+    rgba(0, 0, 0, var(--scanline-opacity)) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Slight screen curvature effect */
+.terminal-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    transparent 70%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+  pointer-events: none;
+  z-index: 11;
+}
+
+/* Connection Status */
+.connection-status {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  z-index: 20;
+}
+
+.connection-status.connected {
+  color: var(--text-color);
+}
+
+.connection-status.disconnected {
+  color: var(--error-color);
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+/* Terminal Screen */
+.terminal-screen {
+  width: 80ch;
+  min-height: calc(22 * 1.4em);
+  color: var(--text-color);
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: pre;
+  text-shadow: 0 0 5px rgba(51, 255, 51, 0.5);
+}
+
+/* Terminal Row */
+.terminal-row {
+  height: 1.4em;
+  display: flex;
+  align-items: center;
+}
+
+.terminal-text {
+  white-space: pre;
+}
+
+/* Input Fields */
+.terminal-field {
+  background-color: var(--field-bg);
+  border: none;
+  border-bottom: 1px solid var(--field-border);
+  color: var(--text-bright);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  caret-color: var(--text-bright);
+  text-shadow: 0 0 8px rgba(0, 255, 0, 0.7);
+}
+
+.terminal-field:focus {
+  background-color: #0f2a0f;
+  border-bottom-color: var(--text-bright);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
+.terminal-field.password {
+  letter-spacing: 2px;
+}
+
+.terminal-field.readonly {
+  color: var(--info-color);
+  border-bottom-style: dotted;
+  cursor: default;
+}
+
+.terminal-field::selection {
+  background-color: var(--text-color);
+  color: var(--bg-color);
+}
+
+/* Status Line */
+.terminal-status {
+  width: 80ch;
+  height: 1.4em;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: pre;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #1a3a1a;
+}
+
+/* Message Line */
+.terminal-message {
+  width: 80ch;
+  height: 1.4em;
+  font-size: 16px;
+  line-height: 1.4;
+  white-space: pre;
+  color: var(--text-color);
+}
+
+.terminal-message.error {
+  color: var(--error-color);
+  text-shadow: 0 0 8px rgba(255, 51, 51, 0.5);
+  animation: flash 0.1s ease-out;
+}
+
+.terminal-message.warning {
+  color: var(--warning-color);
+  text-shadow: 0 0 8px rgba(255, 255, 51, 0.5);
+}
+
+.terminal-message.info {
+  color: var(--info-color);
+  text-shadow: 0 0 8px rgba(51, 255, 255, 0.5);
+}
+
+@keyframes flash {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Cursor blink */
+.terminal-field:focus {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { border-bottom-color: var(--text-bright); }
+  50% { border-bottom-color: transparent; }
+}
+
+/* Phosphor glow effect */
+@keyframes phosphor {
+  0% { text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
+  50% { text-shadow: 0 0 8px rgba(51, 255, 51, 0.6); }
+  100% { text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
+}
+
+.terminal-screen {
+  animation: phosphor 4s ease-in-out infinite;
+}
