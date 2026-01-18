@@ -171,14 +171,14 @@ export function handleTimeEntry(
     // Validate time format
     if (!isValidTime(startHour)) {
       return {
-        ...buildTimeEntryScreen(session, 'Invalid start time format. Use HH:MM', 'error'),
+        ...buildTimeEntryScreen(session, 'Invalid start time. Use HH:MM or shorthand (8, 800, 0800)', 'error'),
         ...base,
       };
     }
 
     if (!isValidTime(endHour)) {
       return {
-        ...buildTimeEntryScreen(session, 'Invalid end time format. Use HH:MM', 'error'),
+        ...buildTimeEntryScreen(session, 'Invalid end time. Use HH:MM or shorthand (8, 800, 0800)', 'error'),
         ...base,
       };
     }
