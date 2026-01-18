@@ -12,16 +12,15 @@ const BACKUP_MGMT_SCREEN = defineScreen('BACKUP_MGMT', {
     header({ system: 'AS500 SYSTEM', title: 'BACKUP MANAGEMENT', showDateTime: true, showUser: true }),
     
     text(5, 8, 'Automatic backups: Enabled (every 60 minutes, keep last 10)'),
+    text(6, 8, 'Backup location: server/backups/'),
     
-    subfile('backups', 7, 10, [
-      { header: 'Opt', field: 'opt', width: 3, type: 'alpha' },
+    subfile('backups', 8, 10, [
       { header: 'Backup Date/Time', key: 'timestamp', width: 25 },
       { header: 'Size', key: 'size', width: 10, align: 'right' },
-      { header: 'Filename', key: 'filename', width: 35 },
+      { header: 'Filename', key: 'filename', width: 40 },
     ]),
   ],
   statusLine: 'F3=Exit  F5=Create backup now  F12=Cancel',
-  defaultCursor: 'backups_opt_0',
 });
 
 // ============================================
@@ -106,36 +105,6 @@ export function handleBackupMgmt(
         ...buildBackupMgmtScreen(session, `Backup failed: ${error}`, 'error'),
         ...base,
         bell: true,
-      };
-    }
-  }
-
-  // Handle ENTER - Process option selections
-  if (request.key === 'ENTER') {
-    // Check for any option selections (2=Edit, 4=Delete, etc.)
-    const backups = listBackups();
-    let hasAction = false;
-
-    for (let i = 0; i < backups.length; i++) {
-      const optField = `backups_opt_${i}`;
-      const optValue = request.input[optField]?.trim() || '';
-
-      if (optValue) {
-        hasAction = true;
-        
-        // For now, we'll just show a message that options aren't implemented yet
-        // In a full implementation, you could add restore (opt 2) and delete (opt 4)
-        return {
-          ...buildBackupMgmtScreen(session, 'Backup restore not implemented yet', 'warning'),
-          ...base,
-        };
-      }
-    }
-
-    if (!hasAction) {
-      return {
-        ...buildBackupMgmtScreen(session),
-        ...base,
       };
     }
   }

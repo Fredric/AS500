@@ -4,7 +4,7 @@
 import db from '../db/index.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, mkdirSync, readdirSync, statSync, copyFileSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -77,36 +77,18 @@ export function listBackups(): BackupInfo[] {
 
 /**
  * Restore database from a backup file
- * Note: This should only be done when the server is not actively processing requests
+ * Note: This functionality is not safe to implement while server is running
+ * as it would require closing the shared database connection.
+ * To restore a backup:
+ * 1. Stop the server
+ * 2. Manually copy the backup file to server/data/as500.db
+ * 3. Restart the server
  * @param backupFilename - Name of the backup file (not full path)
  * @returns Success status
  */
 export function restoreBackup(backupFilename: string): boolean {
-  const backupPath = join(backupDir, backupFilename);
-  
-  if (!existsSync(backupPath)) {
-    console.error(`Backup file not found: ${backupPath}`);
-    return false;
-  }
-
-  const dbPath = join(__dirname, '../../data/as500.db');
-  
-  try {
-    // Close existing database connection
-    db.close();
-    
-    // Copy backup over current database
-    copyFileSync(backupPath, dbPath);
-    
-    console.log(`Database restored from: ${backupPath}`);
-    
-    // Note: A restart of the server would be needed to reopen the database
-    // For now, we'll just indicate success
-    return true;
-  } catch (error) {
-    console.error(`Failed to restore backup: ${error}`);
-    return false;
-  }
+  console.warn('Restore functionality requires server restart - not implemented');
+  return false;
 }
 
 /**
