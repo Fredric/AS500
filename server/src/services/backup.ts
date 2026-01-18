@@ -87,7 +87,7 @@ export function listBackups(): BackupInfo[] {
  * @returns Success status
  */
 export function restoreBackup(backupFilename: string): boolean {
-  console.warn('Restore functionality requires server restart - not implemented');
+  console.warn(`Restore functionality requires server restart - not implemented. Requested file: ${backupFilename}`);
   return false;
 }
 
