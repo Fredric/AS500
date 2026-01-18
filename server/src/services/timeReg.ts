@@ -60,6 +60,55 @@ export function formatHours(hours: number): string {
 }
 
 /**
+ * Normalize shorthand time formats to HH:MM format
+ * @param time - Input time in various formats (8, 800, 0800, 120, 2330, 08:00, etc.)
+ * @returns Normalized time in HH:MM format, or original if already valid
+ * 
+ * Examples:
+ * - "8" → "08:00"
+ * - "800" → "08:00"
+ * - "0800" → "08:00"
+ * - "120" → "01:20"
+ * - "2330" → "23:30"
+ * - "08:00" → "08:00" (already valid)
+ */
+export function normalizeTime(time: string): string {
+  // Remove whitespace
+  const trimmed = time.trim();
+  
+  // If already in HH:MM format, return as-is
+  if (trimmed.includes(':')) {
+    return trimmed;
+  }
+  
+  // Remove leading zeros for parsing
+  const digits = trimmed.replace(/^0+/, '') || '0';
+  
+  // Parse based on digit count
+  if (digits.length <= 2) {
+    // Single or double digit: treat as hours (8 → 08:00, 23 → 23:00)
+    const hours = parseInt(digits, 10);
+    return `${String(hours).padStart(2, '0')}:00`;
+  } else if (digits.length === 3) {
+    // Three digits: first digit is hours, last two are minutes (800 → 08:00, 120 → 01:20)
+    const hours = parseInt(digits[0], 10);
+    const minutes = parseInt(digits.slice(1), 10);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } else if (digits.length === 4) {
+    // Four digits: first two are hours, last two are minutes (0800 → 08:00, 2330 → 23:30)
+    const hours = parseInt(digits.slice(0, 2), 10);
+    const minutes = parseInt(digits.slice(2), 10);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } else {
+    // More than 4 digits, handle as 4-digit (take last 4)
+    const lastFour = digits.slice(-4);
+    const hours = parseInt(lastFour.slice(0, 2), 10);
+    const minutes = parseInt(lastFour.slice(2), 10);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+}
+
+/**
  * Validate time format (HH:MM)
  */
 export function isValidTime(time: string): boolean {
