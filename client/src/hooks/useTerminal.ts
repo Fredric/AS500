@@ -30,6 +30,7 @@ interface TerminalState {
   messageType: 'info' | 'warning' | 'error' | null;
   statusLine: string;
   fieldValues: Record<string, string>;
+  responseCount: number; // Increments on each server response for focus tracking
 }
 
 export function useTerminal() {
@@ -45,6 +46,7 @@ export function useTerminal() {
     messageType: null,
     statusLine: '',
     fieldValues: {},
+    responseCount: 0,
   });
 
   // Track if we've sent resume request
@@ -117,8 +119,11 @@ export function useTerminal() {
           message: response.message,
           messageType: response.messageType,
           statusLine: response.statusLine,
-          // Clear field values on screen change
-          fieldValues: response.screenId !== prev.screenId ? {} : prev.fieldValues,
+          // Use server-provided field values, or clear on screen change
+          fieldValues: response.screenId !== prev.screenId
+            ? (response.fieldValues || {})
+            : prev.fieldValues,
+          responseCount: prev.responseCount + 1, // Trigger focus on every response
         }));
       } catch (error) {
         console.error('Failed to parse message:', error);
@@ -157,14 +162,13 @@ export function useTerminal() {
     oscillator.stop(audioContext.currentTime + 0.1);
   }, []);
 
-  // Update field value
-  const setFieldValue = useCallback((row: number, col: number, value: string) => {
-    const key = `${row},${col}`;
+  // Update field value by name
+  const setFieldValue = useCallback((fieldName: string, value: string) => {
     setState(prev => ({
       ...prev,
       fieldValues: {
         ...prev.fieldValues,
-        [key]: value,
+        [fieldName]: value,
       },
     }));
   }, []);

@@ -1,77 +1,70 @@
-import type { Session, ClientRequest, ScreenResponse, Field } from '../types/index.js';
+import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { buildLoginScreen } from './login.js';
+import { buildTimeRegScreen } from './timeReg.js';
 
-const SCREEN_WIDTH = 80;
+// Import DSL
+import {
+    defineScreen,
+    render,
+    header,
+    text,
+    menu,
+} from '../dsl/index.js';
 
-function padLine(line: string): string {
-    return line.padEnd(SCREEN_WIDTH, ' ');
-}
+// ============================================
+// Screen Definition (Logical)
+// ============================================
 
-function getDateTime(): string {
-    const now = new Date();
-    const date = now.toISOString().split('T')[0];
-    const time = now.toTimeString().slice(0, 5);
-    return `${date}  ${time}`;
-}
+const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
+    elements: [
+        // Standard header with system name, date/time, and user
+        header({ system: 'AS500 SYSTEM', title: 'MAIN MENU', showDateTime: true, showUser: true }),
+
+        // Instructions
+        text(6, 8, 'Select one of the following:'),
+
+        // Menu options
+        menu(8, 13, [
+            { option: 1, label: 'Customer maintenance' },
+            { option: 2, label: 'Order entry' },
+            { option: 3, label: 'Inventory management' },
+            { option: 4, label: 'Reports' },
+            { option: 5, label: 'System utilities' },
+            { option: 6, label: 'Time registration' },
+        ], {
+            row: 16,
+            col: 24,
+            length: 1,
+        }),
+    ],
+    statusLine: 'F3=Sign off   F5=Refresh',
+    defaultCursor: 'selection',
+});
+
+// ============================================
+// Screen Builder (uses DSL renderer)
+// ============================================
 
 export function mainMenuScreen(session: Session): Omit<ScreenResponse, 'sessionId'> {
-    const dateTime = getDateTime();
-    const username = session.username || 'UNKNOWN';
-
-    const rows: string[] = [];
-
-    // Header
-    rows.push(padLine(`  AS500 SYSTEM                                             ${dateTime}`));
-    rows.push(padLine('═'.repeat(SCREEN_WIDTH)));
-    rows.push(padLine(''));
-    rows.push(padLine(`                          MAIN MENU                User: ${username}`));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-    rows.push(padLine('        Select one of the following:'));
-    rows.push(padLine(''));
-    rows.push(padLine('             1. Customer maintenance'));
-    rows.push(padLine('             2. Order entry'));
-    rows.push(padLine('             3. Inventory management'));
-    rows.push(padLine('             4. Reports'));
-    rows.push(padLine('             5. System utilities'));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-    rows.push(padLine('        Selection: _'));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-    rows.push(padLine(''));
-
-    // Status line (row 23, 0-indexed = 22)
-    rows.push(padLine(' F3=Sign off   F5=Refresh'));
-
-    // Message line (row 24, 0-indexed = 23)
-    rows.push(padLine(''));
-
-    const fields: Field[] = [
-        {
-            row: 16,
-            col: 20,
-            length: 1,
-            type: 'numeric',
-            name: 'selection',
-            required: true,
-        },
-    ];
+    const result = render(MAIN_MENU_SCREEN, {}, {
+        user: session.username || 'UNKNOWN',
+    });
 
     return {
-        screenId: 'MAIN_MENU',
-        cursor: { row: 16, col: 20 },
-        rows,
-        fields,
-        message: null,
-        messageType: null,
-        statusLine: 'F3=Sign off   F5=Refresh',
-        bell: false,
+        screenId: result.screenId,
+        cursor: result.cursor,
+        rows: result.rows,
+        fields: result.fields,
+        message: result.message,
+        messageType: result.messageType,
+        statusLine: result.statusLine,
+        bell: result.bell,
     };
 }
+
+// ============================================
+// Screen Handler (Business Logic)
+// ============================================
 
 export function handleMainMenu(
     session: Session,
@@ -104,7 +97,8 @@ export function handleMainMenu(
 
     // Handle ENTER - Menu selection
     if (request.key === 'ENTER') {
-        const selection = request.input['16,20'] || '';
+        // Get selection by field name (client sends input keyed by field name)
+        const selection = request.input['selection'] || '';
 
         if (!selection) {
             return {
@@ -118,17 +112,30 @@ export function handleMainMenu(
 
         const option = parseInt(selection, 10);
 
-        if (option < 1 || option > 5 || isNaN(option)) {
+        if (option < 1 || option > 6 || isNaN(option)) {
             return {
                 ...mainMenuScreen(session),
                 ...base,
-                message: 'Invalid selection. Enter 1-5',
+                message: 'Invalid selection. Enter 1-6',
                 messageType: 'error',
                 bell: true,
             };
         }
 
-        // For now, all options return "not implemented"
+        // Option 6 - Time registration
+        if (option === 6) {
+            session.screenStack.push('MAIN_MENU');
+            session.currentScreen = 'TIME_REG';
+            // Initialize with today's date
+            session.context.timeRegDate = new Date().toISOString().split('T')[0];
+
+            return {
+                ...buildTimeRegScreen(session),
+                ...base,
+            };
+        }
+
+        // Other options not yet implemented
         const optionNames = [
             '',
             'Customer maintenance',

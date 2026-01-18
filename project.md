@@ -94,8 +94,8 @@ Open `http://localhost:5173` and login with `FREDRIC` / `fredric`
   "screenId": "LOGIN",
   "cursor": { "row": 10, "col": 22 },
   "input": {
-    "10,22": "FREDRIC",
-    "11,22": "secret123"
+    "username": "FREDRIC",
+    "password": "secret123"
   },
   "key": "ENTER"
 }
@@ -106,7 +106,7 @@ Open `http://localhost:5173` and login with `FREDRIC` / `fredric`
 | `sessionId` | string | Session identifier (null on first connect) |
 | `screenId` | string | Current screen ID |
 | `cursor` | object | Current cursor position |
-| `input` | object | Field values keyed by "row,col" |
+| `input` | object | Field values keyed by field name |
 | `key` | string | Key pressed: ENTER, F1-F12, PAGEUP, PAGEDOWN, RESUME, CONNECT |
 
 ### Special Keys

@@ -26,6 +26,30 @@ db.exec(`
     active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
+
+  -- Days table (one record per workday per user)
+  CREATE TABLE IF NOT EXISTS days (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    workday TEXT NOT NULL,
+    daysum REAL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, workday),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  -- Day items table (time entries)
+  CREATE TABLE IF NOT EXISTS day_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day_id INTEGER NOT NULL,
+    start_hour TEXT NOT NULL,
+    end_hour TEXT NOT NULL,
+    jiratask TEXT,
+    description TEXT,
+    rowsum REAL DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (day_id) REFERENCES days(id) ON DELETE CASCADE
+  );
 `);
 
 export default db;

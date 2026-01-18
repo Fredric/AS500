@@ -31,6 +31,7 @@ export default function Terminal() {
     messageType,
     statusLine,
     fieldValues,
+    responseCount,
     setFieldValue,
     setCursor,
     sendKey,
@@ -117,7 +118,7 @@ export default function Terminal() {
     }
   }, [cursor, getNextField, getPrevField, focusField, sendKey]);
 
-  // Focus first field on screen change
+  // Focus field after every server response
   useEffect(() => {
     if (fields.length > 0) {
       const targetField = fields.find(
@@ -125,8 +126,11 @@ export default function Terminal() {
       ) || fields[0];
       
       setTimeout(() => focusField(targetField), 50);
+    } else {
+      // No fields - focus the container so keyboard events still work
+      containerRef.current?.focus();
     }
-  }, [fields, cursor.row, cursor.col, focusField]);
+  }, [responseCount, focusField]); // Trigger on every server response
 
   // Render a row with field inputs overlaid
   const renderRow = (row: string, rowIndex: number) => {
@@ -158,16 +162,16 @@ export default function Terminal() {
         );
       }
 
-      // Field input
-      const fieldKey = `${field.row},${field.col}`;
-      const value = fieldValues[fieldKey] || '';
+      // Field input - keyed by field name for server communication
+      const positionKey = `${field.row},${field.col}`; // For DOM ref mapping
+      const value = fieldValues[field.name] || '';
 
       segments.push(
         <input
-          key={fieldKey}
+          key={positionKey}
           ref={(el) => {
             if (el) {
-              inputRefs.current.set(fieldKey, el);
+              inputRefs.current.set(positionKey, el);
             }
           }}
           type={field.type === 'password' ? 'password' : 'text'}
@@ -188,7 +192,7 @@ export default function Terminal() {
               newValue = newValue.replace(/[^0-9.-]/g, '');
             }
             
-            setFieldValue(field.row, field.col, newValue);
+            setFieldValue(field.name, newValue);
           }}
           onFocus={() => setCursor(field.row, field.col)}
           disabled={field.type === 'readonly'}

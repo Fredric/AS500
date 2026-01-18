@@ -37,6 +37,7 @@ export interface ScreenResponse {
   cursor: { row: number; col: number };
   rows: string[];
   fields: Field[];
+  fieldValues?: Record<string, string>; // Pre-populated values for edit mode
   message: string | null;
   messageType: 'info' | 'warning' | 'error' | null;
   statusLine: string;
