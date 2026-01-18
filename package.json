@@ -47,12 +47,10 @@
       "target": [
         "dmg",
         "zip"
-      ],
-      "icon": "assets/icon.icns"
+      ]
     },
     "dmg": {
-      "title": "AS500 Terminal",
-      "icon": "assets/icon.icns"
+      "title": "AS500 Terminal"
     }
   },
   "keywords": [

@@ -11,6 +11,8 @@ server/backups/
 
 # Build outputs
 server/dist/
+server/src/**/*.js
+server/src/**/*.d.ts
 client/dist/
 dist/
 release/
