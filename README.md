@@ -86,6 +86,4 @@ See [project.md](project.md) for detailed documentation including:
 - Session management
 - Troubleshooting
 
-## License
 
-MIT
