@@ -19,6 +19,11 @@ export interface ScreenResponse {
   messageType: 'info' | 'warning' | 'error' | null;
   statusLine: string;
   bell: boolean;
+  fileDownload?: { // Trigger file download in browser
+    filename: string;
+    content: string;
+    mimeType: string;
+  };
 }
 
 export interface ClientRequest {
@@ -27,4 +32,8 @@ export interface ClientRequest {
   cursor: { row: number; col: number };
   input: Record<string, string>;
   key: string;
+  fileUpload?: { // File uploaded from browser
+    filename: string;
+    content: string;
+  };
 }

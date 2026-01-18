@@ -22,51 +22,45 @@ const EXPORT_IMPORT_SCREEN = defineScreen('EXPORT_IMPORT', {
     header({ system: 'AS500 SYSTEM', title: 'EXPORT/IMPORT TIME DATA', showDateTime: true, showUser: true }),
 
     text(6, 8, 'Select function:'),
-    text(8, 12, '1. Export time data to CSV'),
-    text(9, 12, '2. Import time data from CSV'),
+    text(8, 12, '1. Export time data to file'),
+    text(9, 12, '2. Import time data from file'),
 
     form(11, [
       ['Selection . . . . :', field('selection', 1, 'numeric', { required: true })],
     ], { labelCol: 12, fieldCol: 34 }),
 
-    text(15, 8, 'Note: Export creates a CSV file with all your time entries.'),
-    text(16, 8, '      Import reads CSV file and adds entries to your data.'),
+    text(15, 8, 'Note: Export creates a CSV file for download.'),
+    text(16, 8, '      Import reads a CSV file from your computer.'),
     text(17, 8, '      Import format must match export format exactly.'),
   ],
   statusLine: 'F3=Exit  F12=Cancel',
   defaultCursor: 'selection',
 });
 
-// Export result screen
+// Export confirmation screen (file will download)
 const EXPORT_RESULT_SCREEN = defineScreen('EXPORT_RESULT', {
   elements: [
     header({ system: 'AS500 SYSTEM', title: 'EXPORT RESULT', showDateTime: true, showUser: true }),
 
-    text(6, 8, 'Export completed successfully!'),
-    text(8, 8, 'CSV data is ready for download.'),
-    text(9, 8, 'Copy the data below and save to a file.'),
-
-    text(11, 2, '═'.repeat(78)),
+    text(8, 8, 'Export completed successfully!'),
+    text(10, 8, 'CSV file has been downloaded to your computer.'),
+    text(12, 8, 'The file contains all your time registration data.'),
+    text(13, 8, 'You can use this file to import data later.'),
   ],
   statusLine: 'F3=Exit  F12=Back',
 });
 
-// Import form screen
+// Import form screen - prompts for file selection
 const IMPORT_FORM_SCREEN = defineScreen('IMPORT_FORM', {
   elements: [
     header({ system: 'AS500 SYSTEM', title: 'IMPORT TIME DATA', showDateTime: true, showUser: true }),
 
-    text(6, 8, 'Paste CSV data below and press ENTER to import.'),
-    text(7, 8, 'The data must be in the same format as the export.'),
-
-    text(9, 2, 'CSV Data:'),
-    // We'll use a large text field for CSV input
-    form(10, [
-      ['', field('csv_data', 70, 'alpha', { required: true })],
-    ], { labelCol: 2, fieldCol: 2 }),
+    text(8, 8, 'Select a CSV file from your computer to import.'),
+    text(9, 8, 'The file must be in the same format as the export.'),
+    
+    text(12, 8, 'Press F6 to browse for a file, or F12 to cancel.'),
   ],
-  statusLine: 'F3=Exit  F12=Cancel',
-  defaultCursor: 'csv_data',
+  statusLine: 'F6=Browse for file  F3=Exit  F12=Cancel',
 });
 
 // Import result screen  
@@ -95,32 +89,15 @@ export function buildExportImportScreen(
 
 export function buildExportResultScreen(
   session: Session,
-  csvData: string
+  rowCount: number
 ): Omit<ScreenResponse, 'sessionId'> {
   const result = render(EXPORT_RESULT_SCREEN, {}, {
     user: session.username || 'UNKNOWN',
+    message: `Export complete: ${rowCount} data rows exported`,
+    messageType: 'info' as const,
   });
 
-  // Add CSV data to screen starting at row 12
-  const rows = [...result.rows];
-  const csvLines = csvData.split('\n');
-  
-  // Display first 10 lines of CSV in the screen
-  for (let i = 0; i < Math.min(csvLines.length, 10); i++) {
-    const line = csvLines[i].substring(0, 78); // Truncate to screen width
-    rows[12 + i] = '  ' + line.padEnd(78, ' ');
-  }
-  
-  if (csvLines.length > 10) {
-    rows[22] = '  (... ' + (csvLines.length - 10) + ' more lines ...)'.padEnd(80, ' ');
-  }
-
-  return {
-    ...result,
-    rows,
-    message: `Export complete: ${csvLines.length - 1} data rows`,
-    messageType: 'info',
-  };
+  return result;
 }
 
 export function buildImportFormScreen(
@@ -281,17 +258,26 @@ function handleMainScreen(
       const userId = session.viserId!;
       const csvData = exportTimeData(userId);
       
-      session.context.exportData = csvData;
+      const csvLines = csvData.split('\n');
       session.context.exportImportSubScreen = 'export_result';
 
+      // Generate timestamp for filename
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `time_data_${session.username}_${timestamp}.csv`;
+
       return {
-        ...buildExportResultScreen(session, csvData),
+        ...buildExportResultScreen(session, csvLines.length - 1),
         ...base,
+        fileDownload: {
+          filename,
+          content: csvData,
+          mimeType: 'text/csv',
+        },
       };
     }
 
     if (option === 2) {
-      // Import
+      // Import - show file selection prompt
       session.context.exportImportSubScreen = 'import_form';
 
       return {
@@ -319,10 +305,9 @@ function handleExportResultScreen(
   request: ClientRequest,
   base: { sessionId: string }
 ): ScreenResponse {
-  // On any key, show the full CSV data in message or go back
-  // For now, just allow F12/F3 to navigate away
+  // File was already downloaded, just show confirmation
   return {
-    ...buildExportResultScreen(session, session.context.exportData as string),
+    ...buildExportResultScreen(session, 0),
     ...base,
   };
 }
@@ -333,12 +318,27 @@ function handleImportFormScreen(
   request: ClientRequest,
   base: { sessionId: string }
 ): ScreenResponse {
-  if (request.key === 'ENTER') {
-    const csvData = request.input['csv_data']?.trim();
+  // F6 - Trigger file picker on client side
+  if (request.key === 'F6') {
+    // Return response that signals client to open file picker
+    // Client will send back a request with fileUpload data
+    return {
+      ...buildImportFormScreen(session, 'Select a CSV file to import...', 'info'),
+      ...base,
+      // Special indicator for client to trigger file picker
+      statusLine: 'F6=Browse for file  F3=Exit  F12=Cancel  [FILE_PICKER]',
+    };
+  }
 
-    if (!csvData) {
+  // Check if we received file upload data
+  if (request.fileUpload) {
+    const csvData = request.fileUpload.content;
+    const filename = request.fileUpload.filename;
+
+    // Validate it's a CSV file
+    if (!filename.toLowerCase().endsWith('.csv')) {
       return {
-        ...buildImportFormScreen(session, 'Please enter CSV data', 'error'),
+        ...buildImportFormScreen(session, 'Invalid file type. Please select a CSV file.', 'error'),
         ...base,
         bell: true,
       };

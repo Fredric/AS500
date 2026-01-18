@@ -97,6 +97,11 @@ export function useTerminal() {
           playBell();
         }
 
+        // Handle file download if present
+        if (response.fileDownload) {
+          downloadFile(response.fileDownload.filename, response.fileDownload.content, response.fileDownload.mimeType);
+        }
+
         // Save session to cookie
         if (response.sessionId) {
           setCookie(SESSION_COOKIE_NAME, response.sessionId);
@@ -107,6 +112,16 @@ export function useTerminal() {
         if (response.screenId === 'LOGIN' && state.screenId !== 'LOGIN' && state.screenId !== '') {
           deleteCookie(SESSION_COOKIE_NAME);
           storedSessionRef.current = null;
+        }
+
+        // Check if we need to trigger file picker
+        if (response.statusLine?.includes('[FILE_PICKER]')) {
+          // Clean up the status line for display
+          response.statusLine = response.statusLine.replace('[FILE_PICKER]', '').trim();
+          // Trigger file picker after state update
+          setTimeout(() => {
+            triggerFilePicker();
+          }, 100);
         }
 
         setState(prev => ({
@@ -161,6 +176,56 @@ export function useTerminal() {
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.1);
   }, []);
+
+  // Download file helper
+  const downloadFile = useCallback((filename: string, content: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  // Trigger file picker and send uploaded file
+  const triggerFilePicker = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,text/csv';
+    
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        
+        // Send file to server
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          const request: ClientRequest = {
+            sessionId: state.sessionId,
+            screenId: state.screenId,
+            cursor: state.cursor,
+            input: state.fieldValues,
+            key: 'FILE_UPLOAD',
+            fileUpload: {
+              filename: file.name,
+              content: content,
+            },
+          };
+          wsRef.current.send(JSON.stringify(request));
+        }
+      };
+      
+      reader.readAsText(file);
+    };
+    
+    input.click();
+  }, [state.sessionId, state.screenId, state.cursor, state.fieldValues]);
 
   // Update field value by name
   const setFieldValue = useCallback((fieldName: string, value: string) => {
