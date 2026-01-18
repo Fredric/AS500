@@ -1,6 +1,7 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { buildLoginScreen } from './login.js';
 import { buildTimeRegScreen } from './timeReg.js';
+import { buildBackupMgmtScreen } from './backupMgmt.js';
 
 // Import DSL
 import {
@@ -31,8 +32,9 @@ const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
             { option: 4, label: 'Reports' },
             { option: 5, label: 'System utilities' },
             { option: 6, label: 'Time registration' },
+            { option: 7, label: 'Backup management' },
         ], {
-            row: 16,
+            row: 17,
             col: 24,
             length: 1,
         }),
@@ -112,11 +114,11 @@ export function handleMainMenu(
 
         const option = parseInt(selection, 10);
 
-        if (option < 1 || option > 6 || isNaN(option)) {
+        if (option < 1 || option > 7 || isNaN(option)) {
             return {
                 ...mainMenuScreen(session),
                 ...base,
-                message: 'Invalid selection. Enter 1-6',
+                message: 'Invalid selection. Enter 1-7',
                 messageType: 'error',
                 bell: true,
             };
@@ -131,6 +133,17 @@ export function handleMainMenu(
 
             return {
                 ...buildTimeRegScreen(session),
+                ...base,
+            };
+        }
+
+        // Option 7 - Backup management
+        if (option === 7) {
+            session.screenStack.push('MAIN_MENU');
+            session.currentScreen = 'BACKUP_MGMT';
+
+            return {
+                ...buildBackupMgmtScreen(session),
                 ...base,
             };
         }

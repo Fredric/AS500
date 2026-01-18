@@ -4,17 +4,27 @@ import { buildLoginScreen, handleLogin } from './screens/login.js';
 import { mainMenuScreen, handleMainMenu } from './screens/mainMenu.js';
 import { buildTimeRegScreen, handleTimeReg } from './screens/timeReg.js';
 import { buildTimeEntryScreen, handleTimeEntry } from './screens/timeEntry.js';
+import { buildBackupMgmtScreen, handleBackupMgmt } from './screens/backupMgmt.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 
 // Import db to ensure tables are created
 import './db/index.js';
 import { handleTimeRegHelp } from './screens/timeRegHelp.js';
+import { startBackupScheduler } from './services/backupScheduler.js';
 
 const PORT = 3001;
 
 const wss = new WebSocketServer({ port: PORT });
 
 console.log(`AS500 Server running on ws://localhost:${PORT}`);
+
+// Start backup scheduler
+// Backups run every 60 minutes (1 hour), keeping the last 10 backups
+startBackupScheduler({
+  enabled: true,
+  intervalMinutes: 60,
+  keepCount: 10,
+});
 
 // Map WebSocket connections to session IDs
 const connectionSessions = new Map<WebSocket, string>();
@@ -40,6 +50,13 @@ function getCurrentScreenResponse(session: Session): Omit<ScreenResponse, 'sessi
     case 'TIME_ENTRY':
       if (session.authenticated) {
         return buildTimeEntryScreen(session);
+      }
+      session.currentScreen = 'LOGIN';
+      return buildLoginScreen();
+
+    case 'BACKUP_MGMT':
+      if (session.authenticated) {
+        return buildBackupMgmtScreen(session);
       }
       session.currentScreen = 'LOGIN';
       return buildLoginScreen();
@@ -185,6 +202,19 @@ wss.on('connection', (ws: WebSocket) => {
             };
           } else {
             response = handleTimeRegHelp(currentSession, request);
+          }
+          break;
+
+        case 'BACKUP_MGMT':
+          // Check authentication
+          if (!currentSession.authenticated) {
+            currentSession.currentScreen = 'LOGIN';
+            response = {
+              ...buildLoginScreen('Please sign on to continue', 'warning'),
+              sessionId: currentSession.id,
+            };
+          } else {
+            response = handleBackupMgmt(currentSession, request);
           }
           break;
 
