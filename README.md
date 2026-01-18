@@ -15,6 +15,7 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 - bcrypt password authentication
 - SQLite database
 - Full keyboard support (F-keys, Tab, Enter)
+- Automated backup system with scheduled backups
 
 ## Quick Start
 
@@ -85,5 +86,11 @@ See [project.md](project.md) for detailed documentation including:
 - Adding new screens
 - Session management
 - Troubleshooting
+
+See [BACKUP.md](BACKUP.md) for backup system documentation including:
+- Automated backup configuration
+- Manual backup creation
+- Restoring from backups
+- Backup management
 
 

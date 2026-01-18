@@ -11,7 +11,7 @@ const dbPath = join(__dirname, '../../data/as500.db');
 import { mkdirSync } from 'fs';
 mkdirSync(join(__dirname, '../../data'), { recursive: true });
 
-const db = new Database(dbPath);
+const db: Database.Database = new Database(dbPath);
 
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
