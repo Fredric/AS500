@@ -74,10 +74,10 @@ export function buildBackupMgmtScreen(
 // Screen Handler (Business Logic)
 // ============================================
 
-export function handleBackupMgmt(
+export async function handleBackupMgmt(
   session: Session,
   request: ClientRequest
-): ScreenResponse {
+): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
 
   // Handle F3 - Exit to main menu
@@ -95,7 +95,7 @@ export function handleBackupMgmt(
   // Handle F5 - Create backup now
   if (request.key === 'F5') {
     try {
-      createBackup();
+      await createBackup();
       return {
         ...buildBackupMgmtScreen(session, 'Backup created successfully', 'info'),
         ...base,

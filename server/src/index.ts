@@ -214,7 +214,7 @@ wss.on('connection', (ws: WebSocket) => {
               sessionId: currentSession.id,
             };
           } else {
-            response = handleBackupMgmt(currentSession, request);
+            response = await handleBackupMgmt(currentSession, request);
           }
           break;
 

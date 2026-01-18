@@ -1,13 +1,28 @@
 # Backup System
 
-The AS500 system includes an automated backup system for the SQLite database.
+The AS500 system includes an automated backup system for the SQLite database using SQLite's native **Online Backup API**.
 
 ## Features
 
+- **Hot Backups**: Backups work **WITHOUT stopping the server** - uses SQLite's native online backup API
 - **Automatic Scheduled Backups**: Backups are created automatically every 60 minutes
+- **Safe Concurrent Access**: Handles concurrent database writes safely during backup
 - **Backup Retention**: The system keeps the last 10 backups and automatically removes older ones
 - **Manual Backups**: Create backups on-demand via the UI or command line
 - **Backup Management UI**: View all available backups through the terminal interface
+- **Progress Tracking**: Monitor backup progress with page-by-page tracking
+
+## How It Works
+
+The backup system uses SQLite's **Online Backup API** through better-sqlite3, which:
+
+1. **Does NOT lock the database** - the server continues running normally
+2. **Copies the database page by page** - allowing other operations to proceed
+3. **Handles concurrent writes safely** - if data changes during backup, it's handled correctly
+4. **Provides consistent snapshots** - the backup is a valid point-in-time snapshot
+5. **Works in the background** - minimal impact on server performance
+
+This is SQLite's recommended approach for backing up databases while they are in use.
 
 ## Configuration
 

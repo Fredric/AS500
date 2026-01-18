@@ -28,19 +28,21 @@ export function startBackupScheduler(config: BackupConfig): void {
   
   console.log(`Starting backup scheduler: every ${config.intervalMinutes} minutes, keeping ${config.keepCount} backups`);
 
-  // Run initial backup
-  try {
-    createBackup();
-    cleanupOldBackups(config.keepCount);
-  } catch (error) {
-    console.error('Initial backup failed:', error);
-  }
+  // Run initial backup (async)
+  (async () => {
+    try {
+      await createBackup();
+      cleanupOldBackups(config.keepCount);
+    } catch (error) {
+      console.error('Initial backup failed:', error);
+    }
+  })();
 
   // Schedule periodic backups
-  schedulerInterval = setInterval(() => {
+  schedulerInterval = setInterval(async () => {
     try {
       console.log('Running scheduled backup...');
-      createBackup();
+      await createBackup();
       cleanupOldBackups(config.keepCount);
     } catch (error) {
       console.error('Scheduled backup failed:', error);

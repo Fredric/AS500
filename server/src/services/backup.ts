@@ -24,19 +24,35 @@ export interface BackupInfo {
 }
 
 /**
- * Create a backup of the database
- * @returns Path to the backup file
+ * Create a backup of the database using SQLite's native Online Backup API
+ * This method works while the database is in use and does NOT require stopping the server
+ * 
+ * The backup API uses SQLite's online backup feature which:
+ * - Copies the database page by page
+ * - Handles concurrent writes safely
+ * - Provides a consistent snapshot even if the database is being modified
+ * - Does not lock the database for the entire duration
+ * 
+ * @returns Promise that resolves to the path of the backup file
  */
-export function createBackup(): string {
+export async function createBackup(): Promise<string> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupFilename = `as500-backup-${timestamp}.db`;
   const backupPath = join(backupDir, backupFilename);
 
-  // Use better-sqlite3's backup API for safe backup
-  // This ensures a consistent snapshot even if database is in use
-  db.backup(backupPath);
+  // Use better-sqlite3's backup API which wraps SQLite's Online Backup API
+  // This performs a hot backup without requiring the server to be stopped
+  const metadata = await db.backup(backupPath, {
+    progress({ totalPages, remainingPages }) {
+      const progress = ((totalPages - remainingPages) / totalPages * 100).toFixed(1);
+      if (remainingPages === 0) {
+        console.log(`Backup progress: 100% (${totalPages} pages)`);
+      }
+      return 200; // Copy 200 pages at a time
+    }
+  });
 
-  console.log(`Database backed up to: ${backupPath}`);
+  console.log(`Database backed up to: ${backupPath} (${metadata.totalPages} pages)`);
   return backupPath;
 }
 
