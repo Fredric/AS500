@@ -113,6 +113,18 @@ function startWebSocketServer() {
   wss.on('connection', (ws: WebSocket) => {
     console.log('Client connected');
 
+    // Create initial session for new connection
+    const initialSession = serverModules.session.createSession();
+    connectionSessions.set(ws, initialSession.id);
+    console.log(`Created session: ${initialSession.id}`);
+
+    // Send initial screen immediately
+    const initialResponse: ScreenResponse = {
+      sessionId: initialSession.id,
+      ...serverModules.login.buildLoginScreen(),
+    };
+    ws.send(JSON.stringify(initialResponse));
+
     ws.on('message', async (data: Buffer) => {
       try {
         const msg: ClientRequest = JSON.parse(data.toString());
@@ -164,15 +176,6 @@ function startWebSocketServer() {
     ws.on('error', (err) => {
       console.error('WebSocket error:', err);
     });
-
-    // Send initial screen
-    const session = serverModules.session.createSession();
-    connectionSessions.set(ws, session.id);
-    const response: ScreenResponse = {
-      sessionId: session.id,
-      ...serverModules.login.buildLoginScreen(),
-    };
-    ws.send(JSON.stringify(response));
   });
 }
 
