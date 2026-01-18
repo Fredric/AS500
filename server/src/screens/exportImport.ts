@@ -11,7 +11,7 @@ import {
   field,
   form,
 } from '../dsl/index.js';
-import { exportTimeData, importTimeData } from '../services/exportImport.js';
+import { exportTimeData, importTimeData, type ImportResult } from '../services/exportImport.js';
 
 // ============================================
 // Screen Definition (Logical)
@@ -371,7 +371,7 @@ function handleImportResultScreen(
   base: { sessionId: string }
 ): ScreenResponse {
   // Just display results, F12/F3 to navigate away
-  const result = session.context.importResult as any;
+  const result = session.context.importResult as ImportResult;
   return {
     ...buildImportResultScreen(session, result.daysImported, result.itemsImported, result.errors),
     ...base,

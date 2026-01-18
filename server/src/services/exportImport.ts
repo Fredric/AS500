@@ -2,7 +2,7 @@
 // CSV export and import for days and day_items tables
 
 import db from '../db/index.js';
-import { getDayItems, getOrCreateDay, createDayItem, calculateHours } from './timeReg.js';
+import { getDayItems, getOrCreateDay, createDayItem, isValidTime as validateTime } from './timeReg.js';
 import type { Day, DayItem } from './timeReg.js';
 
 /**
@@ -35,7 +35,9 @@ export function exportTimeData(userId: number): string {
     // Export day items
     const items = getDayItems(day.id);
     for (const item of items) {
-      const jiratask = (item.jiratask || '').replace(/,/g, ';'); // Replace commas to avoid CSV issues
+      // Note: Commas in jiratask/description will break CSV parsing
+      // In a real AS400 system, you'd use a different delimiter or proper CSV escaping
+      const jiratask = (item.jiratask || '').replace(/,/g, ';');
       const description = (item.description || '').replace(/,/g, ';');
       lines.push(`ITEM,${day.user_id},${day.workday},,${item.start_hour},${item.end_hour},${jiratask},${description},${item.rowsum}`);
     }
@@ -61,15 +63,6 @@ function parseCSVLine(line: string): string[] {
   // Simple CSV parser - splits on comma
   // In AS400 style, we keep it simple - no quoted fields with embedded commas
   return line.split(',').map(s => s.trim());
-}
-
-/**
- * Validate time format HH:MM
- */
-function isValidTime(time: string): boolean {
-  if (!time) return false;
-  const match = time.match(/^([01]?[0-9]|2[0-3]):([0-5][0-9])$/);
-  return match !== null;
 }
 
 /**
@@ -105,7 +98,8 @@ export function importTimeData(userId: number, csvContent: string): ImportResult
     errors: [],
   };
   
-  const lines = csvContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  // Handle different line endings (Windows \r\n, Unix \n, or mixed)
+  const lines = csvContent.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   
   if (lines.length === 0) {
     result.success = false;
@@ -161,12 +155,12 @@ export function importTimeData(userId: number, csvContent: string): ImportResult
     // Process ITEM records
     if (type === 'ITEM') {
       // Validate times
-      if (!isValidTime(startHour)) {
+      if (!validateTime(startHour)) {
         result.errors.push(`Line ${lineNum}: Invalid start time '${startHour}'`);
         continue;
       }
       
-      if (!isValidTime(endHour)) {
+      if (!validateTime(endHour)) {
         result.errors.push(`Line ${lineNum}: Invalid end time '${endHour}'`);
         continue;
       }
@@ -175,17 +169,17 @@ export function importTimeData(userId: number, csvContent: string): ImportResult
         // Get or create day
         const day = getOrCreateDay(userId, workday);
         
-        // Restore commas in text fields (we replaced them with semicolons on export)
-        const restoredJiratask = jiratask.replace(/;/g, ',');
-        const restoredDescription = description.replace(/;/g, ',');
+        // Note: Semicolons in text fields were used to avoid CSV parsing issues
+        // during export. We don't restore them as original data may not have had commas.
+        // This is a limitation of the simple CSV format.
         
         // Create item
         createDayItem(
           day.id,
           startHour,
           endHour,
-          restoredJiratask || null,
-          restoredDescription || null
+          jiratask || null,
+          description || null
         );
         
         result.itemsImported++;
