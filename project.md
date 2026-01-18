@@ -12,13 +12,16 @@ A modern client-server solution that works and looks like an AS400 mainframe. Th
 - [x] SQLite database with users table
 - [x] bcrypt password authentication
 - [x] LOGIN screen with validation
-- [x] MAIN_MENU screen (mocked - options show "not implemented")
+- [x] MAIN_MENU screen with navigation
 - [x] React terminal renderer with green-on-black CRT aesthetic
 - [x] Keyboard handling (Tab, Enter, F-keys)
 - [x] Input fields with password masking
 - [x] Session persistence via browser cookies
 - [x] Session resume on page refresh
 - [x] Sign-off (F3) clears session
+- [x] **Screen DSL** - Declarative screen definitions (like AS/400 DDS)
+- [x] **Subfile component** - Scrollable lists with column headers
+- [x] **Time Registration** - Full CRUD with day navigation (Menu option 6)
 
 ### Default Test User
 
@@ -27,11 +30,11 @@ A modern client-server solution that works and looks like an AS400 mainframe. Th
 
 ### What's Next
 
-- [ ] Implement actual menu navigation (Customer, Orders, etc.)
-- [ ] Create subfile (scrollable list) component
-- [ ] Add F12 back navigation using screenStack
 - [ ] Build Customer maintenance screens
+- [ ] Add F4 prompt/lookup windows
+- [ ] Implement PAGEUP/PAGEDOWN for subfile scrolling
 - [ ] Add more users / user management
+- [ ] Help system (F1)
 
 ---
 
@@ -84,6 +87,91 @@ Open `http://localhost:5173` and login with `FREDRIC` / `fredric`
 
 ---
 
+## Screen DSL
+
+A declarative system for defining screens, inspired by AS/400 DDS (Display File Source). Separates logical screen definition from physical 80×24 rendering.
+
+### Architecture
+
+```
+Screen Definition (DSL)     →    Layout Engine    →    80×24 Renderer
+   defineScreen()                 Components            rows[] + fields[]
+   header(), form(),              Primitives
+   subfile(), menu()              Positioning
+```
+
+### Example: Form Screen
+
+```typescript
+import { defineScreen, render, header, form, field } from '../dsl/index.js';
+
+const LOGIN_SCREEN = defineScreen('LOGIN', {
+  elements: [
+    header({ system: 'AS500 SYSTEM', title: 'LOGIN' }),
+    form(10, [
+      ['User  . . . :', field('username', 20, 'alpha', { required: true })],
+      ['Password  . :', field('password', 20, 'password', { required: true })],
+    ], { labelCol: 25, fieldCol: 40 }),
+  ],
+  statusLine: 'F3=Exit',
+  defaultCursor: 'username',
+});
+
+// Render to protocol format
+const screen = render(LOGIN_SCREEN, {}, { user: session.username });
+```
+
+### Example: Subfile Screen
+
+```typescript
+const TIME_REG_SCREEN = defineScreen('TIME_REG', {
+  elements: [
+    header({ system: 'AS500 SYSTEM', title: 'TIME REGISTRATION' }),
+    subfile('entries', 7, 10, [  // name, startRow, pageSize
+      { header: 'Opt', field: 'opt', width: 3, type: 'alpha' },
+      { header: 'Start', key: 'start_hour', width: 5 },
+      { header: 'End', key: 'end_hour', width: 5 },
+      { header: 'Hours', key: 'rowsum', width: 5, align: 'right' },
+      { header: 'Task', key: 'jiratask', width: 11 },
+      { header: 'Description', key: 'description', width: 30 },
+    ]),
+  ],
+  statusLine: 'F3=Exit  F6=Add  F7=Prev day  F8=Next day',
+});
+
+// Render with data
+const screen = render(TIME_REG_SCREEN, { entries: timeEntries }, { user });
+```
+
+### DSL Components
+
+| Component | Purpose |
+|-----------|---------|
+| `header()` | Standard screen header (system, title, date/time, user) |
+| `form()` | Aligned label/field rows for data entry |
+| `subfile()` | Scrollable list with column headers and option fields |
+| `menu()` | Numbered menu options with selection field |
+| `text()` | Static text at position |
+| `box()` | Bordered rectangle |
+| `field()` | Input field definition |
+
+### DSL Files
+
+```
+server/src/dsl/
+├── index.ts              # Public API exports
+├── types.ts              # TypeScript interfaces
+├── renderer.ts           # 80×24 grid renderer
+└── components/
+    ├── primitives.ts     # text(), field(), box(), line()
+    ├── header.ts         # Standard screen header
+    ├── form.ts           # Form layout component
+    ├── subfile.ts        # Subfile/list component
+    └── menu.ts           # Menu component
+```
+
+---
+
 ## Protocol Specification
 
 ### Request (Client → Server)
@@ -133,6 +221,7 @@ Open `http://localhost:5173` and login with `FREDRIC` / `fredric`
       "name": "selection"
     }
   ],
+  "fieldValues": { "start_hour": "08:00", "end_hour": "12:00" },
   "message": null,
   "messageType": null,
   "statusLine": "F3=Exit  F5=Refresh",
@@ -147,6 +236,7 @@ Open `http://localhost:5173` and login with `FREDRIC` / `fredric`
 | `cursor` | object | Where to position cursor |
 | `rows` | string[] | Screen content (24 rows × 80 cols) |
 | `fields` | array | Input field definitions |
+| `fieldValues` | object? | Pre-populated field values (for edit mode) |
 | `message` | string? | Message to display (row 24) |
 | `messageType` | string? | "info", "warning", "error" |
 | `statusLine` | string | F-key hints (row 23) |
@@ -207,6 +297,7 @@ Open `http://localhost:5173` and login with `FREDRIC` / `fredric`
 ### Database Schema
 
 ```sql
+-- Users table
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
@@ -214,6 +305,30 @@ CREATE TABLE users (
   full_name TEXT,
   active INTEGER DEFAULT 1,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Time registration: Days (one per user per date)
+CREATE TABLE days (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  workday TEXT NOT NULL,           -- "2026-01-18"
+  daysum REAL DEFAULT 0,           -- Total hours for day
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, workday),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- Time registration: Day items (time entries)
+CREATE TABLE day_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  day_id INTEGER NOT NULL,
+  start_hour TEXT NOT NULL,        -- "08:00"
+  end_hour TEXT NOT NULL,          -- "11:30"
+  jiratask TEXT,                   -- "STEAKT-2987"
+  description TEXT,                -- Free text (30 chars)
+  rowsum REAL DEFAULT 0,           -- Calculated hours
+  sort_order INTEGER DEFAULT 0,
+  FOREIGN KEY (day_id) REFERENCES days(id) ON DELETE CASCADE
 );
 ```
 
@@ -231,6 +346,72 @@ interface Session {
   lastActivity: Date;
 }
 ```
+
+---
+
+## Time Registration Feature
+
+A complete time tracking feature accessible from Main Menu option 6.
+
+### Screens
+
+**TIME_REG** - Subfile listing time entries for a day:
+```
+  AS500 SYSTEM                                      2026-01-18  14:30
+════════════════════════════════════════════════════════════════════════════════
+
+                    TIME REGISTRATION                     User: FREDRIC
+
+  Date: 2026-01-18  Saturday                           Day total: 7.50 hrs
+
+  Opt  Start  End    Hours  Task         Description
+  ---  -----  -----  -----  -----------  ------------------------------
+  ___  08:00  10:30   2.50  STEAKT-2987  Morning standup and dev
+  ___  10:45  12:00   1.25  STEAKT-2988  Code review
+  ___  13:00  16:45   3.75  STEAKT-2987  Feature implementation
+
+
+
+ F3=Exit  F6=Add  F7=Prev day  F8=Next day  F12=Cancel
+```
+
+**TIME_ENTRY** - Form for adding/editing entries:
+```
+  AS500 SYSTEM                                      2026-01-18  14:30
+════════════════════════════════════════════════════════════════════════════════
+
+                      TIME ENTRY                         User: FREDRIC
+
+  Date: 2026-01-18  Saturday
+
+        Start time . . : _____ (HH:MM)
+        End time . . . : _____ (HH:MM)
+        Task ID  . . . : ___________
+        Description  . : ______________________________
+
+
+ F3=Exit  F12=Cancel
+```
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| F3 | Exit to main menu |
+| F6 | Add new time entry |
+| F7 | Previous day |
+| F8 | Next day |
+| F12 | Cancel / Back |
+| Opt 2 | Edit selected entry |
+| Opt 4 | Delete selected entry |
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `server/src/services/timeReg.ts` | Business logic, CRUD, hour calculations |
+| `server/src/screens/timeReg.ts` | TIME_REG subfile screen |
+| `server/src/screens/timeEntry.ts` | TIME_ENTRY form screen |
 
 ---
 
@@ -282,19 +463,32 @@ AS500/
 │   ├── data/
 │   │   └── as500.db        # SQLite database (auto-created)
 │   └── src/
-│       ├── index.ts        # WebSocket server entry point
+│       ├── index.ts        # WebSocket server & router
 │       ├── types/
 │       │   └── index.ts    # TypeScript interfaces
 │       ├── db/
 │       │   ├── index.ts    # Database connection & schema
-│       │   └── seed.ts     # Seeds default user
+│       │   └── seed.ts     # Seeds users and sample data
 │       ├── session/
 │       │   └── index.ts    # Session management (in-memory)
+│       ├── dsl/                    # Screen DSL system
+│       │   ├── index.ts            # Public API exports
+│       │   ├── types.ts            # DSL type definitions
+│       │   ├── renderer.ts         # 80×24 grid renderer
+│       │   └── components/
+│       │       ├── primitives.ts   # text(), field(), box(), line()
+│       │       ├── header.ts       # Screen header component
+│       │       ├── form.ts         # Form layout component
+│       │       ├── subfile.ts      # Subfile/list component
+│       │       └── menu.ts         # Menu component
 │       ├── services/
-│       │   └── auth.ts     # Authentication logic
+│       │   ├── auth.ts             # Authentication logic
+│       │   └── timeReg.ts          # Time registration CRUD
 │       └── screens/
-│           ├── login.ts    # LOGIN screen handler
-│           └── mainMenu.ts # MAIN_MENU screen handler
+│           ├── login.ts            # LOGIN screen
+│           ├── mainMenu.ts         # MAIN_MENU screen
+│           ├── timeReg.ts          # TIME_REG subfile screen
+│           └── timeEntry.ts        # TIME_ENTRY form screen
 └── client/
     ├── package.json
     ├── tsconfig.json
@@ -317,65 +511,76 @@ AS500/
 
 ## Adding New Screens
 
-### 1. Create Screen Handler (Server)
+### 1. Define Screen with DSL
 
 ```typescript
 // server/src/screens/customerList.ts
-import type { Session, ClientRequest, ScreenResponse, Field } from '../types/index.js';
+import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
+import { defineScreen, render, header, subfile } from '../dsl/index.js';
 
-export function customerListScreen(session: Session): Omit<ScreenResponse, 'sessionId'> {
-  const rows: string[] = [];
-  // Build 24 rows of 80 characters each
-  // ...
-  
-  return {
-    screenId: 'CUSTOMER_LIST',
-    cursor: { row: 5, col: 10 },
-    rows,
-    fields: [/* field definitions */],
-    message: null,
-    messageType: null,
-    statusLine: 'F3=Exit  F6=Add  F12=Cancel',
-    bell: false,
-  };
+// Screen definition (logical structure)
+const CUSTOMER_LIST_SCREEN = defineScreen('CUSTOMER_LIST', {
+  elements: [
+    header({ system: 'AS500 SYSTEM', title: 'CUSTOMER LIST' }),
+    subfile('customers', 6, 12, [
+      { header: 'Opt', field: 'opt', width: 3, type: 'alpha' },
+      { header: 'ID', key: 'id', width: 8 },
+      { header: 'Name', key: 'name', width: 30 },
+      { header: 'City', key: 'city', width: 20 },
+    ]),
+  ],
+  statusLine: 'F3=Exit  F6=Add  F12=Cancel',
+});
+
+// Screen builder
+export function buildCustomerListScreen(
+  session: Session,
+  message?: string,
+  messageType?: 'info' | 'error'
+): Omit<ScreenResponse, 'sessionId'> {
+  const customers = getCustomers(); // Your data fetch
+  return render(CUSTOMER_LIST_SCREEN, { customers }, { message, messageType, user: session.username });
 }
 
-export function handleCustomerList(
-  session: Session,
-  request: ClientRequest
-): ScreenResponse {
-  // Handle F-keys, ENTER, etc.
-  // Return appropriate screen response
+// Screen handler (business logic)
+export function handleCustomerList(session: Session, request: ClientRequest): ScreenResponse {
+  const base = { sessionId: session.id };
+  
+  if (request.key === 'F3') {
+    // Return to menu
+  }
+  if (request.key === 'ENTER') {
+    // Process option selections
+  }
+  
+  return { ...buildCustomerListScreen(session), ...base };
 }
 ```
 
-### 2. Register in Router (Server)
+### 2. Register in Router
 
 ```typescript
 // server/src/index.ts
-import { handleCustomerList } from './screens/customerList.js';
+import { buildCustomerListScreen, handleCustomerList } from './screens/customerList.js';
 
-// In the message handler switch:
+// In getCurrentScreenResponse():
 case 'CUSTOMER_LIST':
-  if (!currentSession.authenticated) {
-    // redirect to login
-  }
+  return buildCustomerListScreen(session);
+
+// In message handler switch:
+case 'CUSTOMER_LIST':
   response = handleCustomerList(currentSession, request);
   break;
 ```
 
-### 3. Update Navigation
-
-In `mainMenu.ts`, handle menu selection to navigate to new screen:
+### 3. Add Navigation from Menu
 
 ```typescript
+// In mainMenu.ts handleMainMenu():
 if (option === 1) {
   session.screenStack.push('MAIN_MENU');
   session.currentScreen = 'CUSTOMER_LIST';
-  return {
-    ...customerListScreen(session),
-    sessionId: session.id,
-  };
+  return { ...buildCustomerListScreen(session), ...base };
 }
 ```
 
