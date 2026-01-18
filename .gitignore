@@ -12,6 +12,8 @@ server/backups/
 # Build outputs
 server/dist/
 client/dist/
+dist/
+release/
 
 # Logs
 *.log
@@ -34,3 +36,6 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Electron
+out/

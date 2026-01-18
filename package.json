@@ -1,0 +1,82 @@
+{
+  "name": "as500",
+  "version": "1.0.0",
+  "description": "A modern client-server solution that emulates an AS400 mainframe terminal. The backend sends complete screens (not data), controls navigation, owns validation, and treats the UI as a dumb terminal.",
+  "main": "dist/electron/main.js",
+  "type": "module",
+  "scripts": {
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && npm run build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:client && npm run build:server && npm run build:electron",
+    "start": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.as500.terminal",
+    "productName": "AS500 Terminal",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "client/dist/**/*",
+      "server/dist/**/*",
+      "server/data/**/*",
+      "!server/data/*.db",
+      "!server/data/*.db-wal",
+      "!server/data/*.db-shm",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "server/data",
+        "to": "server/data",
+        "filter": [
+          "**/*",
+          "!*.db",
+          "!*.db-wal",
+          "!*.db-shm"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns"
+    },
+    "dmg": {
+      "title": "AS500 Terminal",
+      "icon": "assets/icon.icns"
+    }
+  },
+  "keywords": [
+    "terminal",
+    "as400",
+    "mainframe"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.0.9",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2",
+    "uuid": "^13.0.0",
+    "ws": "^8.19.0"
+  }
+}
