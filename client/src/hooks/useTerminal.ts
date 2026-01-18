@@ -115,9 +115,10 @@ export function useTerminal() {
         }
 
         // Check if we need to trigger file picker
+        let displayStatusLine = response.statusLine;
         if (response.statusLine?.includes('[FILE_PICKER]')) {
-          // Clean up the status line for display
-          response.statusLine = response.statusLine.replace('[FILE_PICKER]', '').trim();
+          // Clean up the status line for display (create new string, don't mutate)
+          displayStatusLine = response.statusLine.replace('[FILE_PICKER]', '').trim();
           // Trigger file picker after state update
           setTimeout(() => {
             triggerFilePicker();
@@ -133,7 +134,7 @@ export function useTerminal() {
           cursor: response.cursor,
           message: response.message,
           messageType: response.messageType,
-          statusLine: response.statusLine,
+          statusLine: displayStatusLine,
           // Use server-provided field values, or clear on screen change
           fieldValues: response.screenId !== prev.screenId
             ? (response.fieldValues || {})
@@ -204,14 +205,14 @@ export function useTerminal() {
       reader.onload = (event) => {
         const content = event.target?.result as string;
         
-        // Send file to server
+        // Send file to server with ENTER key (server detects file by fileUpload presence)
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           const request: ClientRequest = {
             sessionId: state.sessionId,
             screenId: state.screenId,
             cursor: state.cursor,
             input: state.fieldValues,
-            key: 'FILE_UPLOAD',
+            key: 'ENTER', // Use standard key, server detects file upload by presence of fileUpload field
             fileUpload: {
               filename: file.name,
               content: content,

@@ -259,14 +259,18 @@ function handleMainScreen(
       const csvData = exportTimeData(userId);
       
       const csvLines = csvData.split('\n');
+      const rowCount = csvLines.length - 1; // Subtract header row
+      
+      // Store for display on result screen
       session.context.exportImportSubScreen = 'export_result';
+      session.context.exportRowCount = rowCount;
 
       // Generate timestamp for filename
       const timestamp = new Date().toISOString().split('T')[0];
       const filename = `time_data_${session.username}_${timestamp}.csv`;
 
       return {
-        ...buildExportResultScreen(session, csvLines.length - 1),
+        ...buildExportResultScreen(session, rowCount),
         ...base,
         fileDownload: {
           filename,
@@ -305,9 +309,10 @@ function handleExportResultScreen(
   request: ClientRequest,
   base: { sessionId: string }
 ): ScreenResponse {
-  // File was already downloaded, just show confirmation
+  // Get row count from context (stored during export)
+  const rowCount = (session.context.exportRowCount as number) || 0;
   return {
-    ...buildExportResultScreen(session, 0),
+    ...buildExportResultScreen(session, rowCount),
     ...base,
   };
 }
