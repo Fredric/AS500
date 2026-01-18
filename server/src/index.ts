@@ -4,6 +4,7 @@ import { buildLoginScreen, handleLogin } from './screens/login.js';
 import { mainMenuScreen, handleMainMenu } from './screens/mainMenu.js';
 import { buildTimeRegScreen, handleTimeReg } from './screens/timeReg.js';
 import { buildTimeEntryScreen, handleTimeEntry } from './screens/timeEntry.js';
+import { buildExportImportScreen, handleExportImport } from './screens/exportImport.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 
 // Import db to ensure tables are created
@@ -40,6 +41,13 @@ function getCurrentScreenResponse(session: Session): Omit<ScreenResponse, 'sessi
     case 'TIME_ENTRY':
       if (session.authenticated) {
         return buildTimeEntryScreen(session);
+      }
+      session.currentScreen = 'LOGIN';
+      return buildLoginScreen();
+
+    case 'EXPORT_IMPORT':
+      if (session.authenticated) {
+        return buildExportImportScreen(session);
       }
       session.currentScreen = 'LOGIN';
       return buildLoginScreen();
@@ -185,6 +193,19 @@ wss.on('connection', (ws: WebSocket) => {
             };
           } else {
             response = handleTimeRegHelp(currentSession, request);
+          }
+          break;
+
+        case 'EXPORT_IMPORT':
+          // Check authentication
+          if (!currentSession.authenticated) {
+            currentSession.currentScreen = 'LOGIN';
+            response = {
+              ...buildLoginScreen('Please sign on to continue', 'warning'),
+              sessionId: currentSession.id,
+            };
+          } else {
+            response = handleExportImport(currentSession, request);
           }
           break;
 
