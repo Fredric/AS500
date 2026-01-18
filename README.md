@@ -93,4 +93,20 @@ See [BACKUP.md](BACKUP.md) for backup system documentation including:
 - Restoring from backups
 - Backup management
 
+## Electron Desktop App
+
+AS500 can also be packaged as a standalone desktop application using Electron. See [README_ELECTRON.md](README_ELECTRON.md) for:
+- Building the Electron app
+- Running as a native macOS application
+- Packaging for distribution
+- Seamless UI design details
+
+Quick start for Electron:
+```bash
+npm install
+cd server && npm install && npm run seed && cd ..
+cd client && npm install && cd ..
+npm start  # Builds and runs the Electron app
+```
+
 

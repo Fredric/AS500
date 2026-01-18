@@ -112,6 +112,17 @@ The terminal interface has been modified for a seamless experience:
 
 ## Troubleshooting
 
+### Native module rebuild errors (bcrypt, better-sqlite3)
+
+During packaging with `electron-builder`, native modules need to be rebuilt for Electron. If you encounter errors:
+
+1. Ensure you have the necessary build tools:
+   - **macOS**: Install Xcode Command Line Tools with `xcode-select --install`
+   - **Windows**: Install windows-build-tools
+   - **Linux**: Install build-essential
+
+2. The `electron-builder` will automatically rebuild native modules during packaging
+
 ### "Cannot find module" errors
 
 Make sure all parts are built:
