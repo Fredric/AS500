@@ -61,10 +61,10 @@ export function buildTimeEntryScreen(
 ): Omit<ScreenResponse, 'sessionId'> {
   const currentDate = session.context.timeRegDate as string;
   const editItemId = session.context.editItemId as number | null;
-  
+
   // Get existing item data if editing
   let contextData: Record<string, string> = {};
-  
+
   if (editItemId) {
     const item = getDayItem(editItemId);
     if (item) {
@@ -76,24 +76,24 @@ export function buildTimeEntryScreen(
       };
     }
   }
-  
+
   // Render the screen
   const result = render(TIME_ENTRY_SCREEN, contextData, {
     message,
     messageType,
     user: session.username || 'UNKNOWN',
   });
-  
+
   // Add dynamic date info to row 5
   const dayName = getDayName(currentDate);
   const dateInfo = `Date: ${currentDate}  ${dayName}`;
-  
+
   let row5 = result.rows[5].split('');
   for (let i = 0; i < dateInfo.length && i + 2 < 80; i++) {
     row5[i + 2] = dateInfo[i];
   }
   result.rows[5] = row5.join('');
-  
+
   // Update title for edit mode
   if (editItemId) {
     const titleRow = 3;
@@ -105,7 +105,7 @@ export function buildTimeEntryScreen(
     }
     result.rows[titleRow] = row3.join('');
   }
-  
+
   return {
     screenId: result.screenId,
     cursor: result.cursor,
@@ -128,26 +128,26 @@ export function handleTimeEntry(
   request: ClientRequest
 ): ScreenResponse {
   const base = { sessionId: session.id };
-  
+
   // F3 or F12 - Cancel and return to TIME_REG
   if (request.key === 'F3' || request.key === 'F12') {
     session.currentScreen = 'TIME_REG';
     session.screenStack = session.screenStack.filter(s => s !== 'TIME_ENTRY');
     delete session.context.editItemId;
-    
+
     return {
       ...buildTimeRegScreen(session),
       ...base,
     };
   }
-  
+
   // ENTER - Save entry
   if (request.key === 'ENTER') {
     const startHour = request.input['start_hour']?.trim() || '';
     const endHour = request.input['end_hour']?.trim() || '';
     const jiratask = request.input['jiratask']?.trim() || null;
     const description = request.input['description']?.trim() || null;
-    
+
     // Validate required fields
     if (!startHour) {
       return {
@@ -155,14 +155,14 @@ export function handleTimeEntry(
         ...base,
       };
     }
-    
+
     if (!endHour) {
       return {
         ...buildTimeEntryScreen(session, 'End time is required', 'error'),
         ...base,
       };
     }
-    
+
     // Validate time format
     if (!isValidTime(startHour)) {
       return {
@@ -170,14 +170,14 @@ export function handleTimeEntry(
         ...base,
       };
     }
-    
+
     if (!isValidTime(endHour)) {
       return {
         ...buildTimeEntryScreen(session, 'Invalid end time format. Use HH:MM', 'error'),
         ...base,
       };
     }
-    
+
     // Validate end > start (simple check, doesn't handle midnight crossing)
     if (endHour <= startHour) {
       return {
@@ -185,10 +185,10 @@ export function handleTimeEntry(
         ...base,
       };
     }
-    
+
     const dayId = session.context.timeRegDayId as number;
     const editItemId = session.context.editItemId as number | null;
-    
+
     try {
       if (editItemId) {
         // Update existing
@@ -197,14 +197,14 @@ export function handleTimeEntry(
         // Create new
         createDayItem(dayId, startHour, endHour, jiratask, description);
       }
-      
+
       // Return to TIME_REG with success message
       session.currentScreen = 'TIME_REG';
       session.screenStack = session.screenStack.filter(s => s !== 'TIME_ENTRY');
       delete session.context.editItemId;
-      
+
       const msg = editItemId ? 'Entry updated' : 'Entry added';
-      
+
       return {
         ...buildTimeRegScreen(session, msg, 'info'),
         ...base,
@@ -217,7 +217,7 @@ export function handleTimeEntry(
       };
     }
   }
-  
+
   // Default - show screen
   return {
     ...buildTimeEntryScreen(session),

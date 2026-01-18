@@ -4,6 +4,7 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { buildTimeEntryScreen } from './timeEntry.js';
+import { timeRegHelpScreen } from './timeRegHelp.js';
 import {
   defineScreen,
   render,
@@ -46,7 +47,7 @@ const TIME_REG_SCREEN = defineScreen('TIME_REG', {
       { header: 'Description', key: 'description', width: 30 },
     ]),
   ],
-  statusLine: 'F3=Exit  F6=Add  F7=Prev day  F8=Next day  F12=Cancel',
+  statusLine: 'F3=Exit  F6=Add  F7=Prev day  F8=Next day  F12=Cancel  F1=Help',
   defaultCursor: 'opt_0',
 });
 
@@ -60,20 +61,20 @@ export function buildTimeRegScreen(
   messageType: 'info' | 'warning' | 'error' | null = null
 ): Omit<ScreenResponse, 'sessionId'> {
   const userId = session.viserId!;
-  
+
   // Get current date from context or use today
   const currentDate = (session.context.timeRegDate as string) || new Date().toISOString().split('T')[0];
-  
+
   // Get or create day record
   const day = getOrCreateDay(userId, currentDate);
-  
+
   // Get time entries
   const items = getDayItems(day.id);
-  
+
   // Store day info in context
   session.context.timeRegDate = currentDate;
   session.context.timeRegDayId = day.id;
-  
+
   // Format items for subfile display
   const entries = items.map((item, index) => ({
     id: item.id,
@@ -83,22 +84,22 @@ export function buildTimeRegScreen(
     jiratask: item.jiratask || '',
     description: item.description || '',
   }));
-  
+
   // Render the screen with context
-  const result = render(TIME_REG_SCREEN, { entries }, { 
-    message, 
-    messageType, 
-    user: session.username || 'UNKNOWN' 
+  const result = render(TIME_REG_SCREEN, { entries }, {
+    message,
+    messageType,
+    user: session.username || 'UNKNOWN'
   });
-  
+
   // Add dynamic date info to the rendered rows
   const dayName = getDayName(currentDate);
   const dayTotal = formatHours(day.daysum);
-  
+
   // Modify row 5 to include date and total
   const dateInfo = `Date: ${currentDate}  ${dayName}`;
   const totalInfo = `Day total: ${dayTotal} hrs`;
-  
+
   // Build the date line
   let row5 = result.rows[5].split('');
   // Write date info starting at col 2
@@ -110,7 +111,7 @@ export function buildTimeRegScreen(
     row5[i + 55] = totalInfo[i];
   }
   result.rows[5] = row5.join('');
-  
+
   return {
     screenId: result.screenId,
     cursor: result.cursor,
@@ -132,7 +133,7 @@ export function handleTimeReg(
   request: ClientRequest
 ): ScreenResponse {
   const base = { sessionId: session.id };
-  
+
   // F3 - Exit to main menu
   if (request.key === 'F3') {
     session.currentScreen = 'MAIN_MENU';
@@ -141,13 +142,13 @@ export function handleTimeReg(
     delete session.context.timeRegDate;
     delete session.context.timeRegDayId;
     delete session.context.editItemId;
-    
+
     return {
       ...mainMenuScreen(session),
       ...base,
     };
   }
-  
+
   // F12 - Cancel (same as F3 for this screen)
   if (request.key === 'F12') {
     session.currentScreen = 'MAIN_MENU';
@@ -155,72 +156,80 @@ export function handleTimeReg(
     delete session.context.timeRegDate;
     delete session.context.timeRegDayId;
     delete session.context.editItemId;
-    
+
     return {
       ...mainMenuScreen(session),
       ...base,
     };
   }
-  
+
   // F6 - Add new entry
   if (request.key === 'F6') {
     session.screenStack.push('TIME_REG');
     session.currentScreen = 'TIME_ENTRY';
     session.context.editItemId = null; // New entry mode
-    
+
     return {
       ...buildTimeEntryScreen(session),
       ...base,
     };
   }
-  
+
   // F7 - Previous day
   if (request.key === 'F7') {
     const currentDate = session.context.timeRegDate as string;
     session.context.timeRegDate = getPreviousDay(session.viserId!, currentDate);
-    
+
     return {
       ...buildTimeRegScreen(session),
       ...base,
     };
   }
-  
+
   // F8 - Next day
   if (request.key === 'F8') {
     const currentDate = session.context.timeRegDate as string;
     session.context.timeRegDate = getNextDay(currentDate);
-    
+
     return {
       ...buildTimeRegScreen(session),
       ...base,
     };
   }
-  
+
+  // F1 - Help
+  if (request.key === 'F1') {
+    return {
+      ...timeRegHelpScreen(session),
+      ...base,
+    };
+  }
+
   // ENTER - Process option selections
   if (request.key === 'ENTER') {
     const dayId = session.context.timeRegDayId as number;
     const items = getDayItems(dayId);
-    
+
     // Check each opt field for input
     for (let i = 0; i < items.length; i++) {
       const opt = request.input[`opt_${i}`]?.trim();
-      
+
       if (opt === '2') {
         // Edit - go to TIME_ENTRY with item ID
         session.screenStack.push('TIME_REG');
         session.currentScreen = 'TIME_ENTRY';
         session.context.editItemId = items[i].id;
-        
+
         return {
           ...buildTimeEntryScreen(session),
           ...base,
         };
       }
-      
+
       if (opt === '4') {
         // Delete entry
         const deleted = deleteDayItem(items[i].id);
-        
+
         if (deleted) {
           return {
             ...buildTimeRegScreen(session, 'Entry deleted', 'info'),
@@ -233,7 +242,9 @@ export function handleTimeReg(
           };
         }
       }
-      
+
+
+
       if (opt && opt !== '') {
         // Invalid option
         return {
@@ -242,14 +253,14 @@ export function handleTimeReg(
         };
       }
     }
-    
+
     // No option entered - just refresh
     return {
       ...buildTimeRegScreen(session),
       ...base,
     };
   }
-  
+
   // Default - show screen
   return {
     ...buildTimeRegScreen(session),
