@@ -4,33 +4,19 @@ import { buildLoginScreen, handleLogin } from './screens/login.js';
 import { mainMenuScreen, handleMainMenu } from './screens/mainMenu.js';
 import { buildTimeRegScreen, handleTimeReg } from './screens/timeReg.js';
 import { buildTimeEntryScreen, handleTimeEntry } from './screens/timeEntry.js';
-import { buildBackupMgmtScreen, handleBackupMgmt } from './screens/backupMgmt.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 
-// Import db to ensure tables are created
-import './db/index.js';
+// Import database initialization
+import { initializeDatabase, closeDatabase } from './db/index.js';
 import { handleTimeRegHelp } from './screens/timeRegHelp.js';
-import { startBackupScheduler } from './services/backupScheduler.js';
 
-const PORT = 3001;
-
-const wss = new WebSocketServer({ port: PORT });
-
-console.log(`AS500 Server running on ws://localhost:${PORT}`);
-
-// Start backup scheduler
-// Backups run every 60 minutes (1 hour), keeping the last 10 backups
-startBackupScheduler({
-  enabled: true,
-  intervalMinutes: 60,
-  keepCount: 10,
-});
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Map WebSocket connections to session IDs
 const connectionSessions = new Map<WebSocket, string>();
 
 // Get current screen response for a session
-function getCurrentScreenResponse(session: Session): Omit<ScreenResponse, 'sessionId'> {
+async function getCurrentScreenResponse(session: Session): Promise<Omit<ScreenResponse, 'sessionId'>> {
   switch (session.currentScreen) {
     case 'MAIN_MENU':
       if (session.authenticated) {
@@ -42,21 +28,14 @@ function getCurrentScreenResponse(session: Session): Omit<ScreenResponse, 'sessi
 
     case 'TIME_REG':
       if (session.authenticated) {
-        return buildTimeRegScreen(session);
+        return await buildTimeRegScreen(session);
       }
       session.currentScreen = 'LOGIN';
       return buildLoginScreen();
 
     case 'TIME_ENTRY':
       if (session.authenticated) {
-        return buildTimeEntryScreen(session);
-      }
-      session.currentScreen = 'LOGIN';
-      return buildLoginScreen();
-
-    case 'BACKUP_MGMT':
-      if (session.authenticated) {
-        return buildBackupMgmtScreen(session);
+        return await buildTimeEntryScreen(session);
       }
       session.currentScreen = 'LOGIN';
       return buildLoginScreen();
@@ -67,202 +46,213 @@ function getCurrentScreenResponse(session: Session): Omit<ScreenResponse, 'sessi
   }
 }
 
-wss.on('connection', (ws: WebSocket) => {
-  console.log('Client connected');
+async function startServer() {
+  // Initialize database before starting server
+  await initializeDatabase();
 
-  // Don't create session immediately - wait for first message
-  // This allows client to send RESUME with existing sessionId
+  const wss = new WebSocketServer({ port: PORT });
 
-  ws.on('message', async (data: Buffer) => {
-    try {
-      const request: ClientRequest = JSON.parse(data.toString());
+  console.log(`AS500 Server running on ws://localhost:${PORT}`);
 
-      // Handle RESUME - client trying to restore a session
-      if (request.key === 'RESUME' && request.sessionId) {
-        const existingSession = getSession(request.sessionId);
+  wss.on('connection', (ws: WebSocket) => {
+    console.log('Client connected');
 
-        if (existingSession && existingSession.authenticated) {
-          // Valid authenticated session - restore it
-          connectionSessions.set(ws, existingSession.id);
-          console.log(`Session resumed for user: ${existingSession.username}`);
+    // Don't create session immediately - wait for first message
+    // This allows client to send RESUME with existing sessionId
+
+    ws.on('message', async (data: Buffer) => {
+      try {
+        const request: ClientRequest = JSON.parse(data.toString());
+
+        // Handle RESUME - client trying to restore a session
+        if (request.key === 'RESUME' && request.sessionId) {
+          const existingSession = getSession(request.sessionId);
+
+          if (existingSession && existingSession.authenticated) {
+            // Valid authenticated session - restore it
+            connectionSessions.set(ws, existingSession.id);
+            console.log(`Session resumed for user: ${existingSession.username}`);
+
+            const response: ScreenResponse = {
+              ...(await getCurrentScreenResponse(existingSession)),
+              sessionId: existingSession.id,
+              message: `Welcome back, ${existingSession.username}`,
+              messageType: 'info',
+            };
+
+            ws.send(JSON.stringify(response));
+            return;
+          }
+
+          // Invalid or expired session - create new one
+          const newSession = createSession();
+          connectionSessions.set(ws, newSession.id);
 
           const response: ScreenResponse = {
-            ...getCurrentScreenResponse(existingSession),
-            sessionId: existingSession.id,
-            message: `Welcome back, ${existingSession.username}`,
-            messageType: 'info',
+            ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
+            sessionId: newSession.id,
           };
 
           ws.send(JSON.stringify(response));
           return;
         }
 
-        // Invalid or expired session - create new one
-        const newSession = createSession();
-        connectionSessions.set(ws, newSession.id);
+        // Get or create session
+        let currentSession: Session | null = null;
 
-        const response: ScreenResponse = {
-          ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
-          sessionId: newSession.id,
-        };
+        if (request.sessionId) {
+          currentSession = getSession(request.sessionId);
+        }
 
-        ws.send(JSON.stringify(response));
-        return;
-      }
+        if (!currentSession) {
+          // No valid session - create new one
+          currentSession = createSession();
+          connectionSessions.set(ws, currentSession.id);
 
-      // Get or create session
-      let currentSession: Session | null = null;
+          // If this is the first message (no session), just send login screen
+          if (!request.sessionId) {
+            const loginScreen: ScreenResponse = {
+              ...buildLoginScreen(),
+              sessionId: currentSession.id,
+            };
+            ws.send(JSON.stringify(loginScreen));
+            return;
+          }
 
-      if (request.sessionId) {
-        currentSession = getSession(request.sessionId);
-      }
-
-      if (!currentSession) {
-        // No valid session - create new one
-        currentSession = createSession();
-        connectionSessions.set(ws, currentSession.id);
-
-        // If this is the first message (no session), just send login screen
-        if (!request.sessionId) {
-          const loginScreen: ScreenResponse = {
-            ...buildLoginScreen(),
+          // Session was provided but invalid/expired
+          const expiredScreen: ScreenResponse = {
+            ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
             sessionId: currentSession.id,
           };
-          ws.send(JSON.stringify(loginScreen));
+
+          ws.send(JSON.stringify(expiredScreen));
           return;
         }
 
-        // Session was provided but invalid/expired
-        const expiredScreen: ScreenResponse = {
-          ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
-          sessionId: currentSession.id,
+        // Update connection mapping
+        connectionSessions.set(ws, currentSession.id);
+
+        // Route to appropriate handler based on current screen
+        let response: ScreenResponse;
+
+        switch (currentSession.currentScreen) {
+          case 'LOGIN':
+            response = await handleLogin(currentSession, request);
+            break;
+
+          case 'MAIN_MENU':
+            // Check authentication
+            if (!currentSession.authenticated) {
+              currentSession.currentScreen = 'LOGIN';
+              response = {
+                ...buildLoginScreen('Please sign on to continue', 'warning'),
+                sessionId: currentSession.id,
+              };
+            } else {
+              response = await handleMainMenu(currentSession, request);
+            }
+            break;
+
+          case 'TIME_REG':
+            // Check authentication
+            if (!currentSession.authenticated) {
+              currentSession.currentScreen = 'LOGIN';
+              response = {
+                ...buildLoginScreen('Please sign on to continue', 'warning'),
+                sessionId: currentSession.id,
+              };
+            } else {
+              response = await handleTimeReg(currentSession, request);
+            }
+            break;
+
+          case 'TIME_ENTRY':
+            // Check authentication
+            if (!currentSession.authenticated) {
+              currentSession.currentScreen = 'LOGIN';
+              response = {
+                ...buildLoginScreen('Please sign on to continue', 'warning'),
+                sessionId: currentSession.id,
+              };
+            } else {
+              response = await handleTimeEntry(currentSession, request);
+            }
+            break;
+
+          case 'TIME_REG_HELP':
+            // Check authentication
+            if (!currentSession.authenticated) {
+              currentSession.currentScreen = 'LOGIN';
+              response = {
+                ...buildLoginScreen('Please sign on to continue', 'warning'),
+                sessionId: currentSession.id,
+              };
+            } else {
+              response = await handleTimeRegHelp(currentSession, request);
+            }
+            break;
+
+          default:
+            // Unknown screen - return to login
+            currentSession.currentScreen = 'LOGIN';
+            response = {
+              ...buildLoginScreen(),
+              sessionId: currentSession.id,
+            };
+        }
+
+        // Update session's current screen
+        if (response.screenId !== currentSession.currentScreen) {
+          currentSession.currentScreen = response.screenId;
+        }
+
+        ws.send(JSON.stringify(response));
+
+      } catch (error) {
+        console.error('Error handling message:', error);
+
+        // Send error response
+        const sessionId = connectionSessions.get(ws) || 'unknown';
+        const errorResponse: ScreenResponse = {
+          ...buildLoginScreen('System error. Please try again.', 'error'),
+          sessionId,
         };
 
-        ws.send(JSON.stringify(expiredScreen));
-        return;
+        ws.send(JSON.stringify(errorResponse));
       }
+    });
 
-      // Update connection mapping
-      connectionSessions.set(ws, currentSession.id);
+    ws.on('close', () => {
+      console.log('Client disconnected');
+      connectionSessions.delete(ws);
+    });
 
-      // Route to appropriate handler based on current screen
-      let response: ScreenResponse;
-
-      switch (currentSession.currentScreen) {
-        case 'LOGIN':
-          response = await handleLogin(currentSession, request);
-          break;
-
-        case 'MAIN_MENU':
-          // Check authentication
-          if (!currentSession.authenticated) {
-            currentSession.currentScreen = 'LOGIN';
-            response = {
-              ...buildLoginScreen('Please sign on to continue', 'warning'),
-              sessionId: currentSession.id,
-            };
-          } else {
-            response = handleMainMenu(currentSession, request);
-          }
-          break;
-
-        case 'TIME_REG':
-          // Check authentication
-          if (!currentSession.authenticated) {
-            currentSession.currentScreen = 'LOGIN';
-            response = {
-              ...buildLoginScreen('Please sign on to continue', 'warning'),
-              sessionId: currentSession.id,
-            };
-          } else {
-            response = handleTimeReg(currentSession, request);
-          }
-          break;
-
-        case 'TIME_ENTRY':
-          // Check authentication
-          if (!currentSession.authenticated) {
-            currentSession.currentScreen = 'LOGIN';
-            response = {
-              ...buildLoginScreen('Please sign on to continue', 'warning'),
-              sessionId: currentSession.id,
-            };
-          } else {
-            response = handleTimeEntry(currentSession, request);
-          }
-          break;
-
-        case 'TIME_REG_HELP':
-          // Check authentication
-          if (!currentSession.authenticated) {
-            currentSession.currentScreen = 'LOGIN';
-            response = {
-              ...buildLoginScreen('Please sign on to continue', 'warning'),
-              sessionId: currentSession.id,
-            };
-          } else {
-            response = handleTimeRegHelp(currentSession, request);
-          }
-          break;
-
-        case 'BACKUP_MGMT':
-          // Check authentication
-          if (!currentSession.authenticated) {
-            currentSession.currentScreen = 'LOGIN';
-            response = {
-              ...buildLoginScreen('Please sign on to continue', 'warning'),
-              sessionId: currentSession.id,
-            };
-          } else {
-            response = await handleBackupMgmt(currentSession, request);
-          }
-          break;
-
-        default:
-          // Unknown screen - return to login
-          currentSession.currentScreen = 'LOGIN';
-          response = {
-            ...buildLoginScreen(),
-            sessionId: currentSession.id,
-          };
-      }
-
-      // Update session's current screen
-      if (response.screenId !== currentSession.currentScreen) {
-        currentSession.currentScreen = response.screenId;
-      }
-
-      ws.send(JSON.stringify(response));
-
-    } catch (error) {
-      console.error('Error handling message:', error);
-
-      // Send error response
-      const sessionId = connectionSessions.get(ws) || 'unknown';
-      const errorResponse: ScreenResponse = {
-        ...buildLoginScreen('System error. Please try again.', 'error'),
-        sessionId,
-      };
-
-      ws.send(JSON.stringify(errorResponse));
-    }
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      connectionSessions.delete(ws);
+    });
   });
 
-  ws.on('close', () => {
-    console.log('Client disconnected');
-    connectionSessions.delete(ws);
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('\nShutting down...');
+    wss.close(async () => {
+      await closeDatabase();
+      process.exit(0);
+    });
   });
 
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    connectionSessions.delete(ws);
+  process.on('SIGTERM', async () => {
+    console.log('\nShutting down...');
+    wss.close(async () => {
+      await closeDatabase();
+      process.exit(0);
+    });
   });
-});
+}
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\nShutting down...');
-  wss.close(() => {
-    process.exit(0);
-  });
+// Start the server
+startServer().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });

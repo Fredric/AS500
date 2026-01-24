@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ScreenResponse, ClientRequest, Field } from '../types';
 
-const WS_URL = 'ws://localhost:3001';
+const WS_URL = 'ws://localhost:3000';
 const SESSION_COOKIE_NAME = 'as500_session';
 
 // Cookie helpers

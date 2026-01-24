@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: as500
+      POSTGRES_PASSWORD: as500
+      POSTGRES_DB: as500
+    # Use 5433 to avoid conflict with local Postgres on 5432 (e.g. Cursor/IDE).
+    # Set PGPORT=5433 when running the AS500 server against Docker Postgres.
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U as500" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

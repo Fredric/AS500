@@ -48,10 +48,10 @@ export function timeRegHelpScreen(session: Session,): Omit<ScreenResponse, 'sess
 // Screen Handler (Business Logic)
 // ============================================
 
-export function handleTimeRegHelp(
+export async function handleTimeRegHelp(
     session: Session,
     request: ClientRequest
-): ScreenResponse {
+): Promise<ScreenResponse> {
     const base = { sessionId: session.id };
 
     // F3 - Exit to main menu
@@ -60,7 +60,7 @@ export function handleTimeRegHelp(
         session.screenStack = session.screenStack.filter(s => s !== 'TIME_REG_HELP');
 
         return {
-            ...buildTimeRegScreen(session),
+            ...(await buildTimeRegScreen(session)),
             ...base,
         };
     }

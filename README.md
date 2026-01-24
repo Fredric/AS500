@@ -20,17 +20,23 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 ## Quick Start
 
 ```bash
+# Optional: PostgreSQL via Docker (maps host 5433 → container 5432)
+docker-compose up -d
+
 # Terminal 1: Start server
 cd server
 npm install
 npm run seed    # Creates default user (first time only)
-npm run dev     # Runs on ws://localhost:3001
+PGPORT=5433 npm run dev   # Use 5433 if using Docker Postgres (avoids local Postgres on 5432)
+# Or: npm run dev         # Uses PGPORT from .env or default 5432
 
 # Terminal 2: Start client
 cd client
 npm install
 npm run dev     # Runs on http://localhost:5173
 ```
+
+**Note:** If you run Postgres in Docker (`docker-compose up -d`), set `PGPORT=5433` when starting the server (or in `server/.env`). Docker maps `5433:5432` so the app doesn’t hit a local Postgres on 5432.
 
 Open http://localhost:5173 and login with:
 - **Username:** `FREDRIC`

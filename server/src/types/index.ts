@@ -50,8 +50,8 @@ export interface User {
   username: string;
   password_hash: string;
   full_name: string | null;
-  active: number;
-  created_at: string;
+  active: boolean;
+  created_at: Date;
 }
 
 // Screen handler function type

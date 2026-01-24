@@ -55,21 +55,21 @@ const TIME_REG_SCREEN = defineScreen('TIME_REG', {
 // Screen Builder
 // ============================================
 
-export function buildTimeRegScreen(
+export async function buildTimeRegScreen(
   session: Session,
   message: string | null = null,
   messageType: 'info' | 'warning' | 'error' | null = null
-): Omit<ScreenResponse, 'sessionId'> {
+): Promise<Omit<ScreenResponse, 'sessionId'>> {
   const userId = session.viserId!;
 
   // Get current date from context or use today
   const currentDate = (session.context.timeRegDate as string) || new Date().toISOString().split('T')[0];
 
   // Get or create day record
-  const day = getOrCreateDay(userId, currentDate);
+  const day = await getOrCreateDay(userId, currentDate);
 
   // Get time entries
-  const items = getDayItems(day.id);
+  const items = await getDayItems(day.id);
 
   // Store day info in context
   session.context.timeRegDate = currentDate;
@@ -128,10 +128,10 @@ export function buildTimeRegScreen(
 // Screen Handler
 // ============================================
 
-export function handleTimeReg(
+export async function handleTimeReg(
   session: Session,
   request: ClientRequest
-): ScreenResponse {
+): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
 
   // F3 - Exit to main menu
@@ -170,7 +170,7 @@ export function handleTimeReg(
     session.context.editItemId = null; // New entry mode
 
     return {
-      ...buildTimeEntryScreen(session),
+      ...(await buildTimeEntryScreen(session)),
       ...base,
     };
   }
@@ -181,7 +181,7 @@ export function handleTimeReg(
     session.context.timeRegDate = getPreviousDay(session.viserId!, currentDate);
 
     return {
-      ...buildTimeRegScreen(session),
+      ...(await buildTimeRegScreen(session)),
       ...base,
     };
   }
@@ -192,7 +192,7 @@ export function handleTimeReg(
     session.context.timeRegDate = getNextDay(currentDate);
 
     return {
-      ...buildTimeRegScreen(session),
+      ...(await buildTimeRegScreen(session)),
       ...base,
     };
   }
@@ -208,7 +208,7 @@ export function handleTimeReg(
   // ENTER - Process option selections
   if (request.key === 'ENTER') {
     const dayId = session.context.timeRegDayId as number;
-    const items = getDayItems(dayId);
+    const items = await getDayItems(dayId);
 
     // Check each opt field for input
     for (let i = 0; i < items.length; i++) {
@@ -221,23 +221,23 @@ export function handleTimeReg(
         session.context.editItemId = items[i].id;
 
         return {
-          ...buildTimeEntryScreen(session),
+          ...(await buildTimeEntryScreen(session)),
           ...base,
         };
       }
 
       if (opt === '4') {
         // Delete entry
-        const deleted = deleteDayItem(items[i].id);
+        const deleted = await deleteDayItem(items[i].id);
 
         if (deleted) {
           return {
-            ...buildTimeRegScreen(session, 'Entry deleted', 'info'),
+            ...(await buildTimeRegScreen(session, 'Entry deleted', 'info')),
             ...base,
           };
         } else {
           return {
-            ...buildTimeRegScreen(session, 'Failed to delete entry', 'error'),
+            ...(await buildTimeRegScreen(session, 'Failed to delete entry', 'error')),
             ...base,
           };
         }
@@ -248,7 +248,7 @@ export function handleTimeReg(
       if (opt && opt !== '') {
         // Invalid option
         return {
-          ...buildTimeRegScreen(session, `Invalid option '${opt}'. Use 2=Edit, 4=Delete`, 'error'),
+          ...(await buildTimeRegScreen(session, `Invalid option '${opt}'. Use 2=Edit, 4=Delete`, 'error')),
           ...base,
         };
       }
@@ -256,14 +256,14 @@ export function handleTimeReg(
 
     // No option entered - just refresh
     return {
-      ...buildTimeRegScreen(session),
+      ...(await buildTimeRegScreen(session)),
       ...base,
     };
   }
 
   // Default - show screen
   return {
-    ...buildTimeRegScreen(session),
+    ...(await buildTimeRegScreen(session)),
     ...base,
   };
 }
