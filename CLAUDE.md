@@ -271,9 +271,9 @@ const screen = render(MY_SCREEN, fieldValues, options);
 ```
 
 **Files**:
-- `/home/user/AS500/server/src/dsl/index.ts` - Public API
-- `/home/user/AS500/server/src/dsl/renderer.ts` - 80×24 renderer
-- `/home/user/AS500/server/src/dsl/components/` - DSL components
+- `server/src/dsl/index.ts` - Public API
+- `server/src/dsl/renderer.ts` - 80×24 renderer
+- `server/src/dsl/components/` - DSL components
 
 ### 3. WebSocket Protocol
 
@@ -312,7 +312,7 @@ const screen = render(MY_SCREEN, fieldValues, options);
 
 **Storage**: In-memory Map (not persisted to database)
 
-**Session Interface** (`/home/user/AS500/server/src/types/index.ts`):
+**Session Interface** (`server/src/types/index.ts`):
 ```typescript
 interface Session {
   id: string;                    // UUID
@@ -333,14 +333,14 @@ interface Session {
 4. On page refresh: client sends RESUME with sessionId
 5. On sign-off (F3): session deleted, cookie cleared
 
-**File**: `/home/user/AS500/server/src/session/index.ts`
+**File**: `server/src/session/index.ts`
 
 ---
 
 ## Database Schema
 
 **Database**: SQLite with WAL mode enabled
-**Location**: `/home/user/AS500/server/data/as500.db`
+**Location**: `server/data/as500.db`
 
 ### Tables
 
@@ -387,8 +387,8 @@ CREATE TABLE day_items (
 ```
 
 **Files**:
-- Schema: `/home/user/AS500/server/src/db/index.ts`
-- Seeding: `/home/user/AS500/server/src/db/seed.ts`
+- Schema: `server/src/db/index.ts`
+- Seeding: `server/src/db/seed.ts`
 
 ---
 
@@ -493,7 +493,7 @@ CREATE TABLE day_items (
 
 **Step 1: Create Screen File**
 
-Create `/home/user/AS500/server/src/screens/myScreen.ts`:
+Create `server/src/screens/myScreen.ts`:
 
 ```typescript
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
@@ -564,7 +564,7 @@ export function handleMyScreen(
 
 **Step 2: Register in Router**
 
-Edit `/home/user/AS500/server/src/index.ts`:
+Edit `server/src/index.ts`:
 
 ```typescript
 // Import
@@ -582,7 +582,7 @@ case 'MY_SCREEN':
 
 **Step 3: Add Navigation**
 
-Edit the screen that should navigate to your new screen (e.g., `/home/user/AS500/server/src/screens/mainMenu.ts`):
+Edit the screen that should navigate to your new screen (e.g., `server/src/screens/mainMenu.ts`):
 
 ```typescript
 if (option === 5) {  // Menu option number
@@ -686,7 +686,7 @@ line(row: number, char?: string)
 
 ### Task 1: Add a Database Table
 
-1. **Edit schema** in `/home/user/AS500/server/src/db/index.ts`:
+1. **Edit schema** in `server/src/db/index.ts`:
    ```typescript
    db.exec(`
      CREATE TABLE IF NOT EXISTS my_table (
@@ -697,7 +697,7 @@ line(row: number, char?: string)
    `);
    ```
 
-2. **Add TypeScript interface** in `/home/user/AS500/server/src/types/index.ts`:
+2. **Add TypeScript interface** in `server/src/types/index.ts`:
    ```typescript
    export interface MyModel {
      id: number;
@@ -715,7 +715,7 @@ line(row: number, char?: string)
 
 ### Task 2: Add Business Logic
 
-1. **Create service file** `/home/user/AS500/server/src/services/myService.ts`:
+1. **Create service file** `server/src/services/myService.ts`:
    ```typescript
    import { db } from '../db/index.js';
 
@@ -737,14 +737,14 @@ line(row: number, char?: string)
 
 ### Task 3: Modify Existing Screen
 
-1. **Locate screen file** in `/home/user/AS500/server/src/screens/`
+1. **Locate screen file** in `server/src/screens/`
 2. **Update screen definition** (DSL constant)
 3. **Update handler logic** (handleScreen function)
 4. Changes are hot-reloaded by `tsx watch`
 
 ### Task 4: Add Client-Side Styling
 
-1. **Edit** `/home/user/AS500/client/src/styles/terminal.css`
+1. **Edit** `client/src/styles/terminal.css`
 2. Changes are hot-reloaded by Vite
 3. **Use CSS classes**:
    - `.terminal-container` - Main container
@@ -1000,40 +1000,40 @@ rm -rf dist/
 
 ### Entry Points
 
-- **Server**: `/home/user/AS500/server/src/index.ts` - WebSocket server & router
-- **Client**: `/home/user/AS500/client/src/main.tsx` - React entry point
+- **Server**: `server/src/index.ts` - WebSocket server & router
+- **Client**: `client/src/main.tsx` - React entry point
 
 ### Core Systems
 
-- **Database**: `/home/user/AS500/server/src/db/index.ts`
-- **Session Management**: `/home/user/AS500/server/src/session/index.ts`
-- **Authentication**: `/home/user/AS500/server/src/services/auth.ts`
-- **DSL API**: `/home/user/AS500/server/src/dsl/index.ts`
-- **DSL Renderer**: `/home/user/AS500/server/src/dsl/renderer.ts`
-- **Terminal Hook**: `/home/user/AS500/client/src/hooks/useTerminal.ts`
-- **Terminal Component**: `/home/user/AS500/client/src/components/Terminal.tsx`
+- **Database**: `server/src/db/index.ts`
+- **Session Management**: `server/src/session/index.ts`
+- **Authentication**: `server/src/services/auth.ts`
+- **DSL API**: `server/src/dsl/index.ts`
+- **DSL Renderer**: `server/src/dsl/renderer.ts`
+- **Terminal Hook**: `client/src/hooks/useTerminal.ts`
+- **Terminal Component**: `client/src/components/Terminal.tsx`
 
 ### Type Definitions
 
-- **Server Types**: `/home/user/AS500/server/src/types/index.ts`
-- **Client Types**: `/home/user/AS500/client/src/types/index.ts`
-- **DSL Types**: `/home/user/AS500/server/src/dsl/types.ts`
+- **Server Types**: `server/src/types/index.ts`
+- **Client Types**: `client/src/types/index.ts`
+- **DSL Types**: `server/src/dsl/types.ts`
 
 ### Configuration
 
-- **Server Package**: `/home/user/AS500/server/package.json`
-- **Client Package**: `/home/user/AS500/client/package.json`
-- **Server TypeScript**: `/home/user/AS500/server/tsconfig.json`
-- **Client TypeScript**: `/home/user/AS500/client/tsconfig.json`
-- **Vite Config**: `/home/user/AS500/client/vite.config.ts`
-- **Git Ignore**: `/home/user/AS500/.gitignore`
+- **Server Package**: `server/package.json`
+- **Client Package**: `client/package.json`
+- **Server TypeScript**: `server/tsconfig.json`
+- **Client TypeScript**: `client/tsconfig.json`
+- **Vite Config**: `client/vite.config.ts`
+- **Git Ignore**: `.gitignore`
 
 ### Documentation
 
-- **README**: `/home/user/AS500/README.md` - Quick start
-- **Project Docs**: `/home/user/AS500/project.md` - Comprehensive technical docs
-- **Backup Docs**: `/home/user/AS500/BACKUP.md` - Backup system guide
-- **This File**: `/home/user/AS500/CLAUDE.md` - AI assistant guide
+- **README**: `README.md` - Quick start
+- **Project Docs**: `project.md` - Comprehensive technical docs
+- **Backup Docs**: `BACKUP.md` - Backup system guide
+- **This File**: `CLAUDE.md` - AI assistant guide
 
 ---
 
@@ -1046,12 +1046,12 @@ The project includes an automated backup system using SQLite's native Online Bac
 - **Hot Backups**: No server downtime required
 - **Scheduled**: Automatic backups every 60 minutes
 - **Retention**: Keeps last 10 backups
-- **Location**: `/home/user/AS500/server/backups/`
+- **Location**: `server/backups/`
 - **UI Access**: Main menu option 7
 
 ### Configuration
 
-Edit `/home/user/AS500/server/src/index.ts`:
+Edit `server/src/index.ts`:
 ```typescript
 startBackupScheduler({
   enabled: true,          // Enable/disable
@@ -1073,7 +1073,7 @@ npm run backup
 2. Copy backup file: `cp backups/as500-backup-*.db data/as500.db`
 3. Restart server
 
-**See** `/home/user/AS500/BACKUP.md` for complete documentation.
+**See** `BACKUP.md` for complete documentation.
 
 ---
 
@@ -1139,38 +1139,6 @@ These are created by the seed script (`npm run seed`).
 
 ---
 
-## Git Branch Workflow
-
-This project uses feature branches with the `claude/` prefix.
-
-### Current Branch
-
-`claude/create-claude-md-AnNkT`
-
-### Important Rules
-
-1. **Always develop on the designated branch**
-2. **Commit with clear, descriptive messages**
-3. **Push to the specified branch** when complete
-4. **Branch naming**: Must start with `claude/` and match session ID
-5. **Never push to a different branch** without explicit permission
-
-### Git Operations
-
-**Push with retry logic** (for network errors):
-```bash
-git push -u origin claude/create-claude-md-AnNkT
-```
-- Retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s)
-- Only retry on network errors, not on permission errors
-
-**Fetch specific branch**:
-```bash
-git fetch origin claude/create-claude-md-AnNkT
-```
-
----
-
 ## Additional Resources
 
 ### External Documentation
@@ -1192,16 +1160,5 @@ This project is inspired by AS/400 (IBM i) systems:
 
 ---
 
-## Contact & Feedback
-
-For issues or questions about this codebase:
-- Check existing documentation: README.md, project.md, BACKUP.md
-- Review screen implementations for patterns
-- Examine type definitions for data structures
-- Read the DSL source code for component details
-
----
-
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-01-24
 **Project Status**: Working prototype with time tracking feature
-**Next Features**: Customer maintenance, help system, PAGEUP/PAGEDOWN
