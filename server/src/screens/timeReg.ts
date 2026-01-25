@@ -29,6 +29,9 @@ import {
 // Screen Definition (Logical)
 // ============================================
 
+// Subfile page size (number of visible rows)
+const SUBFILE_PAGE_SIZE = 10;
+
 const TIME_REG_SCREEN = defineScreen('TIME_REG', {
   elements: [
     header({ system: 'AS500 SYSTEM', title: 'TIME REGISTRATION', showDateTime: true, showUser: true }),
@@ -38,7 +41,7 @@ const TIME_REG_SCREEN = defineScreen('TIME_REG', {
     // Date value and day name will be rendered dynamically
 
     // Subfile for time entries
-    subfile('entries', 7, 10, [
+    subfile('entries', 7, SUBFILE_PAGE_SIZE, [
       { header: 'Opt', field: 'opt', width: 3, type: 'alpha' },
       { header: 'Start', key: 'start_hour', width: 5 },
       { header: 'End', key: 'end_hour', width: 5 },
@@ -216,12 +219,11 @@ export async function handleTimeReg(
   if (request.key === 'PAGEDOWN') {
     const dayId = session.context.timeRegDayId as number;
     const items = await getDayItems(dayId);
-    const pageSize = 10; // Match the subfile pageSize
     const currentOffset = (session.context.timeRegPageOffset as number) || 0;
-    const maxOffset = Math.max(0, items.length - pageSize);
+    const maxOffset = Math.max(0, items.length - SUBFILE_PAGE_SIZE);
     
     // Move to next page (don't go beyond the last page)
-    session.context.timeRegPageOffset = Math.min(currentOffset + pageSize, maxOffset);
+    session.context.timeRegPageOffset = Math.min(currentOffset + SUBFILE_PAGE_SIZE, maxOffset);
 
     return {
       ...(await buildTimeRegScreen(session)),
@@ -232,10 +234,9 @@ export async function handleTimeReg(
   // PAGEUP - Scroll up in subfile
   if (request.key === 'PAGEUP') {
     const currentOffset = (session.context.timeRegPageOffset as number) || 0;
-    const pageSize = 10; // Match the subfile pageSize
     
     // Move to previous page (don't go below 0)
-    session.context.timeRegPageOffset = Math.max(0, currentOffset - pageSize);
+    session.context.timeRegPageOffset = Math.max(0, currentOffset - SUBFILE_PAGE_SIZE);
 
     return {
       ...(await buildTimeRegScreen(session)),
