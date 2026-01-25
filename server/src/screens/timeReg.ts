@@ -47,7 +47,7 @@ const TIME_REG_SCREEN = defineScreen('TIME_REG', {
       { header: 'Description', key: 'description', width: 30 },
     ]),
   ],
-  statusLine: 'F3=Exit  F6=Add  F7=Prev day  F8=Next day  F12=Cancel  F1=Help',
+  statusLine: 'F3=Exit  F6=Add  F7=Prev  F8=Next  PageUp/PageDn=Scroll  F12=Cancel  F1=Help',
   defaultCursor: 'opt_0',
 });
 
@@ -75,6 +75,9 @@ export async function buildTimeRegScreen(
   session.context.timeRegDate = currentDate;
   session.context.timeRegDayId = day.id;
 
+  // Get page offset from context (default to 0)
+  const pageOffset = (session.context.timeRegPageOffset as number) || 0;
+
   // Format items for subfile display
   const entries = items.map((item, index) => ({
     id: item.id,
@@ -85,8 +88,8 @@ export async function buildTimeRegScreen(
     description: item.description || '',
   }));
 
-  // Render the screen with context
-  const result = render(TIME_REG_SCREEN, { entries }, {
+  // Render the screen with context (including page offset)
+  const result = render(TIME_REG_SCREEN, { entries, entries_offset: pageOffset }, {
     message,
     messageType,
     user: session.username || 'UNKNOWN'
@@ -142,6 +145,7 @@ export async function handleTimeReg(
     delete session.context.timeRegDate;
     delete session.context.timeRegDayId;
     delete session.context.editItemId;
+    delete session.context.timeRegPageOffset;
 
     return {
       ...mainMenuScreen(session),
@@ -156,6 +160,7 @@ export async function handleTimeReg(
     delete session.context.timeRegDate;
     delete session.context.timeRegDayId;
     delete session.context.editItemId;
+    delete session.context.timeRegPageOffset;
 
     return {
       ...mainMenuScreen(session),
@@ -179,6 +184,7 @@ export async function handleTimeReg(
   if (request.key === 'F7') {
     const currentDate = session.context.timeRegDate as string;
     session.context.timeRegDate = getPreviousDay(session.viserId!, currentDate);
+    session.context.timeRegPageOffset = 0; // Reset to first page
 
     return {
       ...(await buildTimeRegScreen(session)),
@@ -190,6 +196,7 @@ export async function handleTimeReg(
   if (request.key === 'F8') {
     const currentDate = session.context.timeRegDate as string;
     session.context.timeRegDate = getNextDay(currentDate);
+    session.context.timeRegPageOffset = 0; // Reset to first page
 
     return {
       ...(await buildTimeRegScreen(session)),
@@ -201,6 +208,37 @@ export async function handleTimeReg(
   if (request.key === 'F1') {
     return {
       ...timeRegHelpScreen(session),
+      ...base,
+    };
+  }
+
+  // PAGEDOWN - Scroll down in subfile
+  if (request.key === 'PAGEDOWN') {
+    const dayId = session.context.timeRegDayId as number;
+    const items = await getDayItems(dayId);
+    const pageSize = 10; // Match the subfile pageSize
+    const currentOffset = (session.context.timeRegPageOffset as number) || 0;
+    const maxOffset = Math.max(0, items.length - pageSize);
+    
+    // Move to next page (don't go beyond the last page)
+    session.context.timeRegPageOffset = Math.min(currentOffset + pageSize, maxOffset);
+
+    return {
+      ...(await buildTimeRegScreen(session)),
+      ...base,
+    };
+  }
+
+  // PAGEUP - Scroll up in subfile
+  if (request.key === 'PAGEUP') {
+    const currentOffset = (session.context.timeRegPageOffset as number) || 0;
+    const pageSize = 10; // Match the subfile pageSize
+    
+    // Move to previous page (don't go below 0)
+    session.context.timeRegPageOffset = Math.max(0, currentOffset - pageSize);
+
+    return {
+      ...(await buildTimeRegScreen(session)),
       ...base,
     };
   }
