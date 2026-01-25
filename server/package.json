@@ -10,7 +10,9 @@
     "seed": "tsx src/db/seed.ts",
     "export-data": "tsx scripts/export-sqlite.ts",
     "import-data": "tsx scripts/import-postgres.ts",
-    "migrate-data": "npm run export-data && npm run import-data"
+    "migrate-data": "npm run export-data && npm run import-data",
+    "backup-db": "tsx scripts/backup-database.ts",
+    "restore-db": "tsx scripts/restore-database.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
