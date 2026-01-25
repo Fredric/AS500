@@ -9,7 +9,7 @@ function getWebSocketUrl(): string {
     return `${protocol}//${window.location.host}`;
   }
   // Development: connect to local server
-  return 'ws://localhost:3000';
+  return 'ws://localhost:3001';
 }
 
 const WS_URL = getWebSocketUrl();

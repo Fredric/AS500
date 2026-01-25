@@ -15,7 +15,7 @@ import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 import { initializeDatabase, closeDatabase } from './db/index.js';
 import { handleTimeRegHelp } from './screens/timeRegHelp.js';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // Static file serving for production
