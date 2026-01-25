@@ -23,6 +23,7 @@ interface PersistedSession {
   viserId: number | null;
   username: string | null;
   authenticated: boolean;
+  isAdmin: boolean;
   currentScreen: string;
   screenStack: string[];
   context: Record<string, unknown>;
@@ -51,6 +52,7 @@ function loadSessions(): void {
           viserId: p.viserId,
           username: p.username,
           authenticated: p.authenticated,
+          isAdmin: p.isAdmin ?? false,
           currentScreen: p.currentScreen,
           screenStack: p.screenStack,
           context: p.context,
@@ -87,6 +89,7 @@ function saveSessions(immediate: boolean = false): void {
         viserId: s.viserId,
         username: s.username,
         authenticated: s.authenticated,
+        isAdmin: s.isAdmin,
         currentScreen: s.currentScreen,
         screenStack: s.screenStack,
         context: s.context,
@@ -123,12 +126,13 @@ export function createSession(): Session {
     viserId: null,
     username: null,
     authenticated: false,
+    isAdmin: false,
     currentScreen: 'LOGIN',
     screenStack: [],
     context: {},
     lastActivity: new Date(),
   };
-  
+
   sessions.set(session.id, session);
   saveSessions(); // Persist on creation
   return session;
@@ -148,6 +152,7 @@ export function getSession(sessionId: string): Session | null {
   if (elapsed > SESSION_TIMEOUT) {
     // Session expired - reset to unauthenticated
     session.authenticated = false;
+    session.isAdmin = false;
     session.viserId = null;
     session.username = null;
     session.currentScreen = 'LOGIN';

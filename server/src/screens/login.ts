@@ -109,6 +109,7 @@ export async function handleLogin(
   session.authenticated = true;
   session.viserId = user.id;
   session.username = user.username;
+  session.isAdmin = user.is_admin;
   session.currentScreen = 'MAIN_MENU';
   session.screenStack = ['LOGIN'];
   

@@ -4,6 +4,7 @@ export interface Session {
   viserId: number | null;
   username: string | null;
   authenticated: boolean;
+  isAdmin: boolean;
   currentScreen: string;
   screenStack: string[];
   context: Record<string, unknown>;
@@ -51,6 +52,7 @@ export interface User {
   password_hash: string;
   full_name: string | null;
   active: boolean;
+  is_admin: boolean;
   created_at: Date;
 }
 

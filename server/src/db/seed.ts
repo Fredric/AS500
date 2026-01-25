@@ -23,9 +23,9 @@ async function seed() {
 
     // Insert the user
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO users (username, password_hash, full_name, active)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      ['FREDRIC', passwordHash, 'Fredric User', true]
+      `INSERT INTO users (username, password_hash, full_name, active, is_admin)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      ['FREDRIC', passwordHash, 'Fredric User', true, false]
     );
 
     userId = result.rows[0].id;
@@ -33,6 +33,41 @@ async function seed() {
   } else {
     userId = existingUser.rows[0].id;
     console.log('User FREDRIC already exists.');
+  }
+
+  // Create admin user if ADMIN_PASSWORD is set
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (adminPassword) {
+    const existingAdmin = await pool.query<{ id: number }>(
+      'SELECT id FROM users WHERE username = $1',
+      ['ADMIN']
+    );
+
+    if (existingAdmin.rows.length === 0) {
+      // Create new admin user
+      const adminPasswordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+
+      await pool.query(
+        `INSERT INTO users (username, password_hash, full_name, active, is_admin)
+         VALUES ($1, $2, $3, $4, $5)`,
+        ['ADMIN', adminPasswordHash, 'System Administrator', true, true]
+      );
+
+      console.log('Created admin user: ADMIN');
+    } else {
+      // Update existing admin password and ensure admin flag is set
+      const adminPasswordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+
+      await pool.query(
+        `UPDATE users SET password_hash = $2, is_admin = TRUE WHERE username = $1`,
+        ['ADMIN', adminPasswordHash]
+      );
+
+      console.log('Updated admin user: ADMIN');
+    }
+  } else {
+    console.log('ADMIN_PASSWORD not set - skipping admin user creation');
   }
 
   // Seed sample time entries

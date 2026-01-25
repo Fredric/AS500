@@ -69,8 +69,20 @@ export async function initializeDatabase(): Promise<void> {
         password_hash TEXT NOT NULL,
         full_name TEXT,
         active BOOLEAN DEFAULT TRUE,
+        is_admin BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      -- Migration: Add is_admin column if it doesn't exist (for existing databases)
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'is_admin'
+        ) THEN
+          ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS days (
         id SERIAL PRIMARY KEY,

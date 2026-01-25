@@ -1,6 +1,7 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { buildLoginScreen } from './login.js';
 import { buildTimeRegScreen } from './timeReg.js';
+import { buildUserMgmtScreen } from './userMgmt.js';
 
 // Import DSL
 import {
@@ -12,9 +13,10 @@ import {
 } from '../dsl/index.js';
 
 // ============================================
-// Screen Definition (Logical)
+// Screen Definitions (Logical)
 // ============================================
 
+// Regular user menu
 const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
     elements: [
         // Standard header with system name, date/time, and user
@@ -41,12 +43,43 @@ const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
     defaultCursor: 'selection',
 });
 
+// Admin user menu (includes user management option)
+const ADMIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
+    elements: [
+        // Standard header with system name, date/time, and user
+        header({ system: 'AS500 SYSTEM', title: 'MAIN MENU', showDateTime: true, showUser: true }),
+
+        // Instructions
+        text(6, 8, 'Select one of the following:'),
+
+        // Menu options (including admin option 90)
+        menu(8, 13, [
+            { option: 1, label: 'Customer maintenance' },
+            { option: 2, label: 'Order entry' },
+            { option: 3, label: 'Inventory management' },
+            { option: 4, label: 'Reports' },
+            { option: 5, label: 'System utilities' },
+            { option: 6, label: 'Time registration' },
+            { option: 90, label: 'User management' },
+        ], {
+            row: 17,
+            col: 24,
+            length: 2,
+        }),
+    ],
+    statusLine: 'F3=Sign off   F5=Refresh',
+    defaultCursor: 'selection',
+});
+
 // ============================================
 // Screen Builder (uses DSL renderer)
 // ============================================
 
 export function mainMenuScreen(session: Session): Omit<ScreenResponse, 'sessionId'> {
-    const result = render(MAIN_MENU_SCREEN, {}, {
+    // Select screen definition based on admin status
+    const screenDef = session.isAdmin ? ADMIN_MENU_SCREEN : MAIN_MENU_SCREEN;
+
+    const result = render(screenDef, {}, {
         user: session.username || 'UNKNOWN',
     });
 
@@ -75,6 +108,7 @@ export async function handleMainMenu(
     // Handle F3 - Sign off
     if (request.key === 'F3') {
         session.authenticated = false;
+        session.isAdmin = false;
         session.viserId = null;
         session.username = null;
         session.currentScreen = 'LOGIN';
@@ -112,13 +146,31 @@ export async function handleMainMenu(
 
         const option = parseInt(selection, 10);
 
-        if (option < 1 || option > 6 || isNaN(option)) {
+        // Valid options: 1-6 for all users, 90 for admins
+        const validOptions = [1, 2, 3, 4, 5, 6];
+        if (session.isAdmin) {
+            validOptions.push(90);
+        }
+
+        if (!validOptions.includes(option) || isNaN(option)) {
+            const optionRange = session.isAdmin ? '1-6, 90' : '1-6';
             return {
                 ...mainMenuScreen(session),
                 ...base,
-                message: 'Invalid selection. Enter 1-6',
+                message: `Invalid selection. Enter ${optionRange}`,
                 messageType: 'error',
                 bell: true,
+            };
+        }
+
+        // Option 90 - User management (admin only)
+        if (option === 90 && session.isAdmin) {
+            session.screenStack.push('MAIN_MENU');
+            session.currentScreen = 'USER_MGMT';
+
+            return {
+                ...(await buildUserMgmtScreen(session)),
+                ...base,
             };
         }
 
