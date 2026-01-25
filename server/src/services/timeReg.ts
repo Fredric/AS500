@@ -191,11 +191,11 @@ export async function updateDaySum(dayId: number): Promise<void> {
 // ============================================
 
 /**
- * Get all items for a day, sorted by sort_order
+ * Get all items for a day, sorted by start_hour
  */
 export async function getDayItems(dayId: number): Promise<DayItem[]> {
   const result = await pool.query<DayItem>(
-    'SELECT * FROM day_items WHERE day_id = $1 ORDER BY sort_order, start_hour',
+    'SELECT * FROM day_items WHERE day_id = $1 ORDER BY start_hour',
     [dayId]
   );
 
