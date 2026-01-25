@@ -88,6 +88,12 @@ docker-compose up
 # Then deploy to Heroku
 ```
 
+### 4. Build and lockfiles
+
+- **One lockfile per app** – `server/package-lock.json` and `client/package-lock.json` are shared for local, CI, and Heroku. We do not generate different lockfiles per environment.
+- **Build uses `npm ci`** – The build scripts run `npm ci` (not `npm install`) in `server/` and `client/`, so the lockfiles are never modified during build. When adding or updating dependencies, run `npm install` in the relevant directory, then commit both `package.json` and `package-lock.json`.
+- **Client lockfile** – The client lockfile must keep `resolved`/`integrity` and all `@rollup/rollup-*` platform entries (including `@rollup/rollup-linux-x64-gnu` for Heroku). Don’t strip them or use “minimal” lockfile tooling on the client.
+
 ## Deployment Steps
 
 ### Standard Deployment
