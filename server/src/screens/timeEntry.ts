@@ -16,6 +16,7 @@ import {
   createDayItem,
   updateDayItem,
   isValidTime,
+  normalizeTime,
   getDayName,
   type DayItem,
 } from '../services/timeReg.js';
@@ -143,30 +144,34 @@ export async function handleTimeEntry(
 
   // ENTER - Save entry
   if (request.key === 'ENTER') {
-    const startHour = request.input['start_hour']?.trim() || '';
-    const endHour = request.input['end_hour']?.trim() || '';
+    const startHourInput = request.input['start_hour']?.trim() || '';
+    const endHourInput = request.input['end_hour']?.trim() || '';
     const jiratask = request.input['jiratask']?.trim() || null;
     const description = request.input['description']?.trim() || null;
 
     // Validate required fields
-    if (!startHour) {
+    if (!startHourInput) {
       return {
         ...(await buildTimeEntryScreen(session, 'Start time is required', 'error')),
         ...base,
       };
     }
 
-    if (!endHour) {
+    if (!endHourInput) {
       return {
         ...(await buildTimeEntryScreen(session, 'End time is required', 'error')),
         ...base,
       };
     }
 
+    // Normalize time inputs to HH:MM format
+    const startHour = normalizeTime(startHourInput);
+    const endHour = normalizeTime(endHourInput);
+
     // Validate time format
     if (!isValidTime(startHour)) {
       return {
-        ...(await buildTimeEntryScreen(session, 'Invalid start time format. Use HH:MM', 'error')),
+        ...(await buildTimeEntryScreen(session, 'Invalid start time. Use HH:MM or shorthand (8, 800, 0800)', 'error')),
         ...base,
       };
     }
