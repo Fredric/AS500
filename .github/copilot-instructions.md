@@ -54,7 +54,7 @@ docker-compose exec server npm run seed
 ```
 
 This automatically starts:
-- **PostgreSQL** on port 5433 (mapped from container's 5432)
+- **PostgreSQL** on port 5433 (host) mapped from container port 5432
 - **Server** on ws://localhost:3001
 - **Client** on http://localhost:5173
 
@@ -106,7 +106,7 @@ DATABASE_URL=postgresql://as500:as500@postgres:5432/as500
 **For Local Development** (without Docker):
 ```bash
 export PGHOST=localhost
-export PGPORT=5433     # Docker maps 5433:5432
+export PGPORT=5433     # Docker maps host 5433 to container 5432
 export PGUSER=as500
 export PGPASSWORD=as500
 export PGDATABASE=as500
@@ -264,8 +264,8 @@ const screen = render(MY_SCREEN, fieldValues, options);
 
 ## Common Issues
 
-- **Database connection errors**: Ensure PostgreSQL is running via `docker-compose up postgres`
-- **Port conflicts**: Default ports are 5173 (client), 3001 (server), 5433 (postgres)
+- **Database connection errors**: Ensure PostgreSQL is running via `docker-compose up` or `docker-compose up postgres`
+- **Port conflicts**: Default ports are 5173 (client), 3001 (server), 5433 (postgres host port)
 - **Session lost**: Check `server/data/sessions.json` exists and is valid JSON
 - **TypeScript errors**: Ensure you're using ES module syntax with `.js` import extensions
 
