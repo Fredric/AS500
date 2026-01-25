@@ -11,6 +11,9 @@ git commit -m "Your changes"
 
 # 2. Push to Heroku
 git push heroku main
+
+# 3. Run seed script 
+heroku run "ADMIN_PASSWORD=<adminpassword> node server/dist/db/seed.js";
 ```
 
 That's it. Heroku automatically:
