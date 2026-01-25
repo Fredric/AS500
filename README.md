@@ -142,7 +142,7 @@ Both server and client support hot reload:
 
 ## Documentation
 
-See [project.md](project.md) for detailed documentation including:
+See [CLAUDE.MD](CLAUDE.MD) for detailed documentation including:
 - Protocol specification
 - Adding new screens
 - Session management
