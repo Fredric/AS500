@@ -26,7 +26,7 @@ const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
         // Menu options
         menu(8, 13, [
             { option: 1, label: 'Customer maintenance' },
-            { option: 2, label: 'Order entry!' },
+            { option: 2, label: 'Order entry' },
             { option: 3, label: 'Inventory management' },
             { option: 4, label: 'Reports' },
             { option: 5, label: 'System utilities' },
