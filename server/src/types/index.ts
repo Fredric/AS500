@@ -4,6 +4,7 @@ export interface Session {
   viserId: number | null;
   username: string | null;
   authenticated: boolean;
+  isAdmin: boolean;
   currentScreen: string;
   screenStack: string[];
   context: Record<string, unknown>;
@@ -50,8 +51,9 @@ export interface User {
   username: string;
   password_hash: string;
   full_name: string | null;
-  active: number;
-  created_at: string;
+  active: boolean;
+  is_admin: boolean;
+  created_at: Date;
 }
 
 // Screen handler function type

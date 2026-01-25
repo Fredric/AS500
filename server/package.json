@@ -4,25 +4,31 @@
   "description": "AS500 Terminal Server",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=.env.local src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts",
-    "backup": "tsx src/db/backup.ts"
+    "export-data": "tsx scripts/export-sqlite.ts",
+    "import-data": "tsx scripts/import-postgres.ts",
+    "migrate-data": "npm run export-data && npm run import-data",
+    "backup-db": "tsx scripts/backup-database.ts",
+    "restore-db": "tsx scripts/restore-database.ts"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
-    "better-sqlite3": "^11.7.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^22.10.7",
+    "@types/pg": "^8.11.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.14",
+    "bcrypt": "^6.0.0",
+    "pg": "^8.13.0",
+    "typescript": "^5.7.3",
     "uuid": "^11.0.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/bcrypt": "^5.0.2",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.7",
-    "@types/uuid": "^10.0.0",
-    "@types/ws": "^8.5.14",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "better-sqlite3": "^11.7.0",
+    "tsx": "^4.19.2"
   }
 }

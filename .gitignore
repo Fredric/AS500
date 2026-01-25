@@ -5,6 +5,7 @@ node_modules/
 server/data/*.db
 server/data/*.db-wal
 server/data/*.db-shm
+server/data/*.json
 
 # Backups
 server/backups/

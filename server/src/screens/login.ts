@@ -1,6 +1,7 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { validateCredentials } from '../services/auth.js';
 import { mainMenuScreen } from './mainMenu.js';
+import { persistSessions } from '../session/index.js';
 
 // Import DSL
 import {
@@ -108,8 +109,12 @@ export async function handleLogin(
   session.authenticated = true;
   session.viserId = user.id;
   session.username = user.username;
+  session.isAdmin = user.is_admin;
   session.currentScreen = 'MAIN_MENU';
   session.screenStack = ['LOGIN'];
+  
+  // Persist session immediately after authentication
+  persistSessions();
 
   // Return main menu
   return {

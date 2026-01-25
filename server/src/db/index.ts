@@ -1,55 +1,123 @@
-import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import pg from 'pg';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const useDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const ssl =
+  process.env.DATABASE_URL?.includes('amazonaws.com') || process.env.DATABASE_URL?.includes('heroku')
+    ? { rejectUnauthorized: false }
+    : undefined;
 
-const dbPath = join(__dirname, '../../data/as500.db');
+// Connection config for logging (never log password)
+function getConnectionInfo(): string {
+  if (useDatabaseUrl) {
+    const u = process.env.DATABASE_URL ?? '';
+    const match = u.match(/^(postgres(?:ql)?:\/\/)([^:]+):([^@]+)@/);
+    const safe = match ? `${match[1]}${match[2]}:****@${u.split('@')[1] ?? '...'}` : '(DATABASE_URL set, redacted)';
+    return `DATABASE_URL ${safe}`;
+  }
+  return `host=${process.env.PGHOST ?? 'localhost'} port=${process.env.PGPORT ?? '5432'} database=${process.env.PGDATABASE ?? 'as500'} user=${process.env.PGUSER ?? 'as500'}`;
+}
 
-// Ensure data directory exists
-import { mkdirSync } from 'fs';
-mkdirSync(join(__dirname, '../../data'), { recursive: true });
+// PostgreSQL connection pool
+// Supports DATABASE_URL (Heroku) or individual PG* env vars (local)
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl,
+  host: useDatabaseUrl ? undefined : (process.env.PGHOST || 'localhost'),
+  port: useDatabaseUrl ? undefined : parseInt(process.env.PGPORT || '5432', 10),
+  database: useDatabaseUrl ? undefined : (process.env.PGDATABASE || 'as500'),
+  user: useDatabaseUrl ? undefined : (process.env.PGUSER || 'as500'),
+  password: useDatabaseUrl ? undefined : (process.env.PGPASSWORD || 'as500'),
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
 
-const db: Database.Database = new Database(dbPath);
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle PostgreSQL client:', err);
+});
 
-// Enable WAL mode for better concurrency
-db.pragma('journal_mode = WAL');
+/**
+ * Initialize the database schema
+ * Must be called before the server starts accepting connections
+ */
+export async function initializeDatabase(): Promise<void> {
+  console.log('Connecting to PostgreSQL:', getConnectionInfo());
 
-// Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    full_name TEXT,
-    active INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-  );
+  let client: pg.PoolClient;
+  try {
+    client = await pool.connect();
+  } catch (err: unknown) {
+    const pgErr = err as { code?: string; message?: string };
+    if (pgErr?.code === '28P01') {
+      console.error('PostgreSQL auth failed (28P01). Connection used:', getConnectionInfo());
+      console.error(
+        '• Credentials: match docker-compose (as500/as500). Stale volume? Run: docker-compose down -v && docker-compose up -d',
+      );
+      console.error(
+        '• Port conflict: another Postgres on 5432? Use Docker port 5433: set PGPORT=5433 (see docker-compose).',
+      );
+    }
+    throw err;
+  }
 
-  -- Days table (one record per workday per user)
-  CREATE TABLE IF NOT EXISTS days (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    workday TEXT NOT NULL,
-    daysum REAL DEFAULT 0,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, workday),
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        full_name TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        is_admin BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
 
-  -- Day items table (time entries)
-  CREATE TABLE IF NOT EXISTS day_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    day_id INTEGER NOT NULL,
-    start_hour TEXT NOT NULL,
-    end_hour TEXT NOT NULL,
-    jiratask TEXT,
-    description TEXT,
-    rowsum REAL DEFAULT 0,
-    sort_order INTEGER DEFAULT 0,
-    FOREIGN KEY (day_id) REFERENCES days(id) ON DELETE CASCADE
-  );
-`);
+      -- Migration: Add is_admin column if it doesn't exist (for existing databases)
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'is_admin'
+        ) THEN
+          ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+        END IF;
+      END $$;
 
-export default db;
+      CREATE TABLE IF NOT EXISTS days (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        workday DATE NOT NULL,
+        daysum NUMERIC(5,2) DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(user_id, workday)
+      );
+
+      CREATE TABLE IF NOT EXISTS day_items (
+        id SERIAL PRIMARY KEY,
+        day_id INTEGER NOT NULL REFERENCES days(id) ON DELETE CASCADE,
+        start_hour TEXT NOT NULL,
+        end_hour TEXT NOT NULL,
+        jiratask TEXT,
+        description TEXT,
+        rowsum NUMERIC(5,2) DEFAULT 0,
+        sort_order INTEGER DEFAULT 0
+      );
+    `);
+
+    console.log('Database schema initialized');
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Close the database pool (for graceful shutdown)
+ */
+export async function closeDatabase(): Promise<void> {
+  await pool.end();
+  console.log('Database connection pool closed');
+}
+
+export { pool };
+export default pool;

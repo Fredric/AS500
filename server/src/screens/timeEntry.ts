@@ -55,11 +55,11 @@ const TIME_ENTRY_SCREEN = defineScreen('TIME_ENTRY', {
 // Screen Builder
 // ============================================
 
-export function buildTimeEntryScreen(
+export async function buildTimeEntryScreen(
   session: Session,
   message: string | null = null,
   messageType: 'info' | 'warning' | 'error' | null = null
-): Omit<ScreenResponse, 'sessionId'> {
+): Promise<Omit<ScreenResponse, 'sessionId'>> {
   const currentDate = session.context.timeRegDate as string;
   const editItemId = session.context.editItemId as number | null;
 
@@ -67,7 +67,7 @@ export function buildTimeEntryScreen(
   let contextData: Record<string, string> = {};
 
   if (editItemId) {
-    const item = getDayItem(editItemId);
+    const item = await getDayItem(editItemId);
     if (item) {
       contextData = {
         start_hour: item.start_hour,
@@ -124,10 +124,10 @@ export function buildTimeEntryScreen(
 // Screen Handler
 // ============================================
 
-export function handleTimeEntry(
+export async function handleTimeEntry(
   session: Session,
   request: ClientRequest
-): ScreenResponse {
+): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
 
   // F3 or F12 - Cancel and return to TIME_REG
@@ -137,7 +137,7 @@ export function handleTimeEntry(
     delete session.context.editItemId;
 
     return {
-      ...buildTimeRegScreen(session),
+      ...(await buildTimeRegScreen(session)),
       ...base,
     };
   }
@@ -152,14 +152,14 @@ export function handleTimeEntry(
     // Validate required fields
     if (!startHourInput) {
       return {
-        ...buildTimeEntryScreen(session, 'Start time is required', 'error'),
+        ...(await buildTimeEntryScreen(session, 'Start time is required', 'error')),
         ...base,
       };
     }
 
     if (!endHourInput) {
       return {
-        ...buildTimeEntryScreen(session, 'End time is required', 'error'),
+        ...(await buildTimeEntryScreen(session, 'End time is required', 'error')),
         ...base,
       };
     }
@@ -171,14 +171,14 @@ export function handleTimeEntry(
     // Validate time format
     if (!isValidTime(startHour)) {
       return {
-        ...buildTimeEntryScreen(session, 'Invalid start time. Use HH:MM or shorthand (8, 800, 0800)', 'error'),
+        ...(await buildTimeEntryScreen(session, 'Invalid start time. Use HH:MM or shorthand (8, 800, 0800)', 'error')),
         ...base,
       };
     }
 
     if (!isValidTime(endHour)) {
       return {
-        ...buildTimeEntryScreen(session, 'Invalid end time. Use HH:MM or shorthand (8, 800, 0800)', 'error'),
+        ...(await buildTimeEntryScreen(session, 'Invalid end time format. Use HH:MM', 'error')),
         ...base,
       };
     }
@@ -186,7 +186,7 @@ export function handleTimeEntry(
     // Validate end > start (simple check, doesn't handle midnight crossing)
     if (endHour <= startHour) {
       return {
-        ...buildTimeEntryScreen(session, 'End time must be after start time', 'error'),
+        ...(await buildTimeEntryScreen(session, 'End time must be after start time', 'error')),
         ...base,
       };
     }
@@ -197,10 +197,10 @@ export function handleTimeEntry(
     try {
       if (editItemId) {
         // Update existing
-        updateDayItem(editItemId, startHour, endHour, jiratask, description);
+        await updateDayItem(editItemId, startHour, endHour, jiratask, description);
       } else {
         // Create new
-        createDayItem(dayId, startHour, endHour, jiratask, description);
+        await createDayItem(dayId, startHour, endHour, jiratask, description);
       }
 
       // Return to TIME_REG with success message
@@ -211,13 +211,13 @@ export function handleTimeEntry(
       const msg = editItemId ? 'Entry updated' : 'Entry added';
 
       return {
-        ...buildTimeRegScreen(session, msg, 'info'),
+        ...(await buildTimeRegScreen(session, msg, 'info')),
         ...base,
       };
     } catch (error) {
       console.error('Error saving time entry:', error);
       return {
-        ...buildTimeEntryScreen(session, 'Error saving entry', 'error'),
+        ...(await buildTimeEntryScreen(session, 'Error saving entry', 'error')),
         ...base,
       };
     }
@@ -225,7 +225,7 @@ export function handleTimeEntry(
 
   // Default - show screen
   return {
-    ...buildTimeEntryScreen(session),
+    ...(await buildTimeEntryScreen(session)),
     ...base,
   };
 }
