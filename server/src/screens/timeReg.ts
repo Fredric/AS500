@@ -234,11 +234,13 @@ export async function handleTimeReg(
           return {
             ...(await buildTimeRegScreen(session, 'Entry deleted', 'info')),
             ...base,
+            fieldValues: {}, // Clear all field values to remove the "4" from the screen
           };
         } else {
           return {
             ...(await buildTimeRegScreen(session, 'Failed to delete entry', 'error')),
             ...base,
+            fieldValues: {}, // Clear all field values
           };
         }
       }
