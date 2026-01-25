@@ -130,10 +130,10 @@ export function useTerminal() {
           message: response.message,
           messageType: response.messageType,
           statusLine: response.statusLine,
-          // Use server-provided field values, or clear on screen change
-          fieldValues: response.screenId !== prev.screenId
-            ? (response.fieldValues || {})
-            : prev.fieldValues,
+          // Use server-provided field values if explicitly provided, otherwise preserve on same screen
+          fieldValues: response.fieldValues !== undefined
+            ? response.fieldValues
+            : (response.screenId !== prev.screenId ? {} : prev.fieldValues),
           responseCount: prev.responseCount + 1, // Trigger focus on every response
         }));
       } catch (error) {
