@@ -1,7 +1,6 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { buildLoginScreen } from './login.js';
 import { buildTimeRegScreen } from './timeReg.js';
-import { buildBackupMgmtScreen } from './backupMgmt.js';
 
 // Import DSL
 import {
@@ -27,12 +26,11 @@ const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
         // Menu options
         menu(8, 13, [
             { option: 1, label: 'Customer maintenance' },
-            { option: 2, label: 'Order entry' },
+            { option: 2, label: 'Order entry!' },
             { option: 3, label: 'Inventory management' },
             { option: 4, label: 'Reports' },
             { option: 5, label: 'System utilities' },
             { option: 6, label: 'Time registration' },
-            { option: 7, label: 'Backup management' },
         ], {
             row: 17,
             col: 24,
@@ -68,10 +66,10 @@ export function mainMenuScreen(session: Session): Omit<ScreenResponse, 'sessionI
 // Screen Handler (Business Logic)
 // ============================================
 
-export function handleMainMenu(
+export async function handleMainMenu(
     session: Session,
     request: ClientRequest
-): ScreenResponse {
+): Promise<ScreenResponse> {
     const base = { sessionId: session.id };
 
     // Handle F3 - Sign off
@@ -114,11 +112,11 @@ export function handleMainMenu(
 
         const option = parseInt(selection, 10);
 
-        if (option < 1 || option > 7 || isNaN(option)) {
+        if (option < 1 || option > 6 || isNaN(option)) {
             return {
                 ...mainMenuScreen(session),
                 ...base,
-                message: 'Invalid selection. Enter 1-7',
+                message: 'Invalid selection. Enter 1-6',
                 messageType: 'error',
                 bell: true,
             };
@@ -132,18 +130,7 @@ export function handleMainMenu(
             session.context.timeRegDate = new Date().toISOString().split('T')[0];
 
             return {
-                ...buildTimeRegScreen(session),
-                ...base,
-            };
-        }
-
-        // Option 7 - Backup management
-        if (option === 7) {
-            session.screenStack.push('MAIN_MENU');
-            session.currentScreen = 'BACKUP_MGMT';
-
-            return {
-                ...buildBackupMgmtScreen(session),
+                ...(await buildTimeRegScreen(session)),
                 ...base,
             };
         }

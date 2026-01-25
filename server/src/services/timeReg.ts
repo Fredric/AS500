@@ -1,7 +1,7 @@
 // Time Registration Service
 // CRUD operations for days and time entries
 
-import db from '../db/index.js';
+import pool from '../db/index.js';
 
 // Types
 export interface Day {
@@ -9,7 +9,7 @@ export interface Day {
   user_id: number;
   workday: string;
   daysum: number;
-  created_at: string;
+  created_at: Date;
 }
 
 export interface DayItem {
@@ -24,7 +24,7 @@ export interface DayItem {
 }
 
 // ============================================
-// Hour Calculations
+// Hour Calculations (Pure functions - no async needed)
 // ============================================
 
 /**
@@ -36,19 +36,19 @@ export interface DayItem {
 export function calculateHours(start: string, end: string): number {
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
-  
+
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) {
     return 0;
   }
-  
+
   const startMinutes = sh * 60 + sm;
   const endMinutes = eh * 60 + em;
-  
+
   // Handle crossing midnight (end < start)
-  const diffMinutes = endMinutes >= startMinutes 
-    ? endMinutes - startMinutes 
+  const diffMinutes = endMinutes >= startMinutes
+    ? endMinutes - startMinutes
     : (24 * 60 - startMinutes) + endMinutes;
-  
+
   return Math.round((diffMinutes / 60) * 100) / 100; // Round to 2 decimals
 }
 
@@ -78,54 +78,6 @@ export function getDayName(dateStr: string): string {
   return days[date.getDay()] || 'Unknown';
 }
 
-// ============================================
-// Day Operations
-// ============================================
-
-/**
- * Get or create a day record for a user and date
- */
-export function getOrCreateDay(userId: number, workday: string): Day {
-  // Try to find existing
-  let day = db.prepare(`
-    SELECT * FROM days WHERE user_id = ? AND workday = ?
-  `).get(userId, workday) as Day | undefined;
-  
-  if (!day) {
-    // Create new day
-    const result = db.prepare(`
-      INSERT INTO days (user_id, workday, daysum) VALUES (?, ?, 0)
-    `).run(userId, workday);
-    
-    day = {
-      id: result.lastInsertRowid as number,
-      user_id: userId,
-      workday,
-      daysum: 0,
-      created_at: new Date().toISOString(),
-    };
-  }
-  
-  return day;
-}
-
-/**
- * Get day by ID
- */
-export function getDayById(dayId: number): Day | undefined {
-  return db.prepare('SELECT * FROM days WHERE id = ?').get(dayId) as Day | undefined;
-}
-
-/**
- * Update day sum based on items
- */
-export function updateDaySum(dayId: number): void {
-  const items = getDayItems(dayId);
-  const total = items.reduce((sum, item) => sum + item.rowsum, 0);
-  
-  db.prepare('UPDATE days SET daysum = ? WHERE id = ?').run(total, dayId);
-}
-
 /**
  * Get previous day (for navigation)
  * Uses date-only math to avoid timezone issues
@@ -135,7 +87,7 @@ export function getPreviousDay(userId: number, currentDate: string): string {
   const [year, month, day] = currentDate.split('-').map(Number);
   const date = new Date(year, month - 1, day); // month is 0-indexed
   date.setDate(date.getDate() - 1);
-  
+
   // Format back to YYYY-MM-DD
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -152,7 +104,7 @@ export function getNextDay(currentDate: string): string {
   const [year, month, day] = currentDate.split('-').map(Number);
   const date = new Date(year, month - 1, day); // month is 0-indexed
   date.setDate(date.getDate() + 1);
-  
+
   // Format back to YYYY-MM-DD
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -161,109 +113,197 @@ export function getNextDay(currentDate: string): string {
 }
 
 // ============================================
-// Day Item Operations
+// Day Operations (Async)
+// ============================================
+
+/**
+ * Get or create a day record for a user and date
+ */
+export async function getOrCreateDay(userId: number, workday: string): Promise<Day> {
+  // Try to find existing
+  const existing = await pool.query<Day>(
+    'SELECT * FROM days WHERE user_id = $1 AND workday = $2',
+    [userId, workday]
+  );
+
+  if (existing.rows[0]) {
+    const row = existing.rows[0];
+    const workdayValue = row.workday as unknown;
+    return {
+      ...row,
+      daysum: parseFloat(String(row.daysum)),
+      workday: typeof workdayValue === 'string' ? workdayValue : (workdayValue as Date).toISOString().split('T')[0],
+    };
+  }
+
+  // Create new day
+  const result = await pool.query<Day>(
+    `INSERT INTO days (user_id, workday, daysum) VALUES ($1, $2, 0) RETURNING *`,
+    [userId, workday]
+  );
+
+  const row = result.rows[0];
+  const workdayValue = row.workday as unknown;
+  return {
+    ...row,
+    daysum: parseFloat(String(row.daysum)),
+    workday: typeof workdayValue === 'string' ? workdayValue : (workdayValue as Date).toISOString().split('T')[0],
+  };
+}
+
+/**
+ * Get day by ID
+ */
+export async function getDayById(dayId: number): Promise<Day | undefined> {
+  const result = await pool.query<Day>(
+    'SELECT * FROM days WHERE id = $1',
+    [dayId]
+  );
+
+  if (!result.rows[0]) {
+    return undefined;
+  }
+
+  const row = result.rows[0];
+  const workdayValue = row.workday as unknown;
+  return {
+    ...row,
+    daysum: parseFloat(String(row.daysum)),
+    workday: typeof workdayValue === 'string' ? workdayValue : (workdayValue as Date).toISOString().split('T')[0],
+  };
+}
+
+/**
+ * Update day sum based on items
+ */
+export async function updateDaySum(dayId: number): Promise<void> {
+  const items = await getDayItems(dayId);
+  const total = items.reduce((sum, item) => sum + item.rowsum, 0);
+
+  await pool.query(
+    'UPDATE days SET daysum = $1 WHERE id = $2',
+    [total, dayId]
+  );
+}
+
+// ============================================
+// Day Item Operations (Async)
 // ============================================
 
 /**
  * Get all items for a day, sorted by sort_order
  */
-export function getDayItems(dayId: number): DayItem[] {
-  return db.prepare(`
-    SELECT * FROM day_items WHERE day_id = ? ORDER BY sort_order, start_hour
-  `).all(dayId) as DayItem[];
+export async function getDayItems(dayId: number): Promise<DayItem[]> {
+  const result = await pool.query<DayItem>(
+    'SELECT * FROM day_items WHERE day_id = $1 ORDER BY sort_order, start_hour',
+    [dayId]
+  );
+
+  return result.rows.map(row => ({
+    ...row,
+    rowsum: parseFloat(String(row.rowsum)),
+  }));
 }
 
 /**
  * Get a single item by ID
  */
-export function getDayItem(itemId: number): DayItem | undefined {
-  return db.prepare('SELECT * FROM day_items WHERE id = ?').get(itemId) as DayItem | undefined;
+export async function getDayItem(itemId: number): Promise<DayItem | undefined> {
+  const result = await pool.query<DayItem>(
+    'SELECT * FROM day_items WHERE id = $1',
+    [itemId]
+  );
+
+  if (!result.rows[0]) {
+    return undefined;
+  }
+
+  const row = result.rows[0];
+  return {
+    ...row,
+    rowsum: parseFloat(String(row.rowsum)),
+  };
 }
 
 /**
  * Create a new time entry
  */
-export function createDayItem(
+export async function createDayItem(
   dayId: number,
   startHour: string,
   endHour: string,
   jiratask: string | null,
   description: string | null
-): DayItem {
+): Promise<DayItem> {
   const rowsum = calculateHours(startHour, endHour);
-  
+
   // Get max sort order
-  const maxOrder = db.prepare(`
-    SELECT MAX(sort_order) as max FROM day_items WHERE day_id = ?
-  `).get(dayId) as { max: number | null };
-  
-  const sortOrder = (maxOrder.max ?? 0) + 1;
-  
-  const result = db.prepare(`
-    INSERT INTO day_items (day_id, start_hour, end_hour, jiratask, description, rowsum, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(dayId, startHour, endHour, jiratask, description, rowsum, sortOrder);
-  
+  const maxResult = await pool.query<{ max: number | null }>(
+    'SELECT MAX(sort_order) as max FROM day_items WHERE day_id = $1',
+    [dayId]
+  );
+
+  const sortOrder = (maxResult.rows[0]?.max ?? 0) + 1;
+
+  const result = await pool.query<DayItem>(
+    `INSERT INTO day_items (day_id, start_hour, end_hour, jiratask, description, rowsum, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [dayId, startHour, endHour, jiratask, description, rowsum, sortOrder]
+  );
+
   // Update day total
-  updateDaySum(dayId);
-  
+  await updateDaySum(dayId);
+
+  const row = result.rows[0];
   return {
-    id: result.lastInsertRowid as number,
-    day_id: dayId,
-    start_hour: startHour,
-    end_hour: endHour,
-    jiratask,
-    description,
-    rowsum,
-    sort_order: sortOrder,
+    ...row,
+    rowsum: parseFloat(String(row.rowsum)),
   };
 }
 
 /**
  * Update an existing time entry
  */
-export function updateDayItem(
+export async function updateDayItem(
   itemId: number,
   startHour: string,
   endHour: string,
   jiratask: string | null,
   description: string | null
-): DayItem | undefined {
-  const existing = getDayItem(itemId);
+): Promise<DayItem | undefined> {
+  const existing = await getDayItem(itemId);
   if (!existing) return undefined;
-  
+
   const rowsum = calculateHours(startHour, endHour);
-  
-  db.prepare(`
-    UPDATE day_items 
-    SET start_hour = ?, end_hour = ?, jiratask = ?, description = ?, rowsum = ?
-    WHERE id = ?
-  `).run(startHour, endHour, jiratask, description, rowsum, itemId);
-  
+
+  const result = await pool.query<DayItem>(
+    `UPDATE day_items
+     SET start_hour = $1, end_hour = $2, jiratask = $3, description = $4, rowsum = $5
+     WHERE id = $6 RETURNING *`,
+    [startHour, endHour, jiratask, description, rowsum, itemId]
+  );
+
   // Update day total
-  updateDaySum(existing.day_id);
-  
+  await updateDaySum(existing.day_id);
+
+  const row = result.rows[0];
   return {
-    ...existing,
-    start_hour: startHour,
-    end_hour: endHour,
-    jiratask,
-    description,
-    rowsum,
+    ...row,
+    rowsum: parseFloat(String(row.rowsum)),
   };
 }
 
 /**
  * Delete a time entry
  */
-export function deleteDayItem(itemId: number): boolean {
-  const existing = getDayItem(itemId);
+export async function deleteDayItem(itemId: number): Promise<boolean> {
+  const existing = await getDayItem(itemId);
   if (!existing) return false;
-  
-  db.prepare('DELETE FROM day_items WHERE id = ?').run(itemId);
-  
+
+  await pool.query('DELETE FROM day_items WHERE id = $1', [itemId]);
+
   // Update day total
-  updateDaySum(existing.day_id);
-  
+  await updateDaySum(existing.day_id);
+
   return true;
 }

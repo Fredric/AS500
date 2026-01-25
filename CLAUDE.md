@@ -10,8 +10,9 @@ This document provides comprehensive guidance for AI assistants working with the
 
 - **Architecture Pattern**: "Dumb Terminal" - Backend owns ALL logic, frontend is purely presentational
 - **Communication**: Real-time WebSocket (ws protocol)
-- **Backend**: Node.js + TypeScript + SQLite
+- **Backend**: Node.js + TypeScript + PostgreSQL
 - **Frontend**: React + TypeScript + Vite
+- **Development**: Docker Compose (PostgreSQL + Server + Client containers)
 - **Purpose**: Time tracking system with authentic AS/400 UX
 
 ### Critical Architectural Principle
@@ -34,15 +35,20 @@ AS500/
 ├── project.md                # Comprehensive technical documentation
 ├── BACKUP.md                 # Backup system documentation
 ├── CLAUDE.md                 # This file - AI assistant guide
+├── docker-compose.yml        # Docker development environment
 │
 ├── server/                   # Backend (Node.js + TypeScript)
 │   ├── package.json         # Server dependencies
 │   ├── tsconfig.json        # TypeScript config (ES2022, ESNext modules)
 │   │
-│   ├── data/                # SQLite database (auto-created, gitignored)
-│   │   └── as500.db
+│   ├── data/                # Session persistence (dev only, gitignored)
+│   │   └── sessions.json    # Persisted sessions for dev hot-reload
 │   │
-│   ├── backups/             # Database backups (auto-generated, gitignored)
+│   ├── backups/             # Database backups (pg_dump output, gitignored)
+│   │
+│   ├── scripts/             # Database utility scripts
+│   │   ├── backup-database.ts   # PostgreSQL backup (pg_dump)
+│   │   └── restore-database.ts  # PostgreSQL restore (psql)
 │   │
 │   └── src/
 │       ├── index.ts         # WebSocket server entry point & router
@@ -51,18 +57,15 @@ AS500/
 │       │   └── index.ts     # Shared TypeScript interfaces
 │       │
 │       ├── db/
-│       │   ├── index.ts     # SQLite connection & schema
-│       │   ├── seed.ts      # Database seeding script
-│       │   └── backup.ts    # Manual backup utility
+│       │   ├── index.ts     # PostgreSQL connection pool & schema
+│       │   └── seed.ts      # Database seeding script
 │       │
 │       ├── session/
-│       │   └── index.ts     # In-memory session management
+│       │   └── index.ts     # Session management (persisted to file in dev)
 │       │
 │       ├── services/
 │       │   ├── auth.ts      # Authentication (bcrypt)
-│       │   ├── timeReg.ts   # Time tracking business logic
-│       │   ├── backup.ts    # Backup operations
-│       │   └── backupScheduler.ts  # Automated backup scheduling
+│       │   └── timeReg.ts   # Time tracking business logic
 │       │
 │       ├── dsl/             # Screen DSL system (like AS/400 DDS)
 │       │   ├── index.ts     # Public API exports
@@ -80,8 +83,7 @@ AS500/
 │           ├── mainMenu.ts  # MAIN_MENU screen
 │           ├── timeReg.ts   # TIME_REG (subfile list)
 │           ├── timeEntry.ts # TIME_ENTRY (form)
-│           ├── timeRegHelp.ts  # TIME_REG_HELP
-│           └── backupMgmt.ts   # BACKUP_MGMT
+│           └── timeRegHelp.ts  # TIME_REG_HELP
 │
 └── client/                  # Frontend (React + TypeScript)
     ├── package.json        # Client dependencies
@@ -115,8 +117,8 @@ AS500/
 | Package | Version | Purpose |
 |---------|---------|---------|
 | ws | ^8.18.0 | WebSocket server |
-| better-sqlite3 | ^11.7.0 | SQLite database with WAL mode |
-| bcrypt | ^5.1.1 | Password hashing (10 rounds) |
+| pg | ^8.13.0 | PostgreSQL client (connection pool) |
+| bcrypt | ^6.0.0 | Password hashing (10 rounds) |
 | uuid | ^11.0.4 | Session ID generation |
 | tsx | ^4.19.2 | TypeScript execution for dev |
 | typescript | ^5.7.3 | Type checking |
@@ -151,28 +153,41 @@ AS500/
 
 ## Development Workflows
 
-### Initial Setup
+### Initial Setup (Docker - Recommended)
 
 ```bash
-# Server setup
-cd server
-npm install
-npm run seed    # Create database and default user (FREDRIC/fredric)
+# Start all services (PostgreSQL, Server, Client)
+docker-compose up
 
-# Client setup (in another terminal)
-cd client
-npm install
+# In another terminal, seed the database
+docker-compose exec server npm run seed
 ```
+
+This starts:
+- **PostgreSQL** on port 5433 (mapped from container's 5432)
+- **Server** on ws://localhost:3001
+- **Client** on http://localhost:5173
 
 ### Development Commands
 
-**Server** (`server/`):
+**Docker Compose** (from project root):
 ```bash
-npm run dev     # Start dev server with hot reload (tsx watch)
-npm run build   # Compile TypeScript to dist/
-npm start       # Run compiled production build
-npm run seed    # Seed database with test data
-npm run backup  # Create manual backup
+docker-compose up           # Start all services
+docker-compose up -d        # Start in background
+docker-compose down         # Stop all services
+docker-compose down -v      # Stop and remove volumes (reset DB)
+docker-compose logs -f      # Follow logs
+docker-compose exec server npm run seed  # Seed database
+```
+
+**Server** (`server/` - run inside container or locally):
+```bash
+npm run dev       # Start dev server with hot reload (tsx watch)
+npm run build     # Compile TypeScript to dist/
+npm start         # Run compiled production build
+npm run seed      # Seed database with test data
+npm run backup-db   # Create PostgreSQL backup (pg_dump)
+npm run restore-db <file>  # Restore from backup (psql)
 ```
 
 **Client** (`client/`):
@@ -184,29 +199,41 @@ npm run preview # Preview production build
 
 ### Running the Application
 
-1. **Terminal 1**: Start server
-   ```bash
-   cd server
-   npm run dev
-   # Server runs on ws://localhost:3001
-   ```
+**Option 1: Docker (Recommended)**
+```bash
+docker-compose up
+# Open http://localhost:5173
+# Login: FREDRIC / fredric
+```
 
-2. **Terminal 2**: Start client
-   ```bash
-   cd client
-   npm run dev
-   # Client runs on http://localhost:5173
-   ```
+**Option 2: Local Development**
+1. Start PostgreSQL (use Docker or local install)
+2. Set environment variables (see below)
+3. Run server and client manually
 
-3. **Browser**: Open http://localhost:5173
-   - Login: FREDRIC / fredric
+### Environment Variables
+
+**For Docker** (set automatically via docker-compose.yml):
+```
+DATABASE_URL=postgresql://as500:as500@postgres:5432/as500
+```
+
+**For Local Development** (without Docker):
+```bash
+export PGHOST=localhost
+export PGPORT=5433     # Docker maps 5433:5432
+export PGUSER=as500
+export PGPASSWORD=as500
+export PGDATABASE=as500
+```
 
 ### Development Workflow
 
-1. Server changes are hot-reloaded by `tsx watch`
-2. Client changes are hot-reloaded by Vite
-3. Database changes persist in `server/data/as500.db`
-4. To reset database: `rm -rf server/data && npm run seed`
+1. **Docker manages everything**: PostgreSQL, Server, Client all run in containers
+2. **Hot reload works**: Server uses `tsx watch`, Client uses Vite
+3. **Sessions persist**: Sessions are saved to `server/data/sessions.json` during development (survives server restarts)
+4. **Database persists**: PostgreSQL data stored in Docker volume `postgres_data`
+5. **To reset database**: `docker-compose down -v && docker-compose up`
 
 ---
 
@@ -222,7 +249,7 @@ npm run preview # Preview production build
 └─────────────┘                    └──────┬──────┘
                                           │
                                    ┌──────▼──────┐
-                                   │   SQLite    │
+                                   │ PostgreSQL  │
                                    └─────────────┘
 ```
 
@@ -310,7 +337,12 @@ const screen = render(MY_SCREEN, fieldValues, options);
 
 ### 4. Session Management
 
-**Storage**: In-memory Map (not persisted to database)
+**Storage**: In-memory Map + file persistence (development only)
+
+In development mode (`NODE_ENV !== 'production'`), sessions are automatically persisted to `server/data/sessions.json`. This means:
+- Sessions survive server restarts during development
+- Hot-reload doesn't lose your login state
+- File writes are debounced (500ms) to avoid excessive I/O
 
 **Session Interface** (`server/src/types/index.ts`):
 ```typescript
@@ -332,6 +364,7 @@ interface Session {
 3. Session timeout: 15 minutes of inactivity
 4. On page refresh: client sends RESUME with sessionId
 5. On sign-off (F3): session deleted, cookie cleared
+6. (Dev only) Sessions saved to file on every change
 
 **File**: `server/src/session/index.ts`
 
@@ -339,20 +372,35 @@ interface Session {
 
 ## Database Schema
 
-**Database**: SQLite with WAL mode enabled
-**Location**: `server/data/as500.db`
+**Database**: PostgreSQL 16 (Alpine)
+**Connection**: Via `pg` package with connection pool
+**Location**: Docker volume `postgres_data` (or external PostgreSQL instance)
+
+### Connection Configuration
+
+The server supports two connection methods:
+
+1. **DATABASE_URL** (preferred for Docker/production):
+   ```
+   postgresql://as500:as500@postgres:5432/as500
+   ```
+
+2. **Individual PG* variables** (for local development):
+   ```
+   PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
+   ```
 
 ### Tables
 
 #### users
 ```sql
 CREATE TABLE users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,       -- bcrypt hash
   full_name TEXT,
-  active INTEGER DEFAULT 1,          -- Boolean (1 = active)
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```
 
@@ -360,13 +408,12 @@ CREATE TABLE users (
 Time registration - one record per user per day
 ```sql
 CREATE TABLE days (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  workday TEXT NOT NULL,             -- "YYYY-MM-DD"
-  daysum REAL DEFAULT 0,             -- Total hours for day
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(user_id, workday),
-  FOREIGN KEY (user_id) REFERENCES users(id)
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  workday DATE NOT NULL,
+  daysum NUMERIC(5,2) DEFAULT 0,     -- Total hours for day
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(user_id, workday)
 );
 ```
 
@@ -374,20 +421,19 @@ CREATE TABLE days (
 Individual time entries for a day
 ```sql
 CREATE TABLE day_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  day_id INTEGER NOT NULL,
+  id SERIAL PRIMARY KEY,
+  day_id INTEGER NOT NULL REFERENCES days(id) ON DELETE CASCADE,
   start_hour TEXT NOT NULL,          -- "HH:MM"
   end_hour TEXT NOT NULL,            -- "HH:MM"
   jiratask TEXT,                     -- e.g., "STEAKT-2987"
   description TEXT,                  -- Free text (30 chars)
-  rowsum REAL DEFAULT 0,             -- Calculated hours
-  sort_order INTEGER DEFAULT 0,
-  FOREIGN KEY (day_id) REFERENCES days(id) ON DELETE CASCADE
+  rowsum NUMERIC(5,2) DEFAULT 0,     -- Calculated hours
+  sort_order INTEGER DEFAULT 0
 );
 ```
 
 **Files**:
-- Schema: `server/src/db/index.ts`
+- Schema & Pool: `server/src/db/index.ts`
 - Seeding: `server/src/db/seed.ts`
 
 ---
@@ -407,15 +453,15 @@ CREATE TABLE day_items (
 
 3. **Function Signatures**:
    ```typescript
-   // Screen handlers
-   export function handleMyScreen(
+   // Screen handlers (async for database operations)
+   export async function handleMyScreen(
      session: Session,
      request: ClientRequest
-   ): ScreenResponse {
+   ): Promise<ScreenResponse> {
      // ...
    }
 
-   // Screen builders
+   // Screen builders (can be sync if no DB calls)
    export function buildMyScreen(
      session: Session,
      message?: string,
@@ -473,10 +519,16 @@ CREATE TABLE day_items (
    }
    ```
 
-2. **Database Operations**: Use synchronous better-sqlite3 API
+2. **Database Operations**: Use async PostgreSQL pool API
    ```typescript
-   const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
-   const user = stmt.get(username);
+   import { pool } from '../db/index.js';
+
+   // Query with parameters (use $1, $2, etc. for placeholders)
+   const result = await pool.query(
+     'SELECT * FROM users WHERE username = $1',
+     [username]
+   );
+   const user = result.rows[0];
    ```
 
 3. **Session Context**: Store working data in `session.context`
@@ -521,11 +573,11 @@ export function buildMyScreen(
   return render(MY_SCREEN, fieldValues, { message, messageType, user: session.username });
 }
 
-// Screen handler (business logic)
-export function handleMyScreen(
+// Screen handler (business logic - async for DB operations)
+export async function handleMyScreen(
   session: Session,
   request: ClientRequest
-): ScreenResponse {
+): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
 
   // Handle F3 (Exit)
@@ -549,7 +601,7 @@ export function handleMyScreen(
 
     // Process business logic
     try {
-      // ... do work ...
+      // ... do work (await database operations) ...
       session.currentScreen = 'NEXT_SCREEN';
       // Return next screen...
     } catch (error) {
@@ -686,13 +738,13 @@ line(row: number, char?: string)
 
 ### Task 1: Add a Database Table
 
-1. **Edit schema** in `server/src/db/index.ts`:
+1. **Edit schema** in `server/src/db/index.ts` (inside `initializeDatabase()`):
    ```typescript
-   db.exec(`
+   await client.query(`
      CREATE TABLE IF NOT EXISTS my_table (
-       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       id SERIAL PRIMARY KEY,
        name TEXT NOT NULL,
-       created_at TEXT DEFAULT CURRENT_TIMESTAMP
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
      )
    `);
    ```
@@ -702,37 +754,49 @@ line(row: number, char?: string)
    export interface MyModel {
      id: number;
      name: string;
-     created_at: string;
+     created_at: Date;
    }
    ```
 
 3. **Reset database**:
    ```bash
-   cd server
-   rm -rf data/
-   npm run seed
+   # With Docker
+   docker-compose down -v && docker-compose up -d
+   docker-compose exec server npm run seed
+
+   # Or just re-run seed (tables use IF NOT EXISTS)
+   docker-compose exec server npm run seed
    ```
 
 ### Task 2: Add Business Logic
 
 1. **Create service file** `server/src/services/myService.ts`:
    ```typescript
-   import { db } from '../db/index.js';
+   import { pool } from '../db/index.js';
 
-   export function getMyData(userId: number) {
-     const stmt = db.prepare('SELECT * FROM my_table WHERE user_id = ?');
-     return stmt.all(userId);
+   export async function getMyData(userId: number) {
+     const result = await pool.query(
+       'SELECT * FROM my_table WHERE user_id = $1',
+       [userId]
+     );
+     return result.rows;
    }
 
-   export function createMyRecord(data: { name: string }) {
-     const stmt = db.prepare('INSERT INTO my_table (name) VALUES (?)');
-     return stmt.run(data.name);
+   export async function createMyRecord(data: { name: string }) {
+     const result = await pool.query(
+       'INSERT INTO my_table (name) VALUES ($1) RETURNING *',
+       [data.name]
+     );
+     return result.rows[0];
    }
    ```
 
-2. **Import in screen handler**:
+2. **Import in screen handler** (handlers are async):
    ```typescript
    import { getMyData, createMyRecord } from '../services/myService.js';
+
+   // In handler:
+   const data = await getMyData(session.viserId!);
    ```
 
 ### Task 3: Modify Existing Screen
@@ -850,8 +914,8 @@ Standard F-key usage (follow these conventions):
 
 ```typescript
 try {
-  // Database or business logic operation
-  const result = db.prepare('...').run(...);
+  // Database or business logic operation (async)
+  const result = await pool.query('...', [...]);
 
   // Success - navigate or show success message
   return { ...buildNextScreen(session, 'Success!', 'info'), ...base };
@@ -907,21 +971,46 @@ For now, test manually:
 
 ## Troubleshooting Guide
 
-### Server Won't Start
+### Docker Issues
 
-**Error**: Port 3001 already in use
+**Containers won't start**:
 ```bash
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs
+
+# Restart everything
+docker-compose down && docker-compose up
+```
+
+**PostgreSQL authentication failed (28P01)**:
+```bash
+# Stale volume with old credentials - reset everything
+docker-compose down -v
+docker-compose up
+```
+
+**Port conflicts**:
+```bash
+# Check what's using ports
+lsof -ti:3001   # Server
+lsof -ti:5173   # Client
+lsof -ti:5433   # PostgreSQL
+
+# Kill processes if needed
 lsof -ti:3001 | xargs kill -9
 ```
 
-**Error**: Database locked
-```bash
-cd server
-rm -rf data/
-npm run seed
-```
+### Server Won't Start
 
-**Error**: Module not found
+**Error**: Cannot connect to PostgreSQL
+- Ensure Docker containers are running: `docker-compose ps`
+- Check PostgreSQL is healthy: `docker-compose logs postgres`
+- Verify port 5433 is accessible
+
+**Error**: Module not found (running locally)
 ```bash
 cd server
 rm -rf node_modules package-lock.json
@@ -944,18 +1033,38 @@ lsof -ti:5173 | xargs kill -9
 
 **Reset database completely**:
 ```bash
-cd server
-rm -rf data/ backups/
-npm run seed
+# Remove Docker volume and recreate
+docker-compose down -v
+docker-compose up -d
+docker-compose exec server npm run seed
 ```
 
 **View database contents**:
 ```bash
-cd server/data
-sqlite3 as500.db
-> .tables
-> SELECT * FROM users;
-> .quit
+# Connect to PostgreSQL in Docker
+docker-compose exec postgres psql -U as500 -d as500
+
+# SQL commands
+\dt                    -- List tables
+SELECT * FROM users;   -- Query data
+\q                     -- Quit
+```
+
+**Create a backup**:
+```bash
+# From host (requires pg_dump installed)
+npm run backup-db
+
+# Output goes to server/backups/as500-backup-TIMESTAMP.sql
+```
+
+**Restore from backup**:
+```bash
+# List available backups
+ls server/backups/
+
+# Restore (3-second warning before proceeding)
+npm run restore-db as500-backup-2026-01-24T15-30-45.sql
 ```
 
 ### Session Issues
@@ -964,6 +1073,11 @@ sqlite3 as500.db
 - Open DevTools → Application → Cookies
 - Delete `as500_session` cookie
 - Refresh page
+
+**Clear persisted sessions** (dev mode):
+```bash
+rm server/data/sessions.json
+```
 
 **Session timeout**:
 - Sessions expire after 15 minutes of inactivity
@@ -974,9 +1088,8 @@ sqlite3 as500.db
 
 **TypeScript errors**:
 ```bash
-# Server
-cd server
-npx tsc --noEmit
+# Server (inside Docker or locally)
+docker-compose exec server npx tsc --noEmit
 
 # Client
 cd client
@@ -1021,6 +1134,7 @@ rm -rf dist/
 
 ### Configuration
 
+- **Docker Compose**: `docker-compose.yml` - Development environment
 - **Server Package**: `server/package.json`
 - **Client Package**: `client/package.json`
 - **Server TypeScript**: `server/tsconfig.json`
@@ -1028,52 +1142,73 @@ rm -rf dist/
 - **Vite Config**: `client/vite.config.ts`
 - **Git Ignore**: `.gitignore`
 
+### Database Scripts
+
+- **Backup**: `server/scripts/backup-database.ts` - Creates pg_dump backups
+- **Restore**: `server/scripts/restore-database.ts` - Restores from SQL dump
+
 ### Documentation
 
 - **README**: `README.md` - Quick start
 - **Project Docs**: `project.md` - Comprehensive technical docs
-- **Backup Docs**: `BACKUP.md` - Backup system guide
 - **This File**: `CLAUDE.md` - AI assistant guide
 
 ---
 
 ## Backup System
 
-The project includes an automated backup system using SQLite's native Online Backup API.
+The project includes backup/restore scripts using PostgreSQL's native `pg_dump` and `psql` tools.
 
 ### Key Features
 
-- **Hot Backups**: No server downtime required
-- **Scheduled**: Automatic backups every 60 minutes
-- **Retention**: Keeps last 10 backups
+- **Format**: Plain SQL dumps (human-readable, portable)
+- **Tool**: Uses `pg_dump` for backup, `psql` for restore
 - **Location**: `server/backups/`
-- **UI Access**: Main menu option 7
+- **Naming**: `as500-backup-YYYY-MM-DDTHH-MM-SS.sql`
 
-### Configuration
+### Prerequisites
 
-Edit `server/src/index.ts`:
-```typescript
-startBackupScheduler({
-  enabled: true,          // Enable/disable
-  intervalMinutes: 60,    // Frequency
-  keepCount: 10,         // Retention count
-});
+PostgreSQL client tools must be installed on your host machine:
+```bash
+# macOS
+brew install postgresql
+
+# Ubuntu/Debian
+sudo apt-get install postgresql-client
 ```
 
 ### Manual Backup
 
 ```bash
+# From project root (connects to Docker PostgreSQL on port 5433)
 cd server
-npm run backup
+npm run backup-db
+
+# Output: server/backups/as500-backup-2026-01-25T10-30-45.sql
 ```
 
 ### Restore from Backup
 
-1. Stop the server
-2. Copy backup file: `cp backups/as500-backup-*.db data/as500.db`
-3. Restart server
+```bash
+cd server
 
-**See** `BACKUP.md` for complete documentation.
+# List available backups
+ls backups/
+
+# Restore (has 3-second safety delay)
+npm run restore-db as500-backup-2026-01-25T10-30-45.sql
+
+# Can also use full path
+npm run restore-db backups/as500-backup-2026-01-25T10-30-45.sql
+```
+
+⚠️ **Warning**: Restore replaces ALL existing data in the database.
+
+### Connection Settings
+
+The scripts automatically detect connection settings:
+1. **DATABASE_URL** environment variable (Docker/production)
+2. **PG* variables** (PGHOST, PGPORT, etc.) - defaults to localhost:5433
 
 ---
 
@@ -1088,6 +1223,7 @@ These are created by the seed script (`npm run seed`).
 
 ## Ports
 
+- **PostgreSQL**: localhost:5433 (Docker maps 5433→5432)
 - **Server WebSocket**: ws://localhost:3001
 - **Client Dev Server**: http://localhost:5173
 
@@ -1144,8 +1280,9 @@ These are created by the seed script (`npm run seed`).
 ### External Documentation
 
 - **WebSocket API**: https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API
-- **SQLite**: https://www.sqlite.org/docs.html
-- **better-sqlite3**: https://github.com/WiseLibs/better-sqlite3
+- **PostgreSQL**: https://www.postgresql.org/docs/
+- **node-postgres (pg)**: https://node-postgres.com/
+- **Docker Compose**: https://docs.docker.com/compose/
 - **React**: https://react.dev/
 - **Vite**: https://vitejs.dev/
 - **TypeScript**: https://www.typescriptlang.org/docs/
@@ -1160,5 +1297,5 @@ This project is inspired by AS/400 (IBM i) systems:
 
 ---
 
-**Last Updated**: 2026-01-24
-**Project Status**: Working prototype with time tracking feature
+**Last Updated**: 2026-01-25
+**Project Status**: Working prototype with time tracking feature (Docker + PostgreSQL)
