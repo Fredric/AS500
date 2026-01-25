@@ -172,6 +172,26 @@ heroku pg:psql
 UPDATE users SET status = 'active' WHERE status IS NULL;
 ```
 
+## Run locally against Heroku Postgres
+
+To use the Heroku database when running the app locally (e.g. via Docker Compose) instead of a local Postgres:
+
+1. **Get your `DATABASE_URL`:**
+   ```bash
+   heroku config:get DATABASE_URL -a YOUR_APP_NAME
+   ```
+
+2. **Run with the Heroku-DB Compose file:**
+   ```bash
+   DATABASE_URL='postgres://...' docker-compose -f docker-compose.heroku-db.yml up
+   ```
+   Or put `DATABASE_URL=...` in a `.env` file (gitignored) in the project root and run:
+   ```bash
+   docker-compose -f docker-compose.heroku-db.yml up
+   ```
+
+This starts only the server and client; no local Postgres container. The server connects to Heroku Postgres (SSL is handled automatically).
+
 ## Useful Commands
 
 ```bash
