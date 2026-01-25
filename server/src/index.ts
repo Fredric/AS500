@@ -1,3 +1,8 @@
+import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { readFile, stat } from 'fs/promises';
+import { join, extname } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createSession, getSession } from './session/index.js';
 import { buildLoginScreen, handleLogin } from './screens/login.js';
@@ -10,7 +15,59 @@ import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 import { initializeDatabase, closeDatabase } from './db/index.js';
 import { handleTimeRegHelp } from './screens/timeRegHelp.js';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Static file serving for production
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const CLIENT_DIST = join(__dirname, '../../client/dist');
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = req.url || '/';
+  let filePath = join(CLIENT_DIST, url === '/' ? 'index.html' : url);
+
+  try {
+    const stats = await stat(filePath);
+    if (stats.isDirectory()) {
+      filePath = join(filePath, 'index.html');
+    }
+
+    const content = await readFile(filePath);
+    const ext = extname(filePath);
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(content);
+  } catch {
+    // File not found - serve index.html for SPA routing
+    try {
+      const indexContent = await readFile(join(CLIENT_DIST, 'index.html'));
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(indexContent);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+    }
+  }
+}
+
+// Ping interval for keeping WebSocket connections alive (Heroku 55s timeout)
+const PING_INTERVAL = 30000; // 30 seconds
 
 // Map WebSocket connections to session IDs
 const connectionSessions = new Map<WebSocket, string>();
@@ -50,12 +107,47 @@ async function startServer() {
   // Initialize database before starting server
   await initializeDatabase();
 
-  const wss = new WebSocketServer({ port: PORT });
+  // Create HTTP server for static file serving in production
+  const httpServer = createServer((req, res) => {
+    if (IS_PRODUCTION) {
+      serveStatic(req, res);
+    } else {
+      // In development, just return a simple message (Vite serves the client)
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('AS500 WebSocket Server - Use Vite dev server for client');
+    }
+  });
 
-  console.log(`AS500 Server running on ws://localhost:${PORT}`);
+  // Attach WebSocket server to HTTP server
+  const wss = new WebSocketServer({ server: httpServer });
+
+  // Start HTTP server
+  httpServer.listen(PORT, () => {
+    console.log(`AS500 Server running on port ${PORT}`);
+    if (IS_PRODUCTION) {
+      console.log(`Serving static files from ${CLIENT_DIST}`);
+    }
+  });
+
+  // Ping/pong keepalive for Heroku (55s idle timeout)
+  const pingInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if ((ws as WebSocket & { isAlive?: boolean }).isAlive === false) {
+        return ws.terminate();
+      }
+      (ws as WebSocket & { isAlive?: boolean }).isAlive = false;
+      ws.ping();
+    });
+  }, PING_INTERVAL);
 
   wss.on('connection', (ws: WebSocket) => {
     console.log('Client connected');
+
+    // Mark connection as alive for ping/pong
+    (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+    ws.on('pong', () => {
+      (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+    });
 
     // Don't create session immediately - wait for first message
     // This allows client to send RESUME with existing sessionId
@@ -234,21 +326,19 @@ async function startServer() {
   });
 
   // Graceful shutdown
-  process.on('SIGINT', async () => {
+  const shutdown = async () => {
     console.log('\nShutting down...');
+    clearInterval(pingInterval);
     wss.close(async () => {
-      await closeDatabase();
-      process.exit(0);
+      httpServer.close(async () => {
+        await closeDatabase();
+        process.exit(0);
+      });
     });
-  });
+  };
 
-  process.on('SIGTERM', async () => {
-    console.log('\nShutting down...');
-    wss.close(async () => {
-      await closeDatabase();
-      process.exit(0);
-    });
-  });
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 // Start the server

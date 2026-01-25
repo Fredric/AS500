@@ -1,7 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ScreenResponse, ClientRequest, Field } from '../types';
 
-const WS_URL = 'ws://localhost:3000';
+// Dynamic WebSocket URL: use secure wss:// in production, ws:// in development
+function getWebSocketUrl(): string {
+  if (import.meta.env.PROD) {
+    // Production: connect to same host using secure WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+  // Development: connect to local server
+  return 'ws://localhost:3001';
+}
+
+const WS_URL = getWebSocketUrl();
 const SESSION_COOKIE_NAME = 'as500_session';
 
 // Cookie helpers

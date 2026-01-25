@@ -4,8 +4,12 @@
   "description": "AS500 Terminal System - AS/400 inspired time tracking",
   "private": true,
   "scripts": {
-    "build": "cd server && npm install && npm run build",
-    "heroku-postbuild": "cd server && npm run build"
+    "build:server": "cd server && npm install && npm run build",
+    "build:client": "cd client && npm install && npm run build",
+    "build": "npm run build:server && npm run build:client",
+    "start": "cd server && npm start",
+    "heroku-postbuild": "npm run build",
+    "seed": "cd server && npm run seed"
   },
   "engines": {
     "node": "20.x"
