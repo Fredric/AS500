@@ -70,6 +70,9 @@ export function useTerminal() {
     wsRef.current = ws;
     hasResumedRef.current = false;
 
+    // Heartbeat interval to keep session alive (every 60 seconds)
+    let heartbeatInterval: NodeJS.Timeout | null = null;
+
     ws.onopen = () => {
       setState(prev => ({ ...prev, connected: true }));
 
@@ -97,11 +100,34 @@ export function useTerminal() {
         };
         ws.send(JSON.stringify(initRequest));
       }
+
+      // Start heartbeat to keep session alive
+      heartbeatInterval = setInterval(() => {
+        const currentSessionId = storedSessionRef.current;
+        if (ws.readyState === WebSocket.OPEN && currentSessionId) {
+          const pingRequest: ClientRequest = {
+            sessionId: currentSessionId,
+            screenId: '',
+            cursor: { row: 0, col: 0 },
+            input: {},
+            key: 'PING',
+          };
+          ws.send(JSON.stringify(pingRequest));
+        }
+      }, 60000); // Send heartbeat every 60 seconds
     };
 
     ws.onmessage = (event) => {
       try {
-        const response: ScreenResponse = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
+
+        // Handle PONG response (heartbeat acknowledgment)
+        if (data.type === 'PONG') {
+          // Heartbeat acknowledged, no action needed
+          return;
+        }
+
+        const response: ScreenResponse = data;
 
         // Play bell if requested
         if (response.bell) {
@@ -143,6 +169,9 @@ export function useTerminal() {
 
     ws.onclose = () => {
       setState(prev => ({ ...prev, connected: false }));
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
     };
 
     ws.onerror = (error) => {
@@ -150,6 +179,9 @@ export function useTerminal() {
     };
 
     return () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
       ws.close();
     };
   }, []);

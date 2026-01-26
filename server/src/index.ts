@@ -205,6 +205,21 @@ async function startServer() {
           return;
         }
 
+        // Handle PING - heartbeat to keep session alive
+        if (request.key === 'PING' && request.sessionId) {
+          const session = getSession(request.sessionId);
+          
+          if (session) {
+            // Session found and activity updated by getSession()
+            // Send minimal acknowledgment (no screen update needed)
+            ws.send(JSON.stringify({ type: 'PONG', sessionId: session.id }));
+            return;
+          }
+          
+          // Session not found or expired - client will need to reconnect
+          return;
+        }
+
         // Get or create session
         let currentSession: Session | null = null;
 
