@@ -198,6 +198,7 @@ export default function Terminal() {
           }}
           type={field.type === 'password' ? 'password' : 'text'}
           className={`terminal-field ${field.type}`}
+          data-field={field.name}
           style={{ width: `${field.length}ch` }}
           maxLength={field.length}
           value={value}

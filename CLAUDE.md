@@ -932,40 +932,248 @@ try {
 
 ## Testing Approach
 
-### Current State
+### Current Testing Setup
 
-⚠️ **No testing framework is currently set up.** This is a working prototype without formal tests.
+✅ **Playwright E2E tests with automated setup/teardown** - Tests are now fully automated with data management.
 
-### Recommended Testing Strategy (Future)
+### Test Files
 
-1. **Backend Unit Tests**:
-   - Test service functions (business logic)
-   - Test DSL rendering functions
-   - Test database operations
-   - Recommended: Vitest or Jest
+#### 1. `tests/scrollable-subfile.spec.ts` (8 tests)
+Tests the TIME_REG screen pagination functionality:
+- Verifies "More..." indicator for pages with overflow
+- Tests PageUp/PageDown navigation
+- Tests boundary conditions (first/last page)
+- Tests pagination reset on day switch
+- ~15 seconds to run
 
-2. **Backend Integration Tests**:
-   - Test screen handlers with mock sessions
-   - Test WebSocket message flow
-   - Test authentication flow
+#### 2. `tests/time-registration-crud.spec.ts` (3 tests)
+**Use this as a template for testing add/edit/delete on other screens:**
+- **Add**: Press F6 → Fill form → Verify entry appears
+- **Edit**: Select option "2" → Update field → Verify change
+- **Delete**: Select option "4" → Verify entry removed
+- ~4 seconds to run
+- Minimal, clear code - easy to copy and adapt
 
-3. **Frontend Unit Tests**:
-   - Test Terminal component rendering
-   - Test useTerminal hook
-   - Recommended: Vitest + React Testing Library
+### Test Data Management
 
-4. **E2E Tests**:
-   - Test full user flows (login, navigation, data entry)
-   - Recommended: Playwright or Cypress
+**Automated setup/cleanup** using shared utilities:
 
-### Manual Testing
+```typescript
+import { setupTestData, teardownTestData } from './testSetup.js';
 
-For now, test manually:
-1. Start server and client
-2. Test each screen's functionality
-3. Test navigation (F3, F12)
-4. Test data entry and validation
-5. Test error scenarios
+test.describe('Feature Name', () => {
+  test.beforeAll(async () => {
+    // Create 15 test entries in database
+    await setupTestData();
+  });
+
+  test.afterAll(async () => {
+    // Remove test entries from database
+    await teardownTestData();
+  });
+
+  // Tests run here
+});
+```
+
+**Benefits:**
+- No manual data seeding needed
+- Tests are isolated and independent
+- Database cleaned up after each test run
+- Uses PostgreSQL connection pool (localhost:5433)
+
+### Running Tests
+
+```bash
+# All tests (headless)
+npm test
+
+# Interactive UI mode
+npm run test:ui
+
+# See browser while running
+npm run test:headed
+
+# Single test file
+npm test tests/time-registration-crud.spec.ts
+
+# Single test by name
+npm test -- --grep "should add"
+
+# Debug mode (step through)
+npm test -- --debug
+```
+
+### Writing New Tests
+
+**Template** (copy from `time-registration-crud.spec.ts`):
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { setupTestData, teardownTestData } from './testSetup.js';
+
+test.describe('My Feature', () => {
+  test.beforeAll(async () => {
+    await setupTestData();
+  });
+
+  test.afterAll(async () => {
+    await teardownTestData();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    // 1. Navigate to app
+    await page.goto('http://localhost:5173');
+
+    // 2. Wait for connection
+    await page.locator('text=● Connected').waitFor({ timeout: 10000 });
+
+    // 3. Login
+    const usernameInput = page.locator('input[type="text"]').first();
+    await usernameInput.fill('KALLE');
+    await usernameInput.press('Tab');
+    await page.locator('input[type="password"]').fill('password');
+    await page.locator('input[type="password"]').press('Enter');
+
+    // 4. Navigate to your screen
+    await page.locator('text=MAIN MENU').waitFor({ timeout: 10000 });
+    const selectionInput = page.locator('input[type="text"]').last();
+    await selectionInput.fill('6');  // Option number
+    await selectionInput.press('Enter');
+
+    // 5. Wait for screen to load
+    await page.locator('text=YOUR SCREEN TITLE').waitFor({ timeout: 10000 });
+  });
+
+  test('should do something', async ({ page }) => {
+    // Interact with page
+    await page.keyboard.press('F6');  // F-keys
+
+    // Fill inputs
+    await page.locator('input[data-field="fieldName"]').fill('value');
+
+    // Submit
+    await page.keyboard.press('Enter');
+
+    // Verify
+    await expect(page.locator('text=Success message')).toBeVisible();
+  });
+});
+```
+
+### Key Testing Patterns
+
+**Wait for state (not time):**
+```typescript
+// ✅ Good - wait for actual state
+await page.locator('text=Entry added').waitFor({ state: 'visible', timeout: 10000 });
+
+// ❌ Bad - wait for arbitrary time
+await page.waitForTimeout(500);
+```
+
+**Query by text (most reliable):**
+```typescript
+page.locator('text=TASK-101')
+page.locator('text=TIME REGISTRATION')
+page.locator('text=Entry deleted')
+```
+
+**Query by data attribute (for form fields):**
+```typescript
+page.locator('input[data-field="opt_0"]')  // Subfile option field
+page.locator('input[type="text"]').nth(0)  // Form field by index
+```
+
+**Verify state changed:**
+```typescript
+const before = await page.locator('text=TASK-').first().textContent();
+// ... make change ...
+const after = await page.locator('text=TASK-').first().textContent();
+expect(after).not.toBe(before);
+```
+
+### Configuration
+
+**`playwright.config.ts`:**
+- Auto-starts Docker Compose
+- Runs tests serially (`--workers=1`) for database consistency
+- 60-second timeout per test
+- Screenshots on failure
+- HTML reporter
+
+**`tests/testSetup.ts`:**
+- Shared utilities for test data
+- Creates 15 test entries (TASK-101 through TASK-115)
+- Cleans up after tests
+- Uses localhost:5433 (Docker PostgreSQL)
+
+### Best Practices
+
+**✅ DO:**
+- Wait for actual state changes with `waitFor()`
+- Use text-based queries
+- Keep tests minimal and focused
+- Test one feature per test
+- Use data-field attributes for form inputs
+- Isolate test data with beforeAll/afterAll
+- Use descriptive test names
+
+**❌ DON'T:**
+- Use hard-coded delays
+- Test multiple features in one test
+- Assume elements exist
+- Leave test data after tests
+- Use fragile selectors
+- Test internal implementation details
+
+### Debugging Failed Tests
+
+1. **See what went wrong:**
+   ```bash
+   npm test -- --headed  # Watch browser
+   npm test -- --debug   # Step through
+   ```
+
+2. **Check screenshots:**
+   - Saved in `test-results/` on failure
+   - Shows page state when test failed
+
+3. **Add debugging:**
+   ```typescript
+   await page.screenshot({ path: 'debug.png' });
+   console.log(await page.locator('text=...').textContent());
+   ```
+
+4. **Run single test:**
+   ```bash
+   npm test -- --grep "should add"
+   ```
+
+### Test Coverage
+
+Currently covered:
+- ✅ Subfile pagination (PageUp/PageDown)
+- ✅ Add operation (F6)
+- ✅ Edit operation (option 2)
+- ✅ Delete operation (option 4)
+- ✅ Navigation (F3, F8, F7)
+- ✅ Data validation
+- ✅ Message display
+
+Areas for expansion:
+- Form field validation
+- Error handling
+- Multiple users/sessions
+- Complex business logic
+- Performance testing
+
+### Performance
+
+- Full test suite: ~20 seconds
+- Individual test: 2-5 seconds
+- Setup/teardown: 1-2 seconds per test
+- Runs serially for consistency
 
 ---
 
