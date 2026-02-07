@@ -71,7 +71,7 @@ export function useTerminal() {
     hasResumedRef.current = false;
 
     // Heartbeat interval to keep session alive (every 60 seconds)
-    let heartbeatInterval: NodeJS.Timeout | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
     ws.onopen = () => {
       setState(prev => ({ ...prev, connected: true }));

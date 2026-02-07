@@ -14,7 +14,7 @@ const PERSIST_SESSIONS = process.env.NODE_ENV !== 'production';
 const SESSIONS_FILE = join(process.cwd(), 'data', 'sessions.json');
 
 // Debounce session saves to avoid excessive file writes
-let saveTimeout: NodeJS.Timeout | null = null;
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 const SAVE_DEBOUNCE_MS = 500; // Wait 500ms after last change before saving
 
 // Session data structure for persistence (Date -> string)
@@ -140,15 +140,15 @@ export function createSession(): Session {
 
 export function getSession(sessionId: string): Session | null {
   const session = sessions.get(sessionId);
-  
+
   if (!session) {
     return null;
   }
-  
+
   // Check for timeout
   const now = new Date();
   const elapsed = now.getTime() - session.lastActivity.getTime();
-  
+
   if (elapsed > SESSION_TIMEOUT) {
     // Session expired - reset to unauthenticated
     session.authenticated = false;
@@ -159,11 +159,11 @@ export function getSession(sessionId: string): Session | null {
     session.screenStack = [];
     session.context = {};
   }
-  
+
   // Update last activity
   session.lastActivity = now;
   saveSessions(); // Persist on access (debounced)
-  
+
   return session;
 }
 
