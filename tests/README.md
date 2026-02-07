@@ -57,13 +57,9 @@ npx playwright test tests/scrollable-subfile.spec.ts
 
 Before running the scrollable subfile tests, ensure the database has sufficient test data:
 
-```bash
-# Option 1: Run the script inside the server container
-docker compose exec server npx tsx tests/fixtures/add-test-entries.ts
 
-# Option 2: Copy and run the script (if it's not mounted)
-docker compose exec -T server sh -c "cat > /tmp/add-test-entries.ts" < tests/fixtures/add-test-entries.ts
-docker compose exec server npx tsx /tmp/add-test-entries.ts
+ docker-compose exec -T server sh -c "cat > /app/add-test-entries.ts" < tests/fixtures/add-test-entries.ts                                                              
+  docker-compose exec server npx tsx /app/add-test-entries.ts 
 ```
 
 This will add 15 time entries for the current day, which is enough to test pagination (10 entries per page).

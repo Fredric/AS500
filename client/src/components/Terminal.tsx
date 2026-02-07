@@ -101,7 +101,29 @@ export default function Terminal() {
     // Tab navigation
     if (e.key === 'Tab') {
       e.preventDefault();
-      const nextField = e.shiftKey 
+      const nextField = e.shiftKey
+        ? getPrevField(cursor.row, cursor.col)
+        : getNextField(cursor.row, cursor.col);
+      if (nextField) {
+        focusField(nextField);
+      }
+      return;
+    }
+
+    // Special keys - send to server
+    if (SPECIAL_KEYS[e.key]) {
+      e.preventDefault();
+      sendKey(SPECIAL_KEYS[e.key]);
+      return;
+    }
+  }, [cursor, getNextField, getPrevField, focusField, sendKey]);
+
+  // Handle keyboard events on input fields
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Tab navigation
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const nextField = e.shiftKey
         ? getPrevField(cursor.row, cursor.col)
         : getNextField(cursor.row, cursor.col);
       if (nextField) {
@@ -181,19 +203,20 @@ export default function Terminal() {
           value={value}
           onChange={(e) => {
             let newValue = e.target.value;
-            
+
             // Handle uppercase
             if (field.uppercase) {
               newValue = newValue.toUpperCase();
             }
-            
+
             // Handle numeric
             if (field.type === 'numeric') {
               newValue = newValue.replace(/[^0-9.-]/g, '');
             }
-            
+
             setFieldValue(field.name, newValue);
           }}
+          onKeyDown={handleInputKeyDown}
           onFocus={() => setCursor(field.row, field.col)}
           disabled={field.type === 'readonly'}
         />

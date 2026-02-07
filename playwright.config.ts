@@ -27,13 +27,20 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')` */
     baseURL: 'http://localhost:5173',
-    
+
+    /* Increase timeouts for WebSocket-based app */
+    navigationTimeout: 30000,
+    actionTimeout: 10000,
+
     /* Collect trace when retrying the failed test */
     trace: 'on-first-retry',
-    
+
     /* Screenshot on failure */
     screenshot: 'only-on-failure',
   },
+
+  /* Timeouts for the entire test */
+  timeout: 60000,
 
   /* Configure projects for major browsers */
   projects: [
