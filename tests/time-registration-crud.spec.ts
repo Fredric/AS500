@@ -77,6 +77,10 @@ test.describe('Time Registration CRUD', () => {
     // Verify the entry was added
     await expect(page.locator('text=TEST-001').first()).toBeVisible();
     await expect(page.locator('text=Test task').first()).toBeVisible();
+
+    //verify that only one entry was added
+    const entries = await page.locator('text=TEST-001').all();
+    expect(entries.length).toBe(1);
   });
 
   test('should edit an existing time entry', async ({ page }) => {

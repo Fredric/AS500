@@ -119,10 +119,12 @@ export default function Terminal() {
   }, [cursor, getNextField, getPrevField, focusField, sendKey]);
 
   // Handle keyboard events on input fields
+  // Stops propagation to prevent the container's handleKeyDown from also firing
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // Tab navigation
     if (e.key === 'Tab') {
       e.preventDefault();
+      e.stopPropagation();
       const nextField = e.shiftKey
         ? getPrevField(cursor.row, cursor.col)
         : getNextField(cursor.row, cursor.col);
@@ -135,6 +137,7 @@ export default function Terminal() {
     // Special keys - send to server
     if (SPECIAL_KEYS[e.key]) {
       e.preventDefault();
+      e.stopPropagation();
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
