@@ -11,6 +11,7 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 
 - Classic green-on-black terminal aesthetic with CRT effects
 - WebSocket-based real-time communication
+- **CRUDTable config system** — declarative configs that auto-generate list + form screens
 - Session persistence via cookies and file-based persistence (development)
 - bcrypt password authentication
 - PostgreSQL database (with SQLite support)
@@ -110,8 +111,14 @@ Open http://localhost:5173 and login with:
 AS500/
 ├── server/
 │   └── src/
-│       ├── index.ts          # WebSocket server
-│       ├── screens/          # Screen handlers
+│       ├── index.ts          # WebSocket server & router
+│       ├── crudtable/        # CRUDTable runtime engine
+│       │   ├── types.ts      # Config interfaces
+│       │   ├── registry.ts   # Config store
+│       │   ├── runtime.ts    # Core engine (list + form screens)
+│       │   └── router.ts     # Router integration
+│       ├── configs/          # CRUDTable config definitions
+│       ├── screens/          # Hand-written screens (login, menu, help)
 │       ├── services/         # Business logic
 │       ├── session/          # Session management
 │       └── db/               # Database
@@ -121,6 +128,33 @@ AS500/
         ├── hooks/            # Custom hooks
         └── styles/           # CSS
 ```
+
+## CRUDTable System
+
+The recommended way to create CRUD screens. Instead of writing ~300 lines of screen handlers, write a ~60 line config:
+
+```typescript
+// server/src/configs/myItems.ts
+export const myItemsConfig: CRUDTableConfig = {
+  id: 'my_items',
+  title: 'My Items',
+  services: {
+    list:   { service: myService, method: 'getAll' },
+    create: { service: myService, method: 'create', params: ctx => ctx.values },
+    update: { service: myService, method: 'update', params: ctx => ({ id: ctx.editRecord!.id, ...ctx.values }) },
+    delete: { service: myService, method: 'remove', params: ctx => ctx.selection[0].id },
+  },
+  fieldConfigs: {
+    name: { field: 'name', label: 'Name', length: 20, form: { required: true } },
+  },
+  columnBuilder: ['name'],
+  formBuilder: ['name'],
+};
+```
+
+The runtime auto-generates: paginated list screen, create/edit form, option handling (2=Edit, 4=Delete), F-key navigation, validation, and error handling.
+
+See [CLAUDE.md](CLAUDE.md) for the full CRUDTable reference.
 
 ## Development Features
 
