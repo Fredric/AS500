@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { setupTestData, teardownTestData } from './testSetup.js';
 
 /**
  * Test for scrollable subfile functionality in TIME_REG screen
- * 
+ *
  * This test verifies that:
  * 1. The subfile shows "More..." when there are more than 10 entries
  * 2. PageDown scrolls to the next page
@@ -11,24 +12,45 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('Scrollable Subfile', () => {
+  test.beforeAll(async () => {
+    // Setup test data before all tests
+    await setupTestData();
+  });
+
+  test.afterAll(async () => {
+    // Cleanup test data after all tests
+    await teardownTestData();
+  });
   test.beforeEach(async ({ page }) => {
     // Navigate to the application
-    await page.goto('http://localhost:5173');
+    await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
 
     // Wait for connection
     await page.locator('text=● Connected').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Login
-    await page.locator('input[type="text"]').fill('KALLE');
-    await page.locator('input[type="text"]').press('Tab');
-    await page.locator('input[type="password"]').fill('password');
-    await page.locator('input[type="password"]').press('Enter');
+    // Wait a bit for React to render
+    await page.waitForTimeout(200);
+
+    // Login - wait for login inputs to be ready
+    const usernameInput = page.locator('input[type="text"]').first();
+    await usernameInput.waitFor({ state: 'visible', timeout: 10000 });
+    await usernameInput.fill('KALLE');
+    await usernameInput.press('Tab');
+
+    const passwordInput = page.locator('input[type="password"]');
+    await passwordInput.fill('password');
+    await passwordInput.press('Enter');
 
     // Wait for main menu to appear
     await page.locator('text=MAIN MENU').waitFor({ state: 'visible', timeout: 10000 });
 
+    // Wait a bit for React to render
+    await page.waitForTimeout(200);
+
     // Navigate to Time Registration (option 6)
-    const selectionInput = page.locator('input[type="text"]').last();
+    const selectionInputs = page.locator('input[type="text"]');
+    const selectionInput = selectionInputs.last();
+    await selectionInput.waitFor({ state: 'visible', timeout: 10000 });
     await selectionInput.focus();
     await selectionInput.fill('6');
     await selectionInput.press('Enter');
@@ -36,16 +58,21 @@ test.describe('Scrollable Subfile', () => {
     // Wait for TIME REGISTRATION screen
     await page.locator('text=TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
 
+    // Give server time to query and render the data (WebSocket delay)
+    await page.waitForTimeout(800);
+
     // Wait for the first entry to appear (sign the page loaded)
-    await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 15000 });
 
     // Wait for More indicator to appear (confirms data is loaded)
-    await page.locator('text=More...').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('text=More...').waitFor({ state: 'visible', timeout: 15000 });
 
     // Click on the terminal area to ensure keyboard focus
-    await page.locator('.terminal-container').click();
+    const terminalContainer = page.locator('.terminal-container');
+    await terminalContainer.waitFor({ state: 'visible', timeout: 5000 });
+    await terminalContainer.click();
     // Give it a moment to focus
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(200);
   });
 
   test('should show "More..." indicator when there are more entries than page size', async ({ page }) => {

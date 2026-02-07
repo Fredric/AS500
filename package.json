@@ -10,9 +10,9 @@
     "start": "cd server && npm start",
     "heroku-postbuild": "npm run build",
     "seed": "cd server && npm run seed",
-    "test": "playwright test",
+    "test": "playwright test --workers=1",
     "test:ui": "playwright test --ui",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed --workers=1"
   },
   "engines": {
     "node": "20.x"
@@ -20,5 +20,8 @@
   "devDependencies": {
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.10.5"
+  },
+  "dependencies": {
+    "pg": "^8.18.0"
   }
 }

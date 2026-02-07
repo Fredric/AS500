@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Playwright configuration for AS500 Terminal System
- * 
+ *
  * See https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
