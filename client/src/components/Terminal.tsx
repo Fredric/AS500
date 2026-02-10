@@ -192,7 +192,7 @@ export default function Terminal() {
       const value = fieldValues[field.name] || '';
 
       segments.push(
-        <input
+        <input 
           key={positionKey}
           ref={(el) => {
             if (el) {
@@ -200,6 +200,7 @@ export default function Terminal() {
             }
           }}
           type={field.type === 'password' ? 'password' : 'text'}
+          data-1p-ignore
           className={`terminal-field ${field.type}`}
           data-field={field.name}
           style={{ width: `${field.length}ch` }}
