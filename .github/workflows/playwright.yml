@@ -39,30 +39,45 @@ jobs:
     - name: Start Docker Compose services
       run: |
         docker compose up -d
-        echo "Waiting for services to start..."
-        sleep 15
+        echo "Services starting in background..."
     
     - name: Wait for services to be ready
       run: |
         echo "Waiting for PostgreSQL..."
+        POSTGRES_READY=false
         for i in {1..30}; do
           if docker compose exec -T postgres pg_isready -U as500 > /dev/null 2>&1; then
             echo "✅ PostgreSQL is ready!"
+            POSTGRES_READY=true
             break
           fi
           echo "⏳ Waiting for PostgreSQL... ($i/30)"
           sleep 2
         done
         
+        if [ "$POSTGRES_READY" != "true" ]; then
+          echo "❌ PostgreSQL failed to start within timeout"
+          docker compose logs postgres
+          exit 1
+        fi
+        
         echo "Waiting for client..."
+        CLIENT_READY=false
         for i in {1..60}; do
           if curl -f http://localhost:5173 > /dev/null 2>&1; then
             echo "✅ Client is ready!"
+            CLIENT_READY=true
             break
           fi
           echo "⏳ Waiting for client... ($i/60)"
           sleep 2
         done
+        
+        if [ "$CLIENT_READY" != "true" ]; then
+          echo "❌ Client failed to start within timeout"
+          docker compose logs client
+          exit 1
+        fi
     
     - name: Seed database
       run: |
