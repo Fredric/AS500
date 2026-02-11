@@ -17,6 +17,10 @@ import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 import { initializeDatabase, closeDatabase } from './db/index.js';
 import { handleTimeRegHelp } from './screens/timeRegHelp.js';
 
+// CRUDTable system
+import { registerCRUDConfigs } from './configs/index.js';
+import { handleCRUDScreen, buildCRUDScreenForResume } from './crudtable/router.js';
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -114,14 +118,23 @@ async function getCurrentScreenResponse(session: Session): Promise<Omit<ScreenRe
       return buildLoginScreen('Access denied. Admin privileges required.', 'error');
 
     case 'LOGIN':
-    default:
       return buildLoginScreen();
+
+    default: {
+      // Try CRUDTable screens
+      const crudScreen = await buildCRUDScreenForResume(session);
+      if (crudScreen) return crudScreen;
+      return buildLoginScreen();
+    }
   }
 }
 
 async function startServer() {
   // Initialize database before starting server
   await initializeDatabase();
+
+  // Register CRUDTable configs
+  registerCRUDConfigs();
 
   // Create HTTP server for static file serving in production
   const httpServer = createServer((req, res) => {
@@ -341,13 +354,21 @@ async function startServer() {
             }
             break;
 
-          default:
-            // Unknown screen - return to login
-            currentSession.currentScreen = 'LOGIN';
-            response = {
-              ...buildLoginScreen(),
-              sessionId: currentSession.id,
-            };
+          default: {
+            // Try CRUDTable screens
+            const crudResponse = await handleCRUDScreen(currentSession, request);
+            if (crudResponse) {
+              response = crudResponse;
+            } else {
+              // Unknown screen - return to login
+              currentSession.currentScreen = 'LOGIN';
+              response = {
+                ...buildLoginScreen(),
+                sessionId: currentSession.id,
+              };
+            }
+            break;
+          }
         }
 
         // Update session's current screen

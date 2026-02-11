@@ -65,7 +65,9 @@ AS500/
 │       │
 │       ├── services/
 │       │   ├── auth.ts      # Authentication (bcrypt)
-│       │   └── timeReg.ts   # Time tracking business logic
+│       │   ├── timeReg.ts   # Time tracking business logic
+│       │   ├── timeRegCrud.ts # Time reg adapter for CRUDTable
+│       │   └── userMgmt.ts  # User management service
 │       │
 │       ├── dsl/             # Screen DSL system (like AS/400 DDS)
 │       │   ├── index.ts     # Public API exports
@@ -78,7 +80,18 @@ AS500/
 │       │       ├── subfile.ts     # Scrollable list component
 │       │       └── menu.ts        # Menu component
 │       │
-│       └── screens/         # Screen definitions & handlers
+│       ├── crudtable/       # CRUDTable runtime engine
+│       │   ├── types.ts     # Config interfaces (CRUDTableConfig, etc.)
+│       │   ├── registry.ts  # Config store + screen ID derivation
+│       │   ├── context.ts   # CRUDContext <-> session.context mapping
+│       │   ├── runtime.ts   # Core engine (list + form screens)
+│       │   └── router.ts    # Integration hooks for index.ts
+│       │
+│       ├── configs/         # CRUDTable config definitions
+│       │   ├── index.ts     # Registration bootstrap
+│       │   └── timeRegV2.ts # Time registration (CRUDTable version)
+│       │
+│       └── screens/         # Hand-written screen definitions & handlers
 │           ├── login.ts     # LOGIN screen
 │           ├── mainMenu.ts  # MAIN_MENU screen
 │           ├── timeReg.ts   # TIME_REG (subfile list)
@@ -541,7 +554,248 @@ CREATE TABLE day_items (
 
 ## Screen Development Guide
 
-### Adding a New Screen
+### Two Approaches
+
+There are two ways to create screens:
+
+1. **CRUDTable Config** (recommended for list+form CRUD screens) — Write a ~50-80 line config object. The runtime auto-generates both the list screen (subfile with pagination) and the form screen (create/edit), with all standard terminal behavior built-in. No router changes needed.
+
+2. **Manual Screen** (for non-CRUD screens like login, menus, help) — Write DSL definition + builder + handler functions manually. Requires router registration in `index.ts`.
+
+**Use CRUDTable for any screen that follows the pattern**: list records → add/edit/delete records. This covers most admin and data-entry screens.
+
+### Adding a CRUD Screen (CRUDTable — Recommended)
+
+**Step 1: Create the Service**
+
+Create `server/src/services/myService.ts` with standard CRUD functions:
+
+```typescript
+import pool from '../db/index.js';
+
+export async function getAllItems(): Promise<Record<string, unknown>[]> {
+  const result = await pool.query('SELECT * FROM my_table ORDER BY name');
+  return result.rows;
+}
+
+export async function createItem(data: { name: string; value: string }): Promise<Record<string, unknown>> {
+  const result = await pool.query(
+    'INSERT INTO my_table (name, value) VALUES ($1, $2) RETURNING *',
+    [data.name, data.value]
+  );
+  return result.rows[0];
+}
+
+export async function updateItem(data: { id: number; name: string; value: string }): Promise<Record<string, unknown>> {
+  const result = await pool.query(
+    'UPDATE my_table SET name = $1, value = $2 WHERE id = $3 RETURNING *',
+    [data.name, data.value, data.id]
+  );
+  return result.rows[0];
+}
+
+export async function deleteItem(id: number): Promise<void> {
+  await pool.query('DELETE FROM my_table WHERE id = $1', [id]);
+}
+```
+
+**Step 2: Create the Config**
+
+Create `server/src/configs/myItems.ts`:
+
+```typescript
+import type { CRUDTableConfig } from '../crudtable/types.js';
+import * as myService from '../services/myService.js';
+
+export const myItemsConfig: CRUDTableConfig = {
+  id: 'my_items',
+  title: 'My Items',
+  requireAuth: true,
+
+  services: {
+    list:   { service: myService, method: 'getAllItems' },
+    create: { service: myService, method: 'createItem',
+              params: ctx => ctx.values },
+    update: { service: myService, method: 'updateItem',
+              params: ctx => ({ id: ctx.editRecord!.id as number, ...ctx.values }) },
+    delete: { service: myService, method: 'deleteItem',
+              params: ctx => ctx.selection[0].id as number },
+  },
+
+  fieldConfigs: {
+    name: {
+      field: 'name',
+      label: 'Name',
+      length: 20,
+      form: { required: true },
+      column: { width: 20 },
+    },
+    value: {
+      field: 'value',
+      label: 'Value',
+      length: 30,
+      column: { width: 30 },
+    },
+  },
+
+  columnBuilder: ['name', 'value'],
+  formBuilder: ['name', 'value'],
+};
+```
+
+**Step 3: Register the Config**
+
+Edit `server/src/configs/index.ts`:
+
+```typescript
+import { myItemsConfig } from './myItems.js';
+registerConfig(myItemsConfig);
+```
+
+**Step 4: Add Navigation**
+
+From any screen (e.g., `mainMenu.ts`):
+
+```typescript
+session.screenStack.push('MAIN_MENU');
+session.currentScreen = 'CRUD_MY_ITEMS';  // CRUD_{ID in uppercase}
+```
+
+That's it. No changes to `index.ts` router. The runtime auto-generates:
+- **List screen** (`CRUD_MY_ITEMS`): Subfile with Opt column, pagination, 2=Edit, 4=Delete
+- **Form screen** (`CRUD_MY_ITEMS_FORM`): Create/edit form with validation
+- **All key handling**: F3/F12 exit, F6 create, PAGEUP/PAGEDOWN, option processing
+
+### CRUDTable Config Reference
+
+#### CRUDTableConfig
+
+```typescript
+interface CRUDTableConfig {
+  id: string;              // Unique ID → screen IDs: CRUD_{ID}, CRUD_{ID}_FORM
+  title: string;           // Displayed in header
+
+  requireAuth?: boolean;   // Default: true
+  requireAdmin?: boolean;  // Default: false
+
+  services: {
+    list: ServiceCall;     // Fetch records (must return array)
+    create?: ServiceCall;  // Create record (enables F6)
+    update?: ServiceCall;  // Update record (enables option 2)
+    delete?: ServiceCall;  // Delete record (enables option 4)
+  };
+
+  getInitialValues?: (context: CRUDContext) => Record<string, string>;
+
+  fieldConfigs: Record<string, FieldConfig>;  // Field definitions
+  columnBuilder: string[];  // Which fields appear in list (order matters)
+  formBuilder: string[];    // Which fields appear in form (order matters)
+
+  actions?: Record<string, ActionConfig>;  // Custom record actions
+  openUI?: OpenUIConfig;                   // Navigate to another CRUDTable
+
+  // Extension points
+  listKeys?: Record<string, ListKeyConfig>;  // Custom F-key handlers
+  listHeader?: (context: CRUDContext) => Array<{ row: number; col: number; content: string }>;
+}
+```
+
+#### ServiceCall
+
+```typescript
+interface ServiceCall {
+  service: Record<string, Function>;  // Service module
+  method: string;                      // Method name
+  params?: (context: CRUDContext) => unknown;  // Map context to args
+}
+```
+
+#### FieldConfig
+
+```typescript
+interface FieldConfig {
+  field: string;    // Property name on the record
+  label: string;    // Display label
+  length: number;   // Field width (required for 80-char grid)
+  type?: FieldType; // 'alpha' | 'numeric' | 'date' | 'password' | 'readonly'
+
+  form?: {
+    type?: FieldType;          // Override type for form
+    visible?: BoolExpr;        // Show/hide dynamically
+    disabled?: BoolExpr;       // Read-only dynamically
+    required?: BoolExpr;       // Required dynamically
+    uppercase?: boolean;
+    validators?: Validator[];  // Custom validation functions
+    hint?: string;             // Hint text shown after field, e.g. "(HH:MM)"
+  };
+
+  column?: {
+    width?: number;            // Override width for list
+    align?: 'left' | 'right' | 'center';
+    cellRenderer?: (record, datasource?) => string;  // Custom display
+  };
+
+  datasource?: DatasourceConfig;  // Lookup data for this field
+}
+```
+
+#### BoolExpr and Validator
+
+```typescript
+type BoolExpr = boolean | ((context: CRUDContext) => boolean);
+type Validator = (context: CRUDContext) => string | null;  // null = valid
+```
+
+#### CRUDContext (available in all config functions)
+
+```typescript
+interface CRUDContext {
+  records: Record<string, unknown>[];      // Current list data
+  selection: Record<string, unknown>[];    // Selected record(s)
+  values: Record<string, string>;          // Form field values
+  input: Record<string, unknown>;          // Initialization params
+  user: string | null;
+  formMode: 'create' | 'edit' | null;
+  editRecord: Record<string, unknown> | null;
+  pageOffset: number;
+  datasources: Record<string, Record<string, unknown>[]>;
+}
+```
+
+#### ListKeyConfig (custom F-keys on list screen)
+
+```typescript
+interface ListKeyConfig {
+  label: string;  // Shown in status line, e.g. "Prev"
+  handler: (context: CRUDContext, session: Session) => Promise<void>;
+}
+```
+
+Example — day navigation for time registration:
+```typescript
+listKeys: {
+  F7: {
+    label: 'Prev',
+    handler: async (ctx, session) => {
+      ctx.input.date = getPreviousDay(ctx.input.date as string);
+      ctx.pageOffset = 0;
+    },
+  },
+},
+```
+
+#### listHeader (dynamic text above the subfile)
+
+```typescript
+listHeader: (ctx) => [
+  { row: 6, col: 2, content: `Date: ${ctx.input.date}` },
+  { row: 6, col: 55, content: `Total: ${ctx.input.total} hrs` },
+],
+```
+
+### Adding a Manual Screen (Non-CRUD)
+
+For screens that don't fit the list+form CRUD pattern (login, menus, help screens, custom workflows), use the manual approach:
 
 **Step 1: Create Screen File**
 
@@ -1334,11 +1588,21 @@ rm -rf dist/
 - **Terminal Hook**: `client/src/hooks/useTerminal.ts`
 - **Terminal Component**: `client/src/components/Terminal.tsx`
 
+### CRUDTable System
+
+- **Types**: `server/src/crudtable/types.ts` - `CRUDTableConfig`, `CRUDContext`, etc.
+- **Registry**: `server/src/crudtable/registry.ts` - Config store, screen ID derivation
+- **Context**: `server/src/crudtable/context.ts` - Session context mapping
+- **Runtime**: `server/src/crudtable/runtime.ts` - Core engine (builds + handles screens)
+- **Router**: `server/src/crudtable/router.ts` - Integration with index.ts
+- **Config Registration**: `server/src/configs/index.ts` - Bootstrap for all configs
+
 ### Type Definitions
 
 - **Server Types**: `server/src/types/index.ts`
 - **Client Types**: `client/src/types/index.ts`
 - **DSL Types**: `server/src/dsl/types.ts`
+- **CRUDTable Types**: `server/src/crudtable/types.ts`
 
 ### Configuration
 
@@ -1441,7 +1705,7 @@ These are created by the seed script (`npm run seed`).
 
 ### DO
 
-✅ Use the DSL system for screen definitions
+✅ Use CRUDTable configs for any list+form CRUD screen (this is the primary approach)
 ✅ Keep business logic in service files
 ✅ Always validate input on the server
 ✅ Use proper TypeScript types from `types/index.ts`
@@ -1450,28 +1714,28 @@ These are created by the seed script (`npm run seed`).
 ✅ Use the navigation stack for F12 support
 ✅ Handle errors gracefully with user-friendly messages
 ✅ Test manually after making changes
-✅ Read existing screen implementations for patterns
+✅ Read existing configs in `configs/` for CRUDTable patterns
 
 ### DON'T
 
+❌ Write manual screen handlers for CRUD screens — use CRUDTable instead
 ❌ Add validation logic to the client
 ❌ Add navigation logic to the client
 ❌ Break the 80×24 grid constraint
 ❌ Store state in React components
 ❌ Use REST endpoints (it's WebSocket-based)
 ❌ Skip the DSL system and manually create rows
-❌ Forget to register new screens in index.ts router
 ❌ Hard-code screen rendering logic in handlers
 ❌ Use client-side routing (navigation is server-controlled)
 
 ### When Adding Features
 
-1. **Understand the pattern**: Read similar existing code first
-2. **Use the DSL**: Don't manually build screen rows
-3. **Separate concerns**: Service logic separate from screen handlers
-4. **Follow conventions**: F-keys, naming, file structure
-5. **Test manually**: Run the app and verify behavior
-6. **Update docs**: Add to project.md if adding major features
+1. **Is it CRUD?** If the screen lists records and lets users add/edit/delete, use CRUDTable
+2. **Create a service first**: Keep DB operations in `services/`
+3. **Write a config**: Define fields, columns, form layout in `configs/`
+4. **Register it**: Add to `configs/index.ts`
+5. **Navigate to it**: Set `session.currentScreen = 'CRUD_{ID}'`
+6. **For non-CRUD screens**: Use manual screen approach (DSL + handler + router registration)
 
 ### When Debugging
 
@@ -1505,5 +1769,5 @@ This project is inspired by AS/400 (IBM i) systems:
 
 ---
 
-**Last Updated**: 2026-01-25
-**Project Status**: Working prototype with time tracking feature (Docker + PostgreSQL)
+**Last Updated**: 2026-02-07
+**Project Status**: Working prototype with time tracking feature + CRUDTable config system (Docker + PostgreSQL)

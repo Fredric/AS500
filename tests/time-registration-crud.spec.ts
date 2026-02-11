@@ -37,8 +37,8 @@ test.describe('Time Registration CRUD', () => {
     await selectionInput.fill('6');
     await selectionInput.press('Enter');
 
-    // Wait for TIME REGISTRATION screen
-    await page.locator('text=TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
+    // Wait for TIME REGISTRATION screen (use unique element to avoid matching menu items)
+    await page.locator('text=Day total').waitFor({ state: 'visible', timeout: 10000 });
     await page.waitForTimeout(500);
   });
 
@@ -72,7 +72,7 @@ test.describe('Time Registration CRUD', () => {
     await page.keyboard.press('Enter');
 
     // Wait for return to TIME_REG screen
-    await page.locator('text=TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('text=Day total').waitFor({ state: 'visible', timeout: 10000 });
 
     // Verify the entry was added
     await expect(page.locator('text=TEST-001').first()).toBeVisible();
@@ -108,7 +108,7 @@ test.describe('Time Registration CRUD', () => {
     await page.keyboard.press('Enter');
 
     // Wait for return to TIME_REG screen
-    await page.locator('text=TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('text=Day total').waitFor({ state: 'visible', timeout: 10000 });
 
     // Verify the change
     await expect(page.locator('text=EDITED').first()).toBeVisible();

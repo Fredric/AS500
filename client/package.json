@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tsc": "tsc",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@types/react": "^18.3.18",

@@ -9,6 +9,7 @@
     "build": "npm run build:server && npm run build:client",
     "start": "cd server && npm start",
     "heroku-postbuild": "npm run build",
+    "typecheck": "npm --prefix server run tsc -- --noEmit && npm --prefix client run tsc -- --noEmit",
     "seed": "cd server && npm run seed",
     "test": "playwright test --workers=1",
     "test:ui": "playwright test --ui",

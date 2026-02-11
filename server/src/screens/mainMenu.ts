@@ -2,6 +2,7 @@ import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { buildLoginScreen } from './login.js';
 import { buildTimeRegScreen } from './timeReg.js';
 import { buildUserMgmtScreen } from './userMgmt.js';
+import { initTimeRegV2Context } from '../configs/timeRegV2.js';
 
 // Import DSL
 import {
@@ -33,6 +34,7 @@ const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
             { option: 4, label: 'Reports' },
             { option: 5, label: 'System utilities' },
             { option: 6, label: 'Time registration' },
+            { option: 7, label: 'Time conf (V2)' },
         ], {
             row: 17,
             col: 24,
@@ -60,6 +62,7 @@ const ADMIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
             { option: 4, label: 'Reports' },
             { option: 5, label: 'System utilities' },
             { option: 6, label: 'Time registration' },
+            { option: 7, label: 'Time registration (V2)' },
             { option: 90, label: 'User management' },
         ], {
             row: 17,
@@ -146,14 +149,14 @@ export async function handleMainMenu(
 
         const option = parseInt(selection, 10);
 
-        // Valid options: 1-6 for all users, 90 for admins
-        const validOptions = [1, 2, 3, 4, 5, 6];
+        // Valid options: 1-7 for all users, 90 for admins
+        const validOptions = [1, 2, 3, 4, 5, 6, 7];
         if (session.isAdmin) {
             validOptions.push(90);
         }
 
         if (!validOptions.includes(option) || isNaN(option)) {
-            const optionRange = session.isAdmin ? '1-6, 90' : '1-6';
+            const optionRange = session.isAdmin ? '1-7, 90' : '1-7';
             return {
                 ...mainMenuScreen(session),
                 ...base,
@@ -170,6 +173,23 @@ export async function handleMainMenu(
 
             return {
                 ...(await buildUserMgmtScreen(session)),
+                ...base,
+            };
+        }
+
+        // Option 7 - Time registration V2 (CRUDTable)
+        if (option === 7) {
+            session.screenStack.push('MAIN_MENU');
+            session.currentScreen = 'CRUD_TIMEREG_V2';
+            await initTimeRegV2Context(session);
+
+            // Let the CRUDTable router handle the screen build
+            const { buildListScreen } = await import('../crudtable/runtime.js');
+            const { getConfig } = await import('../crudtable/registry.js');
+            const config = getConfig('timereg_v2')!;
+
+            return {
+                ...(await buildListScreen(config, session)),
                 ...base,
             };
         }
