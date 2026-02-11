@@ -156,8 +156,8 @@ export async function buildListScreen(
   const screenDef = defineScreen(screenId, {
     elements: [
       header({ system: 'AS500 SYSTEM', title: config.title.toUpperCase(), showDateTime: true, showUser: true }),
-      text(5, 2, 'Type option and press Enter.'),
-      text(5, 32, optionHints.join('  ')),
+      //text(5, 2, 'Type option and press Enter.'),
+      //text(5, 32, optionHints.join('  ')),
       ...headerElements,
       subfile('data', LIST_START_ROW, LIST_PAGE_SIZE, columns),
     ],

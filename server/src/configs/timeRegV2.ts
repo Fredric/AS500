@@ -121,8 +121,8 @@ export const timeRegV2Config: CRUDTableConfig = {
       : 0;
 
     return [
-      { row: 6, col: 2, content: `Date: ${date}  ${dayName}` },
-      { row: 6, col: 55, content: `Day total: ${timeRegCrud.formatHours(daysum)} hrs` },
+      { row: 5, col: 2, content: `Date: ${date}  ${dayName}` },
+      { row: 5, col: 55, content: `Day total: ${timeRegCrud.formatHours(daysum)} hrs` },
     ];
   },
 

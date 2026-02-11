@@ -34,7 +34,7 @@ const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
             { option: 4, label: 'Reports' },
             { option: 5, label: 'System utilities' },
             { option: 6, label: 'Time registration' },
-            { option: 7, label: 'Time registration (V2)' },
+            { option: 7, label: 'Time conf (V2)' },
         ], {
             row: 17,
             col: 24,
