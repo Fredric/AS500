@@ -43,15 +43,19 @@ jobs:
     
     - name: Wait for services to be ready
       run: |
+        # Health check configuration
+        POSTGRES_TIMEOUT_ATTEMPTS=30  # 30 attempts × 2s = 60 seconds
+        CLIENT_TIMEOUT_ATTEMPTS=60    # 60 attempts × 2s = 120 seconds
+        
         echo "Waiting for PostgreSQL..."
         POSTGRES_READY=false
-        for i in {1..30}; do
+        for i in $(seq 1 $POSTGRES_TIMEOUT_ATTEMPTS); do
           if docker compose exec -T postgres pg_isready -U as500 > /dev/null 2>&1; then
             echo "✅ PostgreSQL is ready!"
             POSTGRES_READY=true
             break
           fi
-          echo "⏳ Waiting for PostgreSQL... ($i/30)"
+          echo "⏳ Waiting for PostgreSQL... ($i/$POSTGRES_TIMEOUT_ATTEMPTS)"
           sleep 2
         done
         
@@ -63,13 +67,13 @@ jobs:
         
         echo "Waiting for client..."
         CLIENT_READY=false
-        for i in {1..60}; do
+        for i in $(seq 1 $CLIENT_TIMEOUT_ATTEMPTS); do
           if curl -f http://localhost:5173 > /dev/null 2>&1; then
             echo "✅ Client is ready!"
             CLIENT_READY=true
             break
           fi
-          echo "⏳ Waiting for client... ($i/60)"
+          echo "⏳ Waiting for client... ($i/$CLIENT_TIMEOUT_ATTEMPTS)"
           sleep 2
         done
         
