@@ -35,6 +35,24 @@ async function seed() {
     console.log('User FREDRIC already exists.');
   }
 
+  // Create test user KALLE (for Playwright tests)
+  const existingKalle = await pool.query<{ id: number }>(
+    'SELECT id FROM users WHERE username = $1',
+    ['KALLE']
+  );
+
+  if (existingKalle.rows.length === 0) {
+    const kallePasswordHash = await bcrypt.hash('password', SALT_ROUNDS);
+    await pool.query(
+      `INSERT INTO users (username, password_hash, full_name, active, is_admin)
+       VALUES ($1, $2, $3, $4, $5)`,
+      ['KALLE', kallePasswordHash, 'Kalle User', true, false]
+    );
+    console.log('Created user: KALLE (password: password)');
+  } else {
+    console.log('User KALLE already exists.');
+  }
+
   // Create admin user if ADMIN_PASSWORD is set
   const adminPassword = process.env.ADMIN_PASSWORD;
 
