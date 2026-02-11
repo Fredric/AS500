@@ -1,0 +1,118 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install root dependencies
+      run: npm ci
+    
+    - name: Install server dependencies
+      working-directory: ./server
+      run: npm ci
+    
+    - name: Install client dependencies
+      working-directory: ./client
+      run: npm ci
+    
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps chromium
+    
+    - name: Start Docker Compose services
+      run: |
+        docker compose up -d
+        echo "Services starting in background..."
+    
+    - name: Wait for services to be ready
+      run: |
+        # Health check configuration
+        POSTGRES_TIMEOUT_ATTEMPTS=30  # 30 attempts × 2s = 60 seconds
+        CLIENT_TIMEOUT_ATTEMPTS=60    # 60 attempts × 2s = 120 seconds
+        
+        echo "Waiting for PostgreSQL..."
+        POSTGRES_READY=false
+        for i in $(seq 1 $POSTGRES_TIMEOUT_ATTEMPTS); do
+          if docker compose exec -T postgres pg_isready -U as500 > /dev/null 2>&1; then
+            echo "✅ PostgreSQL is ready!"
+            POSTGRES_READY=true
+            break
+          fi
+          echo "⏳ Waiting for PostgreSQL... ($i/$POSTGRES_TIMEOUT_ATTEMPTS)"
+          sleep 2
+        done
+        
+        if [ "$POSTGRES_READY" != "true" ]; then
+          echo "❌ PostgreSQL failed to start within timeout"
+          docker compose logs postgres
+          exit 1
+        fi
+        
+        echo "Waiting for client..."
+        CLIENT_READY=false
+        for i in $(seq 1 $CLIENT_TIMEOUT_ATTEMPTS); do
+          if curl -f http://localhost:5173 > /dev/null 2>&1; then
+            echo "✅ Client is ready!"
+            CLIENT_READY=true
+            break
+          fi
+          echo "⏳ Waiting for client... ($i/$CLIENT_TIMEOUT_ATTEMPTS)"
+          sleep 2
+        done
+        
+        if [ "$CLIENT_READY" != "true" ]; then
+          echo "❌ Client failed to start within timeout"
+          docker compose logs client
+          exit 1
+        fi
+    
+    - name: Seed database
+      run: |
+        echo "Seeding database..."
+        docker compose exec -T server npm run seed
+        echo "✅ Database seeded"
+    
+    - name: Run Playwright tests
+      run: npm run test
+      env:
+        CI: true
+    
+    - name: Upload Playwright report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 30
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: test-results/
+        retention-days: 30
+    
+    - name: Show Docker logs on failure
+      if: failure()
+      run: docker compose logs
