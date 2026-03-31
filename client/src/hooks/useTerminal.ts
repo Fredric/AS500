@@ -14,6 +14,8 @@ function getWebSocketUrl(): string {
 
 const WS_URL = getWebSocketUrl();
 const SESSION_COOKIE_NAME = 'as500_session';
+const AUTH_TOKEN_COOKIE_NAME = 'as500_auth_token';
+const AUTH_TOKEN_EXPIRY_DAYS = 30;
 
 // Cookie helpers
 function getCookie(name: string): string | null {
@@ -63,6 +65,7 @@ export function useTerminal() {
   // Track if we've sent resume request
   const hasResumedRef = useRef(false);
   const storedSessionRef = useRef(getCookie(SESSION_COOKIE_NAME));
+  const storedAuthTokenRef = useRef(getCookie(AUTH_TOKEN_COOKIE_NAME));
 
   // Connect to WebSocket
   useEffect(() => {
@@ -77,9 +80,10 @@ export function useTerminal() {
       setState(prev => ({ ...prev, connected: true }));
 
       const storedSession = storedSessionRef.current;
+      const storedAuthToken = storedAuthTokenRef.current;
 
-      if (storedSession && !hasResumedRef.current) {
-        // Try to resume existing session
+      if ((storedSession || storedAuthToken) && !hasResumedRef.current) {
+        // Try to resume existing session, including auth token for auto-login
         hasResumedRef.current = true;
         const resumeRequest: ClientRequest = {
           sessionId: storedSession,
@@ -87,10 +91,11 @@ export function useTerminal() {
           cursor: { row: 0, col: 0 },
           input: {},
           key: 'RESUME',
+          authToken: storedAuthToken ?? undefined,
         };
         ws.send(JSON.stringify(resumeRequest));
       } else {
-        // No stored session - request initial screen
+        // No stored session or auth token - request initial screen
         const initRequest: ClientRequest = {
           sessionId: null,
           screenId: '',
@@ -134,13 +139,26 @@ export function useTerminal() {
           playBell();
         }
 
-        // Save session to cookie
+        // Save session to cookie (7 days so it survives typical usage between sessions)
         if (response.sessionId) {
-          setCookie(SESSION_COOKIE_NAME, response.sessionId);
+          setCookie(SESSION_COOKIE_NAME, response.sessionId, 7);
           storedSessionRef.current = response.sessionId;
         }
 
-        // Clear cookie on sign-off (returning to LOGIN after being authenticated)
+        // Handle auth token cookie updates
+        if (response.authToken !== undefined) {
+          if (response.authToken === null) {
+            // Server signals to clear the auth token (sign-off or invalid token)
+            deleteCookie(AUTH_TOKEN_COOKIE_NAME);
+            storedAuthTokenRef.current = null;
+          } else {
+            // New or refreshed auth token from server - store for 30 days
+            setCookie(AUTH_TOKEN_COOKIE_NAME, response.authToken, AUTH_TOKEN_EXPIRY_DAYS);
+            storedAuthTokenRef.current = response.authToken;
+          }
+        }
+
+        // Clear session cookie on sign-off (returning to LOGIN after being authenticated)
         if (response.screenId === 'LOGIN' && state.screenId !== 'LOGIN' && state.screenId !== '') {
           deleteCookie(SESSION_COOKIE_NAME);
           storedSessionRef.current = null;

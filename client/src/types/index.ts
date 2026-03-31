@@ -19,6 +19,7 @@ export interface ScreenResponse {
   messageType: 'info' | 'warning' | 'error' | null;
   statusLine: string;
   bell: boolean;
+  authToken?: string | null; // Set after login; null signals client to clear the cookie
 }
 
 export interface ClientRequest {
@@ -27,4 +28,5 @@ export interface ClientRequest {
   cursor: { row: number; col: number };
   input: Record<string, string>;
   key: string;
+  authToken?: string; // Long-lived auth token for auto-login
 }

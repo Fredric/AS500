@@ -1,5 +1,5 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
-import { validateCredentials } from '../services/auth.js';
+import { validateCredentials, createAuthToken } from '../services/auth.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { persistSessions } from '../session/index.js';
 
@@ -116,9 +116,13 @@ export async function handleLogin(
   // Persist session immediately after authentication
   persistSessions();
 
+  // Create a long-lived auth token for auto-login on future sessions
+  const authToken = await createAuthToken(user.id);
+
   // Return main menu
   return {
     ...mainMenuScreen(session),
     sessionId: session.id,
+    authToken,
   };
 }
