@@ -258,6 +258,11 @@ export default function Terminal() {
         {connected ? '● Connected' : '○ Disconnected'}
       </div>
 
+      {/* Version info */}
+      <div className="version-info">
+        v{__APP_VERSION__} · {__BUILD_DATE__}
+      </div>
+
       {/* Main screen area */}
       <div className="terminal-screen">
         {rows.slice(0, 22).map((row, i) => renderRow(row, i))}
