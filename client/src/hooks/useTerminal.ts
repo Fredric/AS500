@@ -14,22 +14,44 @@ function getWebSocketUrl(): string {
 
 const WS_URL = getWebSocketUrl();
 const SESSION_COOKIE_NAME = 'as500_session';
-const AUTH_TOKEN_COOKIE_NAME = 'as500_auth_token';
-const AUTH_TOKEN_EXPIRY_DAYS = 30;
+const ACCESS_TOKEN_COOKIE_NAME = 'as500_access_token';
+const REFRESH_TOKEN_COOKIE_NAME = 'as500_refresh_token';
+const DEVICE_ID_COOKIE_NAME = 'as500_device_id';
+const ACCESS_TOKEN_EXPIRY_HOURS = 1; // 1 hour
+const REFRESH_TOKEN_EXPIRY_DAYS = 30; // 30 days
 
-// Cookie helpers
+// Cookie helpers with proper security flags
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
   return match ? match[2] : null;
 }
 
-function setCookie(name: string, value: string, days: number = 1) {
-  const expires = new Date(Date.now() + days * 864e5).toUTCString();
-  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Strict`;
+function setCookie(name: string, value: string, hours?: number) {
+  const isSecure = window.location.protocol === 'https:';
+  const expires = new Date(Date.now() + (hours ?? 24) * 3600 * 1000).toUTCString();
+  // Note: HttpOnly cannot be set from JavaScript (server-side only)
+  // but we set SameSite=Strict and Secure for HTTPS
+  const secureFlag = isSecure ? '; Secure' : '';
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Strict${secureFlag}`;
 }
 
 function deleteCookie(name: string) {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict`;
+}
+
+// Generate or retrieve device ID
+function getDeviceId(): string {
+  let deviceId = getCookie(DEVICE_ID_COOKIE_NAME);
+  if (!deviceId) {
+    // Generate a simple device ID (UUID-like)
+    deviceId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+    setCookie(DEVICE_ID_COOKIE_NAME, deviceId, 365 * 24); // 1 year
+  }
+  return deviceId;
 }
 
 interface TerminalState {
@@ -65,7 +87,9 @@ export function useTerminal() {
   // Track if we've sent resume request
   const hasResumedRef = useRef(false);
   const storedSessionRef = useRef(getCookie(SESSION_COOKIE_NAME));
-  const storedAuthTokenRef = useRef(getCookie(AUTH_TOKEN_COOKIE_NAME));
+  const storedAccessTokenRef = useRef(getCookie(ACCESS_TOKEN_COOKIE_NAME));
+  const storedRefreshTokenRef = useRef(getCookie(REFRESH_TOKEN_COOKIE_NAME));
+  const deviceIdRef = useRef(getDeviceId());
 
   // Connect to WebSocket
   useEffect(() => {
@@ -80,10 +104,12 @@ export function useTerminal() {
       setState(prev => ({ ...prev, connected: true }));
 
       const storedSession = storedSessionRef.current;
-      const storedAuthToken = storedAuthTokenRef.current;
+      const storedAccessToken = storedAccessTokenRef.current;
+      const storedRefreshToken = storedRefreshTokenRef.current;
+      const deviceId = deviceIdRef.current;
 
-      if ((storedSession || storedAuthToken) && !hasResumedRef.current) {
-        // Try to resume existing session, including auth token for auto-login
+      if ((storedSession || storedAccessToken || storedRefreshToken) && !hasResumedRef.current) {
+        // Try to resume existing session with tokens
         hasResumedRef.current = true;
         const resumeRequest: ClientRequest = {
           sessionId: storedSession,
@@ -91,11 +117,13 @@ export function useTerminal() {
           cursor: { row: 0, col: 0 },
           input: {},
           key: 'RESUME',
-          authToken: storedAuthToken ?? undefined,
+          accessToken: storedAccessToken ?? undefined,
+          refreshToken: storedRefreshToken ?? undefined,
+          deviceId,
         };
         ws.send(JSON.stringify(resumeRequest));
       } else {
-        // No stored session or auth token - request initial screen
+        // No stored session or tokens - request initial screen
         const initRequest: ClientRequest = {
           sessionId: null,
           screenId: '',
@@ -141,20 +169,33 @@ export function useTerminal() {
 
         // Save session to cookie (7 days so it survives typical usage between sessions)
         if (response.sessionId) {
-          setCookie(SESSION_COOKIE_NAME, response.sessionId, 7);
+          setCookie(SESSION_COOKIE_NAME, response.sessionId, 7 * 24);
           storedSessionRef.current = response.sessionId;
         }
 
-        // Handle auth token cookie updates
-        if (response.authToken !== undefined) {
-          if (response.authToken === null) {
-            // Server signals to clear the auth token (sign-off or invalid token)
-            deleteCookie(AUTH_TOKEN_COOKIE_NAME);
-            storedAuthTokenRef.current = null;
+        // Handle access token cookie updates
+        if (response.accessToken !== undefined) {
+          if (response.accessToken === null) {
+            // Server signals to clear the access token (sign-off or invalid token)
+            deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
+            storedAccessTokenRef.current = null;
           } else {
-            // New or refreshed auth token from server - store for 30 days
-            setCookie(AUTH_TOKEN_COOKIE_NAME, response.authToken, AUTH_TOKEN_EXPIRY_DAYS);
-            storedAuthTokenRef.current = response.authToken;
+            // New or refreshed access token from server - store for 1 hour
+            setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, ACCESS_TOKEN_EXPIRY_HOURS);
+            storedAccessTokenRef.current = response.accessToken;
+          }
+        }
+
+        // Handle refresh token cookie updates
+        if (response.refreshToken !== undefined) {
+          if (response.refreshToken === null) {
+            // Server signals to clear the refresh token (sign-off or invalid token)
+            deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
+            storedRefreshTokenRef.current = null;
+          } else {
+            // New or refreshed refresh token from server - store for 30 days
+            setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, REFRESH_TOKEN_EXPIRY_DAYS * 24);
+            storedRefreshTokenRef.current = response.refreshToken;
           }
         }
 
@@ -254,6 +295,7 @@ export function useTerminal() {
       cursor: state.cursor,
       input: state.fieldValues,
       key,
+      deviceId: deviceIdRef.current,
     };
 
     wsRef.current.send(JSON.stringify(request));

@@ -112,9 +112,41 @@ export async function initializeDatabase(): Promise<void> {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      -- Migration: Add new columns for access/refresh token pattern and device tracking
+      DO $$
+      BEGIN
+        -- Add access_token column
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'auth_tokens' AND column_name = 'access_token'
+        ) THEN
+          ALTER TABLE auth_tokens ADD COLUMN access_token TEXT UNIQUE;
+          ALTER TABLE auth_tokens ADD COLUMN refresh_token TEXT UNIQUE;
+          ALTER TABLE auth_tokens ADD COLUMN access_expires_at TIMESTAMP WITH TIME ZONE;
+          ALTER TABLE auth_tokens ADD COLUMN refresh_expires_at TIMESTAMP WITH TIME ZONE;
+          ALTER TABLE auth_tokens ADD COLUMN device_id TEXT;
+          ALTER TABLE auth_tokens ADD COLUMN device_name TEXT;
+          ALTER TABLE auth_tokens ADD COLUMN user_agent TEXT;
+          ALTER TABLE auth_tokens ADD COLUMN ip_address INET;
+          ALTER TABLE auth_tokens ADD COLUMN last_used_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+          ALTER TABLE auth_tokens ADD COLUMN revoked_at TIMESTAMP WITH TIME ZONE;
+          
+          -- Migrate existing records: copy token to refresh_token, set reasonable expiry
+          UPDATE auth_tokens 
+          SET refresh_token = token,
+              refresh_expires_at = expires_at,
+              access_token = NULL,
+              access_expires_at = NULL
+          WHERE refresh_token IS NULL;
+        END IF;
+      END $$;
+
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_access_token ON auth_tokens(access_token) WHERE revoked_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_refresh_token ON auth_tokens(refresh_token) WHERE revoked_at IS NULL;
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_device ON auth_tokens(user_id, device_id) WHERE revoked_at IS NULL;
     `);
 
     console.log('Database schema initialized');

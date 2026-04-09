@@ -1,7 +1,8 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
-import { validateCredentials, createAuthToken } from '../services/auth.js';
+import { validateCredentials, createAuthTokens } from '../services/auth.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { persistSessions } from '../session/index.js';
+import { loginRateLimiter } from '../utils/rateLimiter.js';
 
 // Import DSL
 import {
@@ -80,6 +81,15 @@ export async function handleLogin(
   const username = request.input['username'] || '';
   const password = request.input['password'] || '';
 
+  // Rate limiting by session ID (prevents brute force)
+  const rateLimitKey = `login:${session.id}`;
+  if (!loginRateLimiter.check(rateLimitKey)) {
+    return {
+      ...buildLoginScreen('Too many login attempts. Please try again later.', 'error'),
+      ...base,
+    };
+  }
+
   // Validate required fields
   if (!username.trim()) {
     return {
@@ -116,13 +126,20 @@ export async function handleLogin(
   // Persist session immediately after authentication
   persistSessions();
 
-  // Create a long-lived auth token for auto-login on future sessions
-  const authToken = await createAuthToken(user.id);
+  // Create access + refresh token pair with device info
+  const deviceId = request.deviceId || 'unknown';
+  const tokens = await createAuthTokens(user.id, {
+    deviceId,
+    deviceName: 'Web Browser', // TODO: Extract from user agent
+    userAgent: undefined, // Will be set by server from request headers
+    ipAddress: undefined, // Will be set by server from connection
+  });
 
-  // Return main menu
+  // Return main menu with both tokens
   return {
     ...mainMenuScreen(session),
     sessionId: session.id,
-    authToken,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
   };
 }

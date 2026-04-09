@@ -129,7 +129,8 @@ export async function handleMainMenu(
         return {
             ...buildLoginScreen('Signed off successfully', 'info'),
             ...base,
-            authToken: null, // Signal client to clear the auth token cookie
+            accessToken: null, // Signal client to clear tokens
+            refreshToken: null,
         };
     }
 
