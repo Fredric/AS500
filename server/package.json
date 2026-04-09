@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/index.ts",
-    "build": "npx tsc && cp -r src/db/migrations dist/src/db/migrations",
+    "build": "npx tsc && mkdir -p dist/src/db && cp -r src/db/migrations dist/src/db/migrations",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "tsc": "npx tsc",
