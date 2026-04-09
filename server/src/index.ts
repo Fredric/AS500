@@ -12,6 +12,8 @@ import { buildTimeEntryScreen, handleTimeEntry } from './screens/timeEntry.js';
 import { buildUserMgmtScreen, handleUserMgmt } from './screens/userMgmt.js';
 import { buildUserEditScreen, handleUserEdit } from './screens/userEdit.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
+import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './services/auth.js';
+import { tokenRefreshRateLimiter } from './utils/rateLimiter.js';
 
 // Import database initialization
 import { initializeDatabase, closeDatabase } from './db/index.js';
@@ -185,9 +187,9 @@ async function startServer() {
       try {
         const request: ClientRequest = JSON.parse(data.toString());
 
-        // Handle RESUME - client trying to restore a session
-        if (request.key === 'RESUME' && request.sessionId) {
-          const existingSession = getSession(request.sessionId);
+        // Handle RESUME - client trying to restore a session (or auto-login via tokens)
+        if (request.key === 'RESUME') {
+          const existingSession = request.sessionId ? getSession(request.sessionId) : null;
 
           if (existingSession && existingSession.authenticated) {
             // Valid authenticated session - restore it
@@ -205,16 +207,112 @@ async function startServer() {
             return;
           }
 
-          // Invalid or expired session - create new one
+          // Session expired or not found - try access token first
+          if (request.accessToken) {
+            const user = await validateAccessToken(request.accessToken);
+
+            if (user) {
+              // Valid access token - auto-authenticate
+              const session = existingSession ?? createSession();
+              session.authenticated = true;
+              session.viserId = user.id;
+              session.username = user.username;
+              session.isAdmin = user.is_admin;
+              if (session.currentScreen === 'LOGIN') {
+                session.currentScreen = 'MAIN_MENU';
+                session.screenStack = ['LOGIN'];
+                session.context = {};
+              }
+
+              connectionSessions.set(ws, session.id);
+              console.log(`Auto-authenticated via access token for user: ${user.username}`);
+
+              const response: ScreenResponse = {
+                ...(await getCurrentScreenResponse(session)),
+                sessionId: session.id,
+                message: `Welcome back, ${user.username}`,
+                messageType: 'info',
+              };
+
+              ws.send(JSON.stringify(response));
+              return;
+            }
+
+            // Access token expired - try to refresh using refresh token
+            if (request.refreshToken) {
+              // Rate limiting for token refresh (prevent abuse)
+              const refreshRateLimitKey = `refresh:${request.refreshToken.substring(0, 8)}`;
+              if (!tokenRefreshRateLimiter.check(refreshRateLimitKey)) {
+                console.warn('Token refresh rate limit exceeded');
+                // Don't reveal rate limiting - just treat as expired token
+                const newSession = createSession();
+                connectionSessions.set(ws, newSession.id);
+                ws.send(JSON.stringify({
+                  ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
+                  sessionId: newSession.id,
+                  accessToken: null,
+                  refreshToken: null,
+                }));
+                return;
+              }
+
+              const deviceInfo: DeviceInfo = {
+                deviceId: request.deviceId || 'unknown',
+                deviceName: DEFAULT_DEVICE_NAME,
+              };
+
+              const refreshResult = await refreshAuthTokens(request.refreshToken, deviceInfo);
+
+              if (refreshResult) {
+                const { user: refreshedUser, ...tokens } = refreshResult;
+                const session = existingSession ?? createSession();
+                session.authenticated = true;
+                session.viserId = refreshedUser.id;
+                session.username = refreshedUser.username;
+                session.isAdmin = refreshedUser.is_admin;
+                if (session.currentScreen === 'LOGIN') {
+                  session.currentScreen = 'MAIN_MENU';
+                  session.screenStack = ['LOGIN'];
+                  session.context = {};
+                }
+
+                connectionSessions.set(ws, session.id);
+                console.log(`Auto-authenticated via refresh token for user: ${refreshedUser.username}`);
+
+                const response: ScreenResponse = {
+                  ...(await getCurrentScreenResponse(session)),
+                  sessionId: session.id,
+                  message: `Welcome back, ${refreshedUser.username}`,
+                  messageType: 'info',
+                  accessToken: tokens.accessToken,
+                  refreshToken: tokens.refreshToken,
+                  accessExpiresAt: tokens.accessExpiresAt.toISOString(),
+                  refreshExpiresAt: tokens.refreshExpiresAt.toISOString(),
+                };
+
+                ws.send(JSON.stringify(response));
+                return;
+              }
+            }
+          }
+
+          // Invalid or expired tokens - create new session and require login
           const newSession = createSession();
           connectionSessions.set(ws, newSession.id);
 
-          const response: ScreenResponse = {
-            ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
-            sessionId: newSession.id,
-          };
+          const sessionExpiredResponse: ScreenResponse = request.sessionId || request.accessToken
+            ? {
+                ...buildLoginScreen('Session expired. Please sign on again.', 'warning'),
+                sessionId: newSession.id,
+                accessToken: null, // Signal client to clear stale tokens
+                refreshToken: null,
+              }
+            : {
+                ...buildLoginScreen(),
+                sessionId: newSession.id,
+              };
 
-          ws.send(JSON.stringify(response));
+          ws.send(JSON.stringify(sessionExpiredResponse));
           return;
         }
 

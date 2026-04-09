@@ -1,7 +1,8 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
-import { validateCredentials } from '../services/auth.js';
+import { validateCredentials, createAuthTokens, DEFAULT_DEVICE_NAME } from '../services/auth.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { persistSessions } from '../session/index.js';
+import { loginRateLimiter } from '../utils/rateLimiter.js';
 
 // Import DSL
 import {
@@ -71,14 +72,22 @@ export async function handleLogin(
 ): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
 
-  // Only process ENTER key
   if (request.key !== 'ENTER') {
     return { ...buildLoginScreen(), ...base };
   }
 
-  // Get input values by field name (client sends input keyed by field name)
   const username = request.input['username'] || '';
   const password = request.input['password'] || '';
+
+  // Rate limit per account to block brute force regardless of session
+  const normalizedUsername = username.toUpperCase().trim();
+  const rateLimitKey = normalizedUsername ? `login:${normalizedUsername}` : `login:${session.id}`;
+  if (!loginRateLimiter.check(rateLimitKey)) {
+    return {
+      ...buildLoginScreen('Too many login attempts. Please try again later.', 'error'),
+      ...base,
+    };
+  }
 
   // Validate required fields
   if (!username.trim()) {
@@ -116,9 +125,17 @@ export async function handleLogin(
   // Persist session immediately after authentication
   persistSessions();
 
-  // Return main menu
+  const tokens = await createAuthTokens(user.id, {
+    deviceId: request.deviceId || 'unknown',
+    deviceName: DEFAULT_DEVICE_NAME,
+  });
+
   return {
     ...mainMenuScreen(session),
     sessionId: session.id,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    accessExpiresAt: tokens.accessExpiresAt.toISOString(),
+    refreshExpiresAt: tokens.refreshExpiresAt.toISOString(),
   };
 }

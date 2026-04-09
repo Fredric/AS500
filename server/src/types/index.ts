@@ -18,6 +18,9 @@ export interface ClientRequest {
   cursor: { row: number; col: number };
   input: Record<string, string>;
   key: string;
+  accessToken?: string; // Short-lived access token (1 hour)
+  refreshToken?: string; // Long-lived refresh token (30 days)
+  deviceId?: string; // Unique device identifier
 }
 
 // Field definition
@@ -43,6 +46,10 @@ export interface ScreenResponse {
   messageType: 'info' | 'warning' | 'error' | null;
   statusLine: string;
   bell: boolean;
+  accessToken?: string | null; // Short-lived access token; null signals client to clear
+  refreshToken?: string | null; // Long-lived refresh token; null signals client to clear
+  accessExpiresAt?: string; // ISO timestamp for access token expiry
+  refreshExpiresAt?: string; // ISO timestamp for refresh token expiry
 }
 
 // Database user

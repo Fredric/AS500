@@ -3,6 +3,7 @@ import { buildLoginScreen } from './login.js';
 import { buildTimeRegScreen } from './timeReg.js';
 import { buildUserMgmtScreen } from './userMgmt.js';
 import { initTimeRegV2Context } from '../configs/timeRegV2.js';
+import { revokeAllUserTokens } from '../services/auth.js';
 
 // Import DSL
 import {
@@ -110,6 +111,8 @@ export async function handleMainMenu(
 
     // Handle F3 - Sign off
     if (request.key === 'F3') {
+        const userId = session.viserId;
+
         session.authenticated = false;
         session.isAdmin = false;
         session.viserId = null;
@@ -118,9 +121,16 @@ export async function handleMainMenu(
         session.screenStack = [];
         session.context = {};
 
+        // Revoke all long-lived auth tokens for this user
+        if (userId) {
+            await revokeAllUserTokens(userId);
+        }
+
         return {
             ...buildLoginScreen('Signed off successfully', 'info'),
             ...base,
+            accessToken: null, // Signal client to clear tokens
+            refreshToken: null,
         };
     }
 

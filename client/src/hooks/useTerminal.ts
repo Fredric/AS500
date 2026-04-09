@@ -14,20 +14,35 @@ function getWebSocketUrl(): string {
 
 const WS_URL = getWebSocketUrl();
 const SESSION_COOKIE_NAME = 'as500_session';
-
-// Cookie helpers
+const ACCESS_TOKEN_COOKIE_NAME = 'as500_access_token';
+const REFRESH_TOKEN_COOKIE_NAME = 'as500_refresh_token';
+const DEVICE_ID_COOKIE_NAME = 'as500_device_id';
+// Cookie helpers with proper security flags
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
   return match ? match[2] : null;
 }
 
-function setCookie(name: string, value: string, days: number = 1) {
-  const expires = new Date(Date.now() + days * 864e5).toUTCString();
-  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Strict`;
+function setCookie(name: string, value: string, hours?: number) {
+  const isSecure = window.location.protocol === 'https:';
+  const expires = new Date(Date.now() + (hours ?? 24) * 3600 * 1000).toUTCString();
+  // Note: HttpOnly cannot be set from JavaScript (server-side only)
+  // but we set SameSite=Strict and Secure for HTTPS
+  const secureFlag = isSecure ? '; Secure' : '';
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Strict${secureFlag}`;
 }
 
 function deleteCookie(name: string) {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict`;
+}
+
+function getDeviceId(): string {
+  let deviceId = getCookie(DEVICE_ID_COOKIE_NAME);
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    setCookie(DEVICE_ID_COOKIE_NAME, deviceId, 365 * 24); // 1 year
+  }
+  return deviceId;
 }
 
 interface TerminalState {
@@ -63,6 +78,9 @@ export function useTerminal() {
   // Track if we've sent resume request
   const hasResumedRef = useRef(false);
   const storedSessionRef = useRef(getCookie(SESSION_COOKIE_NAME));
+  const storedAccessTokenRef = useRef(getCookie(ACCESS_TOKEN_COOKIE_NAME));
+  const storedRefreshTokenRef = useRef(getCookie(REFRESH_TOKEN_COOKIE_NAME));
+  const deviceIdRef = useRef(getDeviceId());
 
   // Connect to WebSocket
   useEffect(() => {
@@ -77,9 +95,12 @@ export function useTerminal() {
       setState(prev => ({ ...prev, connected: true }));
 
       const storedSession = storedSessionRef.current;
+      const storedAccessToken = storedAccessTokenRef.current;
+      const storedRefreshToken = storedRefreshTokenRef.current;
+      const deviceId = deviceIdRef.current;
 
-      if (storedSession && !hasResumedRef.current) {
-        // Try to resume existing session
+      if ((storedSession || storedAccessToken || storedRefreshToken) && !hasResumedRef.current) {
+        // Try to resume existing session with tokens
         hasResumedRef.current = true;
         const resumeRequest: ClientRequest = {
           sessionId: storedSession,
@@ -87,10 +108,13 @@ export function useTerminal() {
           cursor: { row: 0, col: 0 },
           input: {},
           key: 'RESUME',
+          accessToken: storedAccessToken ?? undefined,
+          refreshToken: storedRefreshToken ?? undefined,
+          deviceId,
         };
         ws.send(JSON.stringify(resumeRequest));
       } else {
-        // No stored session - request initial screen
+        // No stored session or tokens - request initial screen
         const initRequest: ClientRequest = {
           sessionId: null,
           screenId: '',
@@ -121,9 +145,7 @@ export function useTerminal() {
       try {
         const data = JSON.parse(event.data);
 
-        // Handle PONG response (heartbeat acknowledgment)
         if (data.type === 'PONG') {
-          // Heartbeat acknowledged, no action needed
           return;
         }
 
@@ -134,13 +156,39 @@ export function useTerminal() {
           playBell();
         }
 
-        // Save session to cookie
+        // Save session to cookie (7 days so it survives typical usage between sessions)
         if (response.sessionId) {
-          setCookie(SESSION_COOKIE_NAME, response.sessionId);
+          setCookie(SESSION_COOKIE_NAME, response.sessionId, 7 * 24);
           storedSessionRef.current = response.sessionId;
         }
 
-        // Clear cookie on sign-off (returning to LOGIN after being authenticated)
+        if (response.accessToken !== undefined) {
+          if (response.accessToken === null) {
+            deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
+            storedAccessTokenRef.current = null;
+          } else {
+            const expiryHours = response.accessExpiresAt
+              ? Math.max(0.1, (new Date(response.accessExpiresAt).getTime() - Date.now()) / 3600000)
+              : 1;
+            setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, expiryHours);
+            storedAccessTokenRef.current = response.accessToken;
+          }
+        }
+
+        if (response.refreshToken !== undefined) {
+          if (response.refreshToken === null) {
+            deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
+            storedRefreshTokenRef.current = null;
+          } else {
+            const expiryHours = response.refreshExpiresAt
+              ? Math.max(0.1, (new Date(response.refreshExpiresAt).getTime() - Date.now()) / 3600000)
+              : 30 * 24;
+            setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, expiryHours);
+            storedRefreshTokenRef.current = response.refreshToken;
+          }
+        }
+
+        // Clear session cookie on sign-off (returning to LOGIN after being authenticated)
         if (response.screenId === 'LOGIN' && state.screenId !== 'LOGIN' && state.screenId !== '') {
           deleteCookie(SESSION_COOKIE_NAME);
           storedSessionRef.current = null;
@@ -236,6 +284,7 @@ export function useTerminal() {
       cursor: state.cursor,
       input: state.fieldValues,
       key,
+      deviceId: deviceIdRef.current,
     };
 
     wsRef.current.send(JSON.stringify(request));
