@@ -230,7 +230,17 @@ await db.update(users).set({ active: false }).where(eq(users.id, id));
 
 ### Migrations
 
-There is no drizzle-kit migration tooling. Schema changes are applied via `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE` blocks inside `initializeDatabase()` in `db/index.ts`, which runs automatically on every server start.
+Migrations are managed with **drizzle-kit**. Migration files live in `server/src/db/migrations/` and must be committed to git.
+
+```bash
+# After editing schema.ts, generate a migration file
+cd server && npm run db:generate
+
+# Apply pending migrations manually (also runs automatically at server startup)
+cd server && npm run db:migrate
+```
+
+The `drizzle_migrations` table in the database tracks which migrations have been applied. Server startup calls `migrate()` in `db/index.ts`, so migrations are applied automatically in both dev and production.
 
 ## Coding Conventions
 

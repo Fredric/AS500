@@ -159,7 +159,7 @@ The project uses **Drizzle ORM** as a typed query layer on top of a raw `pg` con
 
 - **`server/src/db/schema.ts`** — single source of truth for all table definitions (`users`, `days`, `day_items`, `auth_tokens`). Add new tables here.
 - **`server/src/db/index.ts`** — exports both `pool` (raw pg) and `db` (Drizzle instance). Services should use `db`.
-- **Migrations** — still handled automatically at startup via `CREATE TABLE IF NOT EXISTS` SQL in `db/index.ts`. Drizzle is a query layer only; there is no drizzle-kit migration tooling set up.
+- **Migrations** — managed by **drizzle-kit**. Migration files live in `server/src/db/migrations/` and are applied automatically at server startup via `migrate()` in `db/index.ts`. Run `npm run db:generate` after editing `schema.ts` to create a new migration file.
 
 ### Writing a new service
 
@@ -184,8 +184,9 @@ await db.delete(myTable).where(eq(myTable.id, id));
 ### Adding a new table
 
 1. Define it in `server/src/db/schema.ts` using `pgTable`
-2. Add `CREATE TABLE IF NOT EXISTS` for it in `db/index.ts` `initializeDatabase()` so it is created on startup
-3. Import the table object in your service file
+2. Run `npm run db:generate` inside `server/` to generate a migration file
+3. The migration is applied automatically on next server start (or run `npm run db:migrate` explicitly)
+4. Import the table object in your service file
 
 ---
 
