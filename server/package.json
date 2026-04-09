@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/index.ts",
-    "build": "npx tsc",
-    "tsc": "npx tsc", 
+    "build": "npx tsc && cp -r src/db/migrations dist/src/db/migrations",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "tsc": "npx tsc",
     "typecheck": "npx tsc --noEmit",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts",
@@ -24,14 +26,16 @@
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.5.14",
     "bcrypt": "^6.0.0",
+    "drizzle-orm": "^0.45.2",
     "pg": "^8.13.0",
+    "typescript": "^5.9.3",
     "uuid": "^11.0.4",
-    "ws": "^8.18.0",
-    "typescript": "^5.9.3"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "better-sqlite3": "^11.7.0",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.2"
   }
 }

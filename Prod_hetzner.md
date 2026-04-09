@@ -79,6 +79,14 @@ docker compose -f docker-compose.prod.yml build app
 docker compose -f docker-compose.prod.yml up -d app
 ```
 
+Pending database migrations are applied automatically when the app container starts. No manual migration step is needed unless you want to run them before the app comes up:
+
+```bash
+# Optional: run migrations before starting the app
+docker compose -f docker-compose.prod.yml run --rm app npm run db:migrate
+docker compose -f docker-compose.prod.yml up -d app
+```
+
 ### View logs
 
 ```bash

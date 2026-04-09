@@ -13,7 +13,7 @@ AS500 is a modern implementation of an AS/400 mainframe terminal system - a uniq
 - **Database**: PostgreSQL 16 (Alpine)
 - **Communication**: WebSocket (ws package)
 - **Development**: Docker Compose
-- **Key Dependencies**: ws, pg, bcrypt, uuid, tsx (server); react, react-dom, vite (client)
+- **Key Dependencies**: ws, pg, drizzle-orm, bcrypt, uuid, tsx (server); react, react-dom, vite (client)
 
 ## Repository Structure
 
@@ -197,19 +197,50 @@ const screen = render(MY_SCREEN, fieldValues, options);
 - **Dev mode**: Sessions automatically saved to `server/data/sessions.json`
 - **File**: `server/src/session/index.ts`
 
-## Database Schema
+## Database Layer
 
-**PostgreSQL 16** with connection pool via `pg` package.
+**PostgreSQL 16** accessed via **Drizzle ORM** (typed query builder) on top of a `pg` connection pool.
 
 ### Tables
 
 **users**: User accounts with bcrypt password hashing
 **days**: Time registration - one record per user per day (user_id, workday, daysum)
 **day_items**: Individual time entries (day_id, start_hour, end_hour, jiratask, description, rowsum)
+**auth_tokens**: Access + refresh tokens for WebSocket authentication
 
-**Files**:
-- Schema & Pool: `server/src/db/index.ts`
-- Seeding: `server/src/db/seed.ts`
+### Key files
+
+- `server/src/db/schema.ts` — Drizzle table definitions, single source of truth for column types
+- `server/src/db/index.ts` — exports `db` (Drizzle instance) and `pool` (raw pg); runs `CREATE TABLE IF NOT EXISTS` migrations at startup
+- `server/src/db/seed.ts` — seeds default users
+
+### Writing database queries
+
+Services import `db` and table objects from the schema — **do not use raw `pool.query`**:
+
+```typescript
+import { eq } from 'drizzle-orm';
+import { db } from '../db/index.js';
+import { users } from '../db/schema.js';
+
+const rows = await db.select().from(users).where(eq(users.id, id));
+await db.insert(users).values({ username: 'FOO', ... }).returning();
+await db.update(users).set({ active: false }).where(eq(users.id, id));
+```
+
+### Migrations
+
+Migrations are managed with **drizzle-kit**. Migration files live in `server/src/db/migrations/` and must be committed to git.
+
+```bash
+# After editing schema.ts, generate a migration file
+cd server && npm run db:generate
+
+# Apply pending migrations manually (also runs automatically at server startup)
+cd server && npm run db:migrate
+```
+
+The `drizzle_migrations` table in the database tracks which migrations have been applied. Server startup calls `migrate()` in `db/index.ts`, so migrations are applied automatically in both dev and production.
 
 ## Coding Conventions
 
@@ -248,7 +279,7 @@ const screen = render(MY_SCREEN, fieldValues, options);
 3. **All business logic must be in the server** - never in the client
 4. **TypeScript imports use `.js` extensions** even for `.ts` files (ES modules)
 5. **Session persistence is dev-only** - don't rely on it in production code
-6. **Database connection**: Use `DATABASE_URL` environment variable or individual `PG*` variables
+6. **Database queries**: Use `db` (Drizzle) from `server/src/db/index.ts`, not raw `pool.query`. Connection is configured via `DATABASE_URL` or individual `PG*` variables.
 7. **Hot reload is automatic** - no need to manually restart during development
 8. **Seed the database first** before testing: `docker-compose exec server npm run seed`
 

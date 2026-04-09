@@ -24,10 +24,13 @@ test.describe('Time Registration CRUD', () => {
 
     // Login: KALLE / password
     const usernameInput = page.locator('input[type="text"]').first();
+    await usernameInput.waitFor({ state: 'visible', timeout: 10000 });
     await usernameInput.fill('KALLE');
     await usernameInput.press('Tab');
-    await page.locator('input[type="password"]').fill('password');
-    await page.locator('input[type="password"]').press('Enter');
+    const passwordInput = page.locator('input[type="password"]');
+    await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+    await passwordInput.fill('password');
+    await passwordInput.press('Enter');
 
     // Navigate to main menu
     await page.locator('text=MAIN MENU').waitFor({ state: 'visible', timeout: 10000 });
