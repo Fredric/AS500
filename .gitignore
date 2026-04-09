@@ -35,3 +35,6 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+
+# SQL client session files
+*.session.sql

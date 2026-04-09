@@ -1,6 +1,6 @@
 {
   "name": "as500",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AS500 Terminal System - AS/400 inspired time tracking",
   "private": true,
   "scripts": {

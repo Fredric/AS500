@@ -21,6 +21,8 @@ export interface ScreenResponse {
   bell: boolean;
   accessToken?: string | null; // Short-lived access token; null signals client to clear
   refreshToken?: string | null; // Long-lived refresh token; null signals client to clear
+  accessExpiresAt?: string; // ISO timestamp for access token expiry
+  refreshExpiresAt?: string; // ISO timestamp for refresh token expiry
 }
 
 export interface ClientRequest {

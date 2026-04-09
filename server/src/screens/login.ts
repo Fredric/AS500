@@ -1,5 +1,5 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
-import { validateCredentials, createAuthTokens } from '../services/auth.js';
+import { validateCredentials, createAuthTokens, DEFAULT_DEVICE_NAME } from '../services/auth.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { persistSessions } from '../session/index.js';
 import { loginRateLimiter } from '../utils/rateLimiter.js';
@@ -72,17 +72,16 @@ export async function handleLogin(
 ): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
 
-  // Only process ENTER key
   if (request.key !== 'ENTER') {
     return { ...buildLoginScreen(), ...base };
   }
 
-  // Get input values by field name (client sends input keyed by field name)
   const username = request.input['username'] || '';
   const password = request.input['password'] || '';
 
-  // Rate limiting by session ID (prevents brute force)
-  const rateLimitKey = `login:${session.id}`;
+  // Rate limit per account to block brute force regardless of session
+  const normalizedUsername = username.toUpperCase().trim();
+  const rateLimitKey = normalizedUsername ? `login:${normalizedUsername}` : `login:${session.id}`;
   if (!loginRateLimiter.check(rateLimitKey)) {
     return {
       ...buildLoginScreen('Too many login attempts. Please try again later.', 'error'),
@@ -126,20 +125,17 @@ export async function handleLogin(
   // Persist session immediately after authentication
   persistSessions();
 
-  // Create access + refresh token pair with device info
-  const deviceId = request.deviceId || 'unknown';
   const tokens = await createAuthTokens(user.id, {
-    deviceId,
-    deviceName: 'Web Browser', // TODO: Extract from user agent
-    userAgent: undefined, // Will be set by server from request headers
-    ipAddress: undefined, // Will be set by server from connection
+    deviceId: request.deviceId || 'unknown',
+    deviceName: DEFAULT_DEVICE_NAME,
   });
 
-  // Return main menu with both tokens
   return {
     ...mainMenuScreen(session),
     sessionId: session.id,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
+    accessExpiresAt: tokens.accessExpiresAt.toISOString(),
+    refreshExpiresAt: tokens.refreshExpiresAt.toISOString(),
   };
 }

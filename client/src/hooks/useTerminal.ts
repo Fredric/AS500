@@ -17,9 +17,6 @@ const SESSION_COOKIE_NAME = 'as500_session';
 const ACCESS_TOKEN_COOKIE_NAME = 'as500_access_token';
 const REFRESH_TOKEN_COOKIE_NAME = 'as500_refresh_token';
 const DEVICE_ID_COOKIE_NAME = 'as500_device_id';
-const ACCESS_TOKEN_EXPIRY_HOURS = 1; // 1 hour
-const REFRESH_TOKEN_EXPIRY_DAYS = 30; // 30 days
-
 // Cookie helpers with proper security flags
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -39,16 +36,10 @@ function deleteCookie(name: string) {
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict`;
 }
 
-// Generate or retrieve device ID
 function getDeviceId(): string {
   let deviceId = getCookie(DEVICE_ID_COOKIE_NAME);
   if (!deviceId) {
-    // Generate a simple device ID (UUID-like)
-    deviceId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+    deviceId = crypto.randomUUID();
     setCookie(DEVICE_ID_COOKIE_NAME, deviceId, 365 * 24); // 1 year
   }
   return deviceId;
@@ -154,9 +145,7 @@ export function useTerminal() {
       try {
         const data = JSON.parse(event.data);
 
-        // Handle PONG response (heartbeat acknowledgment)
         if (data.type === 'PONG') {
-          // Heartbeat acknowledged, no action needed
           return;
         }
 
@@ -173,28 +162,28 @@ export function useTerminal() {
           storedSessionRef.current = response.sessionId;
         }
 
-        // Handle access token cookie updates
         if (response.accessToken !== undefined) {
           if (response.accessToken === null) {
-            // Server signals to clear the access token (sign-off or invalid token)
             deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
             storedAccessTokenRef.current = null;
           } else {
-            // New or refreshed access token from server - store for 1 hour
-            setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, ACCESS_TOKEN_EXPIRY_HOURS);
+            const expiryHours = response.accessExpiresAt
+              ? Math.max(0.1, (new Date(response.accessExpiresAt).getTime() - Date.now()) / 3600000)
+              : 1;
+            setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, expiryHours);
             storedAccessTokenRef.current = response.accessToken;
           }
         }
 
-        // Handle refresh token cookie updates
         if (response.refreshToken !== undefined) {
           if (response.refreshToken === null) {
-            // Server signals to clear the refresh token (sign-off or invalid token)
             deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
             storedRefreshTokenRef.current = null;
           } else {
-            // New or refreshed refresh token from server - store for 30 days
-            setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, REFRESH_TOKEN_EXPIRY_DAYS * 24);
+            const expiryHours = response.refreshExpiresAt
+              ? Math.max(0.1, (new Date(response.refreshExpiresAt).getTime() - Date.now()) / 3600000)
+              : 30 * 24;
+            setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, expiryHours);
             storedRefreshTokenRef.current = response.refreshToken;
           }
         }

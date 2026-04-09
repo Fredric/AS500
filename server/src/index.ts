@@ -12,7 +12,7 @@ import { buildTimeEntryScreen, handleTimeEntry } from './screens/timeEntry.js';
 import { buildUserMgmtScreen, handleUserMgmt } from './screens/userMgmt.js';
 import { buildUserEditScreen, handleUserEdit } from './screens/userEdit.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
-import { validateAccessToken, refreshAuthTokens, type DeviceInfo } from './services/auth.js';
+import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './services/auth.js';
 import { tokenRefreshRateLimiter } from './utils/rateLimiter.js';
 
 // Import database initialization
@@ -258,42 +258,40 @@ async function startServer() {
 
               const deviceInfo: DeviceInfo = {
                 deviceId: request.deviceId || 'unknown',
-                deviceName: 'Web Browser',
+                deviceName: DEFAULT_DEVICE_NAME,
               };
 
-              const tokens = await refreshAuthTokens(request.refreshToken, deviceInfo);
+              const refreshResult = await refreshAuthTokens(request.refreshToken, deviceInfo);
 
-              if (tokens) {
-                // Successfully refreshed - authenticate with new tokens
-                const refreshedUser = await validateAccessToken(tokens.accessToken);
-
-                if (refreshedUser) {
-                  const session = existingSession ?? createSession();
-                  session.authenticated = true;
-                  session.viserId = refreshedUser.id;
-                  session.username = refreshedUser.username;
-                  session.isAdmin = refreshedUser.is_admin;
-                  if (session.currentScreen === 'LOGIN') {
-                    session.currentScreen = 'MAIN_MENU';
-                    session.screenStack = ['LOGIN'];
-                    session.context = {};
-                  }
-
-                  connectionSessions.set(ws, session.id);
-                  console.log(`Auto-authenticated via refresh token for user: ${refreshedUser.username}`);
-
-                  const response: ScreenResponse = {
-                    ...(await getCurrentScreenResponse(session)),
-                    sessionId: session.id,
-                    message: `Welcome back, ${refreshedUser.username}`,
-                    messageType: 'info',
-                    accessToken: tokens.accessToken, // Send new tokens to client
-                    refreshToken: tokens.refreshToken,
-                  };
-
-                  ws.send(JSON.stringify(response));
-                  return;
+              if (refreshResult) {
+                const { user: refreshedUser, ...tokens } = refreshResult;
+                const session = existingSession ?? createSession();
+                session.authenticated = true;
+                session.viserId = refreshedUser.id;
+                session.username = refreshedUser.username;
+                session.isAdmin = refreshedUser.is_admin;
+                if (session.currentScreen === 'LOGIN') {
+                  session.currentScreen = 'MAIN_MENU';
+                  session.screenStack = ['LOGIN'];
+                  session.context = {};
                 }
+
+                connectionSessions.set(ws, session.id);
+                console.log(`Auto-authenticated via refresh token for user: ${refreshedUser.username}`);
+
+                const response: ScreenResponse = {
+                  ...(await getCurrentScreenResponse(session)),
+                  sessionId: session.id,
+                  message: `Welcome back, ${refreshedUser.username}`,
+                  messageType: 'info',
+                  accessToken: tokens.accessToken,
+                  refreshToken: tokens.refreshToken,
+                  accessExpiresAt: tokens.accessExpiresAt.toISOString(),
+                  refreshExpiresAt: tokens.refreshExpiresAt.toISOString(),
+                };
+
+                ws.send(JSON.stringify(response));
+                return;
               }
             }
           }

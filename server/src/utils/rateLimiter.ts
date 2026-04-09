@@ -80,7 +80,5 @@ export class RateLimiter {
   }
 }
 
-// Preconfigured rate limiters for common use cases
 export const loginRateLimiter = new RateLimiter(5, 60 * 1000); // 5 attempts per minute
 export const tokenRefreshRateLimiter = new RateLimiter(10, 60 * 60 * 1000); // 10 refreshes per hour
-export const generalRateLimiter = new RateLimiter(100, 60 * 1000); // 100 requests per minute
