@@ -38,3 +38,4 @@ Thumbs.db
 
 # SQL client session files
 *.session.sql
+.aider*

@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+server/data
+server/backups
+.git
+*.md
+docker-compose*.yml
+tests
+playwright.config.ts

@@ -1,0 +1,26 @@
+FROM node:20-alpine
+
+# Build tools needed for bcrypt (native module)
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# --- Build client ---
+COPY client/package*.json ./client/
+RUN cd client && npm install
+
+COPY client/ ./client/
+RUN cd client && npm run build
+
+# --- Build server ---
+COPY server/package*.json ./server/
+RUN cd server && npm install
+
+COPY server/ ./server/
+RUN cd server && npm run build
+
+# Run
+WORKDIR /app/server
+ENV NODE_ENV=production
+EXPOSE 3001
+CMD ["node", "dist/index.js"]
