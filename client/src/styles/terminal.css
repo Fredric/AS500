@@ -106,6 +106,18 @@ body {
   animation: blink 1s infinite;
 }
 
+/* Version Info */
+.version-info {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.6;
+  z-index: 20;
+}
+
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0.3; }

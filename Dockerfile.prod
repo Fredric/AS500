@@ -5,6 +5,9 @@ RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
+# Copy root package.json so vite.config.ts can read the version
+COPY package.json ./
+
 # --- Build client ---
 COPY client/package*.json ./client/
 RUN cd client && npm install
