@@ -1,6 +1,8 @@
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
-import pool from '../db/index.js';
+import { eq, or, and, isNull, isNotNull, gt, lt, getTableColumns, sql } from 'drizzle-orm';
+import { db } from '../db/index.js';
+import { users, authTokens } from '../db/schema.js';
 import type { User } from '../types/index.js';
 
 export const DEFAULT_DEVICE_NAME = 'Web Browser';
@@ -11,22 +13,16 @@ export async function validateCredentials(
 ): Promise<User | null> {
   const normalizedUsername = username.toUpperCase().trim();
 
-  const result = await pool.query<User>(
-    'SELECT * FROM users WHERE username = $1 AND active = TRUE',
-    [normalizedUsername]
-  );
+  const rows = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.username, normalizedUsername), eq(users.active, true)));
 
-  const user = result.rows[0];
-
-  if (!user) {
-    return null;
-  }
+  const user = rows[0];
+  if (!user) return null;
 
   const valid = await bcrypt.compare(password, user.password_hash);
-
-  if (!valid) {
-    return null;
-  }
+  if (!valid) return null;
 
   return user;
 }
@@ -61,23 +57,20 @@ async function insertTokenRow(
   refreshExpiresAt: Date,
   deviceInfo: DeviceInfo
 ): Promise<void> {
-  await pool.query(
-    `INSERT INTO auth_tokens
-     (user_id, token, access_token, refresh_token, expires_at, access_expires_at, refresh_expires_at,
-      device_id, device_name, user_agent, ip_address, last_used_at)
-     VALUES ($1, $2, $2, $3, $4, $4, $5, $6, $7, $8, $9, NOW())`,
-    [
-      userId,
-      accessToken,
-      refreshToken,
-      accessExpiresAt,
-      refreshExpiresAt,
-      deviceInfo.deviceId,
-      deviceInfo.deviceName || 'Unknown Device',
-      deviceInfo.userAgent,
-      deviceInfo.ipAddress,
-    ]
-  );
+  await db.insert(authTokens).values({
+    user_id: userId,
+    token: accessToken,
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: accessExpiresAt,
+    access_expires_at: accessExpiresAt,
+    refresh_expires_at: refreshExpiresAt,
+    device_id: deviceInfo.deviceId,
+    device_name: deviceInfo.deviceName || 'Unknown Device',
+    user_agent: deviceInfo.userAgent ?? null,
+    ip_address: deviceInfo.ipAddress ?? null,
+    last_used_at: sql`NOW()`,
+  });
 }
 
 export async function createAuthTokens(
@@ -95,79 +88,67 @@ export async function createAuthTokens(
 }
 
 export async function validateAccessToken(accessToken: string): Promise<User | null> {
-  const result = await pool.query<User>(
-    `SELECT u.* FROM users u
-     JOIN auth_tokens t ON t.user_id = u.id
-     WHERE t.access_token = $1
-     AND t.access_expires_at > NOW()
-     AND t.revoked_at IS NULL
-     AND u.active = TRUE`,
-    [accessToken]
-  );
+  const rows = await db
+    .select({ ...getTableColumns(users) })
+    .from(users)
+    .innerJoin(authTokens, eq(authTokens.user_id, users.id))
+    .where(and(
+      eq(authTokens.access_token, accessToken),
+      gt(authTokens.access_expires_at, sql`NOW()`),
+      isNull(authTokens.revoked_at),
+      eq(users.active, true)
+    ));
 
-  if (result.rows[0]) {
-    await pool.query(
-      'UPDATE auth_tokens SET last_used_at = NOW() WHERE access_token = $1',
-      [accessToken]
-    );
+  if (rows[0]) {
+    await db
+      .update(authTokens)
+      .set({ last_used_at: sql`NOW()` })
+      .where(eq(authTokens.access_token, accessToken));
   }
 
-  return result.rows[0] ?? null;
+  return rows[0] ?? null;
 }
 
-interface TokenRecord {
-  id: number;
-  user_id: number;
-  device_id: string;
-  device_name: string;
-  user_agent: string | null;
-  ip_address: string | null;
-}
-
-/**
- * Validate refresh token, revoke it, issue new token pair, and return the authenticated user.
- * Implements token rotation — old token is consumed and cannot be reused.
- */
 export async function refreshAuthTokens(
   refreshToken: string,
   deviceInfo: DeviceInfo
 ): Promise<TokenPairWithUser | null> {
-  // Validate refresh token and fetch user in one query
-  const result = await pool.query<TokenRecord & {
-    u_id: number; username: string; password_hash: string; full_name: string | null;
-    active: boolean; is_admin: boolean; u_created_at: Date;
-  }>(
-    `SELECT t.id, t.user_id, t.device_id, t.device_name, t.user_agent, t.ip_address,
-            u.id as u_id, u.username, u.password_hash, u.full_name, u.active, u.is_admin,
-            u.created_at as u_created_at
-     FROM auth_tokens t
-     JOIN users u ON u.id = t.user_id
-     WHERE t.refresh_token = $1
-     AND t.refresh_expires_at > NOW()
-     AND t.revoked_at IS NULL
-     AND u.active = TRUE`,
-    [refreshToken]
-  );
+  const rows = await db
+    .select({
+      tokenId: authTokens.id,
+      tokenUserId: authTokens.user_id,
+      tokenDeviceId: authTokens.device_id,
+      tokenDeviceName: authTokens.device_name,
+      tokenUserAgent: authTokens.user_agent,
+      tokenIpAddress: authTokens.ip_address,
+      ...getTableColumns(users),
+    })
+    .from(authTokens)
+    .innerJoin(users, eq(users.id, authTokens.user_id))
+    .where(and(
+      eq(authTokens.refresh_token, refreshToken),
+      gt(authTokens.refresh_expires_at, sql`NOW()`),
+      isNull(authTokens.revoked_at),
+      eq(users.active, true)
+    ));
 
-  const row = result.rows[0];
-  if (!row) {
-    return null;
-  }
+  const row = rows[0];
+  if (!row) return null;
 
   const user: User = {
-    id: row.u_id,
+    id: row.id,
     username: row.username,
     password_hash: row.password_hash,
     full_name: row.full_name,
     active: row.active,
     is_admin: row.is_admin,
-    created_at: row.u_created_at,
+    created_at: row.created_at,
   };
 
-  await pool.query(
-    'UPDATE auth_tokens SET revoked_at = NOW() WHERE id = $1',
-    [row.id]
-  );
+  await db
+    .update(authTokens)
+    .set({ revoked_at: sql`NOW()` })
+    .where(eq(authTokens.id, row.tokenId));
 
   const newAccessToken = uuidv4();
   const newRefreshToken = uuidv4();
@@ -175,83 +156,91 @@ export async function refreshAuthTokens(
   const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 86400 * 1000);
 
   await insertTokenRow(
-    row.user_id,
+    row.tokenUserId,
     newAccessToken,
     newRefreshToken,
     accessExpiresAt,
     refreshExpiresAt,
     {
-      deviceId: deviceInfo.deviceId || row.device_id,
-      deviceName: deviceInfo.deviceName || row.device_name,
-      userAgent: deviceInfo.userAgent || row.user_agent || undefined,
-      ipAddress: deviceInfo.ipAddress || row.ip_address || undefined,
+      deviceId: deviceInfo.deviceId || row.tokenDeviceId || 'unknown',
+      deviceName: deviceInfo.deviceName || row.tokenDeviceName || DEFAULT_DEVICE_NAME,
+      userAgent: deviceInfo.userAgent || row.tokenUserAgent || undefined,
+      ipAddress: deviceInfo.ipAddress || row.tokenIpAddress || undefined,
     }
   );
 
-  return {
-    accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
-    accessExpiresAt,
-    refreshExpiresAt,
-    user,
-  };
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken, accessExpiresAt, refreshExpiresAt, user };
 }
 
 export async function revokeAuthToken(token: string): Promise<void> {
-  await pool.query(
-    'UPDATE auth_tokens SET revoked_at = NOW() WHERE (access_token = $1 OR refresh_token = $1) AND revoked_at IS NULL',
-    [token]
-  );
+  await db
+    .update(authTokens)
+    .set({ revoked_at: sql`NOW()` })
+    .where(and(
+      or(eq(authTokens.access_token, token), eq(authTokens.refresh_token, token)),
+      isNull(authTokens.revoked_at)
+    ));
 }
 
 export async function revokeAllUserTokens(userId: number): Promise<void> {
-  await pool.query(
-    'UPDATE auth_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL',
-    [userId]
-  );
+  await db
+    .update(authTokens)
+    .set({ revoked_at: sql`NOW()` })
+    .where(and(eq(authTokens.user_id, userId), isNull(authTokens.revoked_at)));
 }
 
 export async function revokeDeviceTokens(userId: number, deviceId: string): Promise<void> {
-  await pool.query(
-    'UPDATE auth_tokens SET revoked_at = NOW() WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL',
-    [userId, deviceId]
-  );
+  await db
+    .update(authTokens)
+    .set({ revoked_at: sql`NOW()` })
+    .where(and(
+      eq(authTokens.user_id, userId),
+      eq(authTokens.device_id, deviceId),
+      isNull(authTokens.revoked_at)
+    ));
 }
 
 export async function getUserDevices(userId: number): Promise<
-  Array<{
-    deviceId: string;
-    deviceName: string;
-    lastUsedAt: Date;
-    createdAt: Date;
-  }>
+  Array<{ deviceId: string; deviceName: string; lastUsedAt: Date; createdAt: Date }>
 > {
-  const result = await pool.query(
-    `SELECT DISTINCT ON (device_id)
-       device_id,
-       device_name,
-       last_used_at,
-       created_at
-     FROM auth_tokens
-     WHERE user_id = $1 AND revoked_at IS NULL AND refresh_expires_at > NOW()
-     ORDER BY device_id, last_used_at DESC`,
-    [userId]
-  );
+  const rows = await db
+    .selectDistinctOn([authTokens.device_id], {
+      deviceId: authTokens.device_id,
+      deviceName: authTokens.device_name,
+      lastUsedAt: authTokens.last_used_at,
+      createdAt: authTokens.created_at,
+    })
+    .from(authTokens)
+    .where(and(
+      eq(authTokens.user_id, userId),
+      isNull(authTokens.revoked_at),
+      gt(authTokens.refresh_expires_at, sql`NOW()`)
+    ))
+    .orderBy(authTokens.device_id, sql`${authTokens.last_used_at} DESC`);
 
-  return result.rows;
+  return rows.map(r => ({
+    deviceId: r.deviceId ?? '',
+    deviceName: r.deviceName ?? '',
+    lastUsedAt: r.lastUsedAt ?? new Date(),
+    createdAt: r.createdAt,
+  }));
 }
 
 setInterval(async () => {
   try {
-    const result = await pool.query(
-      `DELETE FROM auth_tokens
-       WHERE refresh_expires_at <= NOW()
-       OR (revoked_at IS NOT NULL AND revoked_at < NOW() - INTERVAL '7 days')`
-    );
+    const result = await db
+      .delete(authTokens)
+      .where(or(
+        lt(authTokens.refresh_expires_at, sql`NOW()`),
+        and(
+          isNotNull(authTokens.revoked_at),
+          lt(authTokens.revoked_at, sql`NOW() - INTERVAL '7 days'`)
+        )
+      ));
     if (result.rowCount && result.rowCount > 0) {
       console.log(`Cleaned up ${result.rowCount} expired/revoked auth tokens`);
     }
   } catch (error) {
     console.warn('Failed to clean up expired auth tokens:', error);
   }
-}, 60 * 60 * 1000); // Every hour
+}, 60 * 60 * 1000);

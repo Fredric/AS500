@@ -80,5 +80,6 @@ export class RateLimiter {
   }
 }
 
-export const loginRateLimiter = new RateLimiter(5, 60 * 1000); // 5 attempts per minute
+const isProduction = process.env.NODE_ENV === 'production';
+export const loginRateLimiter = new RateLimiter(isProduction ? 5 : 100, 60 * 1000); // 5 attempts/min in prod, 100 in dev/test
 export const tokenRefreshRateLimiter = new RateLimiter(10, 60 * 60 * 1000); // 10 refreshes per hour

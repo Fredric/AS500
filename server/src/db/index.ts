@@ -1,4 +1,6 @@
 import pg from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from './schema.js';
 
 const useDatabaseUrl = Boolean(process.env.DATABASE_URL);
 const ssl =
@@ -162,6 +164,8 @@ export async function closeDatabase(): Promise<void> {
   await pool.end();
   console.log('Database connection pool closed');
 }
+
+export const db = drizzle(pool, { schema });
 
 export { pool };
 export default pool;
