@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useTerminal } from '../hooks/useTerminal';
 import type { Field } from '../types';
 
@@ -32,17 +32,48 @@ export default function Terminal() {
     statusLine,
     fieldValues,
     responseCount,
+    navigation,
+    screenId,
     setFieldValue,
     setCursor,
     sendKey,
+    sendKeyWithInput,
   } = useTerminal();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
+  // Row focus state for list navigation
+  const [focusedDataRowIndex, setFocusedDataRowIndex] = useState<number | null>(null);
+  const prevNavKeyRef = useRef<string | null>(null);
+  const focusLastOnNextPageRef = useRef(false);
+
+  // Reset row focus when entering a new list screen page or different screen
+  useEffect(() => {
+    const navKey = navigation?.list
+      ? `${screenId}:${navigation.list.pageOffset}`
+      : null;
+
+    if (navKey !== prevNavKeyRef.current) {
+      prevNavKeyRef.current = navKey;
+      if (navigation?.list) {
+        if (focusLastOnNextPageRef.current) {
+          focusLastOnNextPageRef.current = false;
+          setFocusedDataRowIndex(navigation.list.dataRowCount - 1);
+        } else {
+          setFocusedDataRowIndex(0);
+        }
+      } else {
+        setFocusedDataRowIndex(null);
+      }
+    }
+  }, [navigation, screenId]);
+
+  const isListMode = !!navigation?.list;
+
   // Find field at position
   const getFieldAt = useCallback((row: number, col: number): Field | null => {
-    return fields.find(f => 
+    return fields.find(f =>
       f.row === row && col >= f.col && col < f.col + f.length
     ) || null;
   }, [fields]);
@@ -96,18 +127,96 @@ export default function Terminal() {
     }
   }, [setCursor]);
 
-  // Handle keyboard events
+  // Trigger a row action by filling the opt field and sending ENTER
+  const triggerRowAction = useCallback((rowIndex: number, option: string) => {
+    if (!navigation?.list) return;
+    const { optFieldPrefix } = navigation.list;
+    sendKeyWithInput('ENTER', { [`${optFieldPrefix}_${rowIndex}`]: option });
+  }, [navigation, sendKeyWithInput]);
+
+  // Handle keyboard events on the container
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Tab navigation
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const nextField = e.shiftKey
-        ? getPrevField(cursor.row, cursor.col)
-        : getNextField(cursor.row, cursor.col);
-      if (nextField) {
-        focusField(nextField);
+    const list = navigation?.list;
+
+    // --- List mode navigation ---
+    if (isListMode && list) {
+      // Arrow down: move focus down or advance page
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedDataRowIndex(prev => {
+          const cur = prev ?? 0;
+          if (cur < list.dataRowCount - 1) {
+            return cur + 1;
+          } else if (list.hasMore) {
+            sendKey('PAGEDOWN');
+            return 0; // will be reset by effect on page change
+          }
+          return cur;
+        });
+        return;
       }
-      return;
+
+      // Arrow up: move focus up or go to previous page
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedDataRowIndex(prev => {
+          const cur = prev ?? 0;
+          if (cur > 0) {
+            return cur - 1;
+          } else if (list.hasPrev) {
+            focusLastOnNextPageRef.current = true;
+            sendKey('PAGEUP');
+            return 0; // will be reset by effect on page change
+          }
+          return cur;
+        });
+        return;
+      }
+
+      // Enter: trigger primary action on focused row
+      if (e.key === 'Enter' && focusedDataRowIndex !== null && list.primaryAction) {
+        e.preventDefault();
+        triggerRowAction(focusedDataRowIndex, list.primaryAction);
+        return;
+      }
+
+      // Tab / Shift+Tab: move row focus
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        setFocusedDataRowIndex(prev => {
+          const cur = prev ?? 0;
+          if (e.shiftKey) {
+            return Math.max(0, cur - 1);
+          } else {
+            return Math.min(list.dataRowCount - 1, cur + 1);
+          }
+        });
+        return;
+      }
+
+      // Single-letter shortcut keys (e.g. 'd' for delete)
+      if (focusedDataRowIndex !== null && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const shortcut = list.shortcuts.find(s => s.key.toLowerCase() === e.key.toLowerCase());
+        if (shortcut) {
+          e.preventDefault();
+          triggerRowAction(focusedDataRowIndex, shortcut.option);
+          return;
+        }
+      }
+
+      // F6 and other F-keys pass through normally (create, etc.)
+    } else {
+      // --- Normal mode: Tab navigation between fields ---
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const nextField = e.shiftKey
+          ? getPrevField(cursor.row, cursor.col)
+          : getNextField(cursor.row, cursor.col);
+        if (nextField) {
+          focusField(nextField);
+        }
+        return;
+      }
     }
 
     // Special keys - send to server
@@ -116,20 +225,31 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, getNextField, getPrevField, focusField, sendKey]);
+  }, [cursor, navigation, isListMode, focusedDataRowIndex, getNextField, getPrevField, focusField, sendKey, triggerRowAction]);
 
   // Handle keyboard events on input fields
-  // Stops propagation to prevent the container's handleKeyDown from also firing
+  // In list mode, input fields still use normal field behavior (user can type opt codes directly).
+  // Row navigation (arrow keys, Enter shortcuts) only activates when the container has focus.
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Tab navigation
+    // Tab navigation (works in all modes)
     if (e.key === 'Tab') {
       e.preventDefault();
       e.stopPropagation();
-      const nextField = e.shiftKey
-        ? getPrevField(cursor.row, cursor.col)
-        : getNextField(cursor.row, cursor.col);
-      if (nextField) {
-        focusField(nextField);
+      if (isListMode && navigation?.list) {
+        // Tab moves between data rows
+        const { dataRowCount } = navigation.list;
+        setFocusedDataRowIndex(prev => {
+          const cur = prev ?? 0;
+          return e.shiftKey ? Math.max(0, cur - 1) : Math.min(dataRowCount - 1, cur + 1);
+        });
+        containerRef.current?.focus();
+      } else {
+        const nextField = e.shiftKey
+          ? getPrevField(cursor.row, cursor.col)
+          : getNextField(cursor.row, cursor.col);
+        if (nextField) {
+          focusField(nextField);
+        }
       }
       return;
     }
@@ -141,30 +261,59 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, getNextField, getPrevField, focusField, sendKey]);
+  }, [cursor, navigation, isListMode, getNextField, getPrevField, focusField, sendKey]);
 
-  // Focus field after every server response
+  // Focus management after every server response
   useEffect(() => {
-    if (fields.length > 0) {
+    if (isListMode) {
+      // In list navigation mode, focus the container so arrow keys work
+      containerRef.current?.focus();
+    } else if (fields.length > 0) {
       const targetField = fields.find(
         f => f.row === cursor.row && f.col === cursor.col
       ) || fields[0];
-      
       setTimeout(() => focusField(targetField), 50);
     } else {
-      // No fields - focus the container so keyboard events still work
       containerRef.current?.focus();
     }
-  }, [responseCount, focusField]); // Trigger on every server response
+  }, [responseCount, focusField, isListMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Render a row with field inputs overlaid
   const renderRow = (row: string, rowIndex: number) => {
     const rowFields = fields.filter(f => f.row === rowIndex);
-    
+
+    // Compute list row states
+    const listNav = navigation?.list;
+    const relativeRowIndex = listNav
+      ? rowIndex - listNav.dataStartRow
+      : -1;
+    const isSelectableRow = listNav !== undefined
+      && relativeRowIndex >= 0
+      && relativeRowIndex < listNav.dataRowCount;
+    const isFocusedRow = isSelectableRow && relativeRowIndex === focusedDataRowIndex;
+
+    const rowClasses = [
+      'terminal-row',
+      isSelectableRow ? 'terminal-row--selectable' : '',
+      isFocusedRow ? 'terminal-row--focused' : '',
+    ].filter(Boolean).join(' ');
+
+    const rowClickProps = isSelectableRow ? {
+      onClick: () => {
+        setFocusedDataRowIndex(relativeRowIndex);
+        containerRef.current?.focus();
+      },
+      onDoubleClick: () => {
+        setFocusedDataRowIndex(relativeRowIndex);
+        if (listNav?.primaryAction) {
+          triggerRowAction(relativeRowIndex, listNav.primaryAction);
+        }
+      },
+    } : {};
+
     if (rowFields.length === 0) {
-      // No fields - just render text
       return (
-        <div key={rowIndex} className="terminal-row">
+        <div key={rowIndex} className={rowClasses} {...rowClickProps}>
           <span className="terminal-text">{row}</span>
         </div>
       );
@@ -174,7 +323,6 @@ export default function Terminal() {
     const segments: React.ReactNode[] = [];
     let lastEnd = 0;
 
-    // Sort fields by column
     const sortedFields = [...rowFields].sort((a, b) => a.col - b.col);
 
     sortedFields.forEach((field) => {
@@ -187,12 +335,11 @@ export default function Terminal() {
         );
       }
 
-      // Field input - keyed by field name for server communication
-      const positionKey = `${field.row},${field.col}`; // For DOM ref mapping
+      const positionKey = `${field.row},${field.col}`;
       const value = fieldValues[field.name] || '';
 
       segments.push(
-        <input 
+        <input
           key={positionKey}
           ref={(el) => {
             if (el) {
@@ -209,12 +356,10 @@ export default function Terminal() {
           onChange={(e) => {
             let newValue = e.target.value;
 
-            // Handle uppercase
             if (field.uppercase) {
               newValue = newValue.toUpperCase();
             }
 
-            // Handle numeric
             if (field.type === 'numeric') {
               newValue = newValue.replace(/[^0-9.-]/g, '');
             }
@@ -222,7 +367,12 @@ export default function Terminal() {
             setFieldValue(field.name, newValue);
           }}
           onKeyDown={handleInputKeyDown}
-          onFocus={() => setCursor(field.row, field.col)}
+          onFocus={() => {
+            setCursor(field.row, field.col);
+            if (isSelectableRow) {
+              setFocusedDataRowIndex(relativeRowIndex);
+            }
+          }}
           disabled={field.type === 'readonly'}
         />
       );
@@ -240,14 +390,14 @@ export default function Terminal() {
     }
 
     return (
-      <div key={rowIndex} className="terminal-row">
+      <div key={rowIndex} className={rowClasses} {...rowClickProps}>
         {segments}
       </div>
     );
   };
 
   return (
-    <div 
+    <div
       className="terminal-container"
       ref={containerRef}
       onKeyDown={handleKeyDown}

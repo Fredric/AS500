@@ -236,6 +236,41 @@ body {
   50% { border-bottom-color: transparent; }
 }
 
+/* List row navigation */
+.terminal-row--selectable {
+  cursor: pointer;
+  transition: background-color 0.05s ease;
+}
+
+.terminal-row--selectable:hover {
+  background: rgba(51, 255, 51, 0.08);
+}
+
+.terminal-row--focused {
+  background: var(--text-color);
+  color: var(--bg-color);
+  text-shadow: none;
+}
+
+.terminal-row--focused .terminal-text {
+  color: var(--bg-color);
+}
+
+.terminal-row--focused .terminal-field {
+  background: transparent;
+  color: var(--bg-color);
+  border-bottom-color: var(--bg-color);
+  text-shadow: none;
+  caret-color: var(--bg-color);
+}
+
+.terminal-row--focused .terminal-field:focus {
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: none;
+  animation: none;
+  border-bottom-color: var(--bg-color);
+}
+
 /* Phosphor glow effect */
 @keyframes phosphor {
   0% { text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }

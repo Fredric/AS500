@@ -1,7 +1,7 @@
 // CRUDTable Runtime Engine
 // Builds and handles list + form screens from declarative config
 
-import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
+import type { Session, ClientRequest, ScreenResponse, ListNavigation } from '../types/index.js';
 import type { CRUDTableConfig, CRUDContext, BoolExpr, FieldConfig } from './types.js';
 import { listScreenId, formScreenId, getConfig } from './registry.js';
 import { loadContext, saveContext, clearContext } from './context.js';
@@ -136,15 +136,65 @@ export async function buildListScreen(
     return display;
   });
 
-  // Build status line
-  const statusParts: string[] = ['F3=Exit'];
-  if (config.services.create) statusParts.push('F6=Create');
-  if (config.listKeys) {
-    for (const [key, keyConfig] of Object.entries(config.listKeys)) {
-      statusParts.push(`${key}=${keyConfig.label}`);
+  // Build navigation metadata
+  const pageData = records.slice(crudCtx.pageOffset, crudCtx.pageOffset + LIST_PAGE_SIZE);
+  const dataRowCount = pageData.length;
+
+  // Determine primary action for keyboard navigation
+  let primaryAction = '';
+  if (config.navigation?.primaryAction === 'open' && config.openUI) {
+    primaryAction = '9';
+  } else if (config.navigation?.primaryAction === 'edit' && config.services.update) {
+    primaryAction = '2';
+  } else if (config.services.update) {
+    primaryAction = '2';
+  } else if (config.openUI) {
+    primaryAction = '9';
+  }
+
+  // Build shortcut list for keyboard navigation
+  const navShortcuts: ListNavigation['shortcuts'] = [];
+  if (config.services.delete) {
+    navShortcuts.push({ key: 'd', option: '4', label: 'Delete' });
+  }
+  if (config.navigation?.shortcuts) {
+    for (const s of config.navigation.shortcuts) {
+      navShortcuts.push({ key: String(s.key), option: String(s.option), label: s.label });
     }
   }
-  statusParts.push('F12=Cancel');
+  // Add custom record action shortcuts (auto-numbered from 5)
+  if (config.actions) {
+    let actionNum = 5;
+    for (const [, action] of Object.entries(config.actions)) {
+      if (action.scope === 'record') {
+        if (actionNum === 9 && config.openUI) actionNum = 10;
+        navShortcuts.push({ key: String(actionNum), option: String(actionNum), label: action.label });
+        actionNum++;
+      }
+    }
+  }
+
+  // Build status line with keyboard shortcut hints first, then F-keys
+  const shortcutHints: string[] = [];
+  if (primaryAction === '2') shortcutHints.push('Enter=Edit');
+  else if (primaryAction === '9') shortcutHints.push('Enter=Open');
+  if (config.services.delete) shortcutHints.push('D=Delete');
+  if (config.navigation?.shortcuts) {
+    for (const s of config.navigation.shortcuts) {
+      shortcutHints.push(`${String(s.key).toUpperCase()}=${s.label}`);
+    }
+  }
+
+  const fKeyParts: string[] = ['F3=Exit'];
+  if (config.services.create) fKeyParts.push('F6=Create');
+  if (config.listKeys) {
+    for (const [key, keyConfig] of Object.entries(config.listKeys)) {
+      fKeyParts.push(`${key}=${keyConfig.label}`);
+    }
+  }
+  fKeyParts.push('F12=Cancel');
+
+  const statusParts = [...shortcutHints, ...fKeyParts];
 
   // Build dynamic header elements
   const headerElements = config.listHeader
@@ -174,6 +224,9 @@ export async function buildListScreen(
 
   saveContext(session, config.id, crudCtx);
 
+  // DATA_START_ROW: subfile header is at LIST_START_ROW, underline at +1, data starts at +2
+  const DATA_START_ROW = LIST_START_ROW + 2;
+
   return {
     screenId: result.screenId,
     cursor: result.cursor,
@@ -183,6 +236,20 @@ export async function buildListScreen(
     messageType: result.messageType,
     statusLine: result.statusLine,
     bell: result.bell,
+    navigation: {
+      type: 'list' as const,
+      list: {
+        dataStartRow: DATA_START_ROW,
+        dataRowCount,
+        totalRecords: records.length,
+        pageOffset: crudCtx.pageOffset,
+        hasMore: records.length > crudCtx.pageOffset + LIST_PAGE_SIZE,
+        hasPrev: crudCtx.pageOffset > 0,
+        optFieldPrefix: 'opt',
+        primaryAction,
+        shortcuts: navShortcuts,
+      },
+    },
   };
 }
 

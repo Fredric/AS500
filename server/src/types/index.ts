@@ -34,6 +34,24 @@ export interface Field {
   uppercase?: boolean;
 }
 
+// Navigation metadata for list screens
+export interface ListNavigation {
+  dataStartRow: number;    // Row index in rows[] where data rows begin
+  dataRowCount: number;    // Number of visible data rows on this page
+  totalRecords: number;
+  pageOffset: number;
+  hasMore: boolean;
+  hasPrev: boolean;
+  optFieldPrefix: string;  // e.g. 'opt' → fields named opt_0, opt_1, ...
+  primaryAction: string;   // Option value for Enter (e.g. '2', '9', '')
+  shortcuts: Array<{ key: string; option: string; label: string }>;
+}
+
+export interface ScreenNavigation {
+  type: 'list' | 'form' | 'menu';
+  list?: ListNavigation;
+}
+
 // Server response
 export interface ScreenResponse {
   sessionId: string;
@@ -46,6 +64,7 @@ export interface ScreenResponse {
   messageType: 'info' | 'warning' | 'error' | null;
   statusLine: string;
   bell: boolean;
+  navigation?: ScreenNavigation;
   accessToken?: string | null; // Short-lived access token; null signals client to clear
   refreshToken?: string | null; // Long-lived refresh token; null signals client to clear
   accessExpiresAt?: string; // ISO timestamp for access token expiry

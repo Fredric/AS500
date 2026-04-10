@@ -62,10 +62,30 @@ The server sends `rows: string[]` (24 rows × 80 chars) and `fields: Field[]` (i
 
 **Server → Client:**
 ```typescript
-{ sessionId, screenId, cursor, rows: string[], fields: Field[], fieldValues?, message, messageType, statusLine, bell }
+{ sessionId, screenId, cursor, rows: string[], fields: Field[], fieldValues?, message, messageType, statusLine, bell, navigation? }
 ```
 
 Special keys: `CONNECT` (initial connection), `RESUME` (restore session from cookie).
+
+The `navigation` field is optional and only sent by CRUDTable list screens:
+```typescript
+navigation: {
+  type: 'list',
+  list: {
+    dataStartRow: number,    // Row index where data rows begin (rows[] is 0-indexed)
+    dataRowCount: number,    // Visible data rows on this page
+    totalRecords: number,
+    pageOffset: number,
+    hasMore: boolean,
+    hasPrev: boolean,
+    optFieldPrefix: string,  // 'opt' → fields named opt_0, opt_1, ...
+    primaryAction: string,   // Option value for Enter key ('2'=edit, '9'=open, ''=none)
+    shortcuts: [{ key, option, label }],
+  }
+}
+```
+
+The client uses `navigation` to drive row selection UI. When present, arrow keys and shortcut keys fill the relevant `opt_N` field and send ENTER — backward compatible with servers/screens that don't send navigation.
 
 ### Authentication
 
@@ -82,10 +102,36 @@ Sessions are in-memory (Map) and persisted to `server/data/sessions.json` in dev
 ### Two Approaches
 
 **1. CRUDTable (preferred for list + form CRUD)**  
-Write a config object (~50-80 lines). The runtime auto-generates list and form screens with pagination, F6=Create, 2=Edit, 4=Delete, F3/F12 navigation.
+Write a config object (~50-80 lines). The runtime auto-generates list and form screens with pagination, F6=Create, keyboard row navigation, F3/F12 navigation.
 
 **2. Manual Screen (for login, menus, help, custom flows)**  
 Write DSL definition + `buildScreen()` + `handleScreen()` + register in `server/src/index.ts`.
+
+### Keyboard Navigation (CRUDTable list screens)
+
+CRUDTable list screens automatically support keyboard and mouse row navigation:
+
+| Input | Action |
+|-------|--------|
+| `ArrowDown` | Move focus to next row (auto-advances page at bottom) |
+| `ArrowUp` | Move focus to previous row (auto-goes back at top) |
+| `Enter` | Trigger primary action on focused row (Edit or Open) |
+| `d` | Delete focused row (if delete service configured) |
+| `Tab` / `Shift+Tab` | Move between data rows |
+| Mouse click | Select row |
+| Mouse double-click | Select row + trigger primary action |
+
+The focused row is highlighted (inverted green/black). The status line shows `Enter=Edit  D=Delete  F3=Exit  F6=Create  F12=Cancel`.
+
+Custom shortcuts can be added via the `navigation` config:
+```typescript
+navigation: {
+  primaryAction: 'open',  // 'edit' (default) or 'open'
+  shortcuts: [
+    { key: 'r', option: '5', label: 'Reset' },
+  ],
+},
+```
 
 ### F-Key Conventions
 
@@ -139,6 +185,8 @@ No changes to `server/src/index.ts` needed.
 | Rate limiter utility | `server/src/utils/rateLimiter.ts` |
 | Terminal hook (WebSocket) | `client/src/hooks/useTerminal.ts` |
 | Terminal renderer | `client/src/components/Terminal.tsx` |
+| Terminal styles | `client/src/styles/terminal.css` |
+| Client types | `client/src/types/index.ts` |
 | Test setup utilities | `tests/testSetup.ts` |
 
 ### Screens
@@ -198,7 +246,8 @@ Run serially (`--workers=1`) for database consistency.
 
 Test files:
 - `tests/scrollable-subfile.spec.ts` – Subfile pagination
-- `tests/time-registration-crud.spec.ts` – Add/edit/delete template
+- `tests/time-registration-crud.spec.ts` – Add/edit/delete (uses opt-field workflow, option 6)
+- `tests/keyboard-navigation.spec.ts` – Arrow key nav, Enter, shortcut keys, mouse click (option 7, CRUDTable)
 
 ---
 

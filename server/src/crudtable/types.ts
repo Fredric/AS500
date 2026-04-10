@@ -125,4 +125,10 @@ export interface CRUDTableConfig {
   // Extension points for domain-specific behavior
   listKeys?: Record<string, ListKeyConfig>;
   listHeader?: (context: CRUDContext) => Array<{ row: number; col: number; content: string }>;
+
+  // Keyboard navigation config for the list screen
+  navigation?: {
+    primaryAction?: 'edit' | 'open'; // Defaults to 'edit' if update service exists
+    shortcuts?: Array<{ key: string; option: string | number; label: string }>;
+  };
 }

@@ -12,12 +12,14 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 - Classic green-on-black terminal aesthetic with CRT effects
 - WebSocket-based real-time communication
 - **CRUDTable config system** — declarative configs that auto-generate list + form screens
+- **Keyboard row navigation** — Arrow keys move between rows; Enter edits; `d` deletes; no F-keys needed
+- **Mouse row selection** — Click to select a row, double-click to open
 - **Modern token-based authentication** — OAuth 2.0-inspired access/refresh token pattern
 - **Secure session management** — 30-day auto-login with 1-hour token rotation
 - **Device tracking** — Multi-device session management with device fingerprinting
 - **Rate limiting** — Protection against brute force and token abuse
 - bcrypt password hashing with PostgreSQL storage
-- Full keyboard support (F-keys, Tab, Enter)
+- Full keyboard support (F-keys, Tab, Enter, Arrow keys)
 - Automated backup system with scheduled backups
 - Docker Compose setup for easy development environment
 

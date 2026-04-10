@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { ScreenResponse, ClientRequest, Field } from '../types';
+import type { ScreenResponse, ClientRequest, Field, ScreenNavigation } from '../types';
 
 // Dynamic WebSocket URL: use secure wss:// in production, ws:// in development
 function getWebSocketUrl(): string {
@@ -57,6 +57,7 @@ interface TerminalState {
   statusLine: string;
   fieldValues: Record<string, string>;
   responseCount: number; // Increments on each server response for focus tracking
+  navigation: ScreenNavigation | null;
 }
 
 export function useTerminal() {
@@ -75,6 +76,7 @@ export function useTerminal() {
     statusLine: '',
     fieldValues: {},
     responseCount: 0,
+    navigation: null,
   });
 
   // Track if we've sent resume request
@@ -215,6 +217,7 @@ export function useTerminal() {
             message: response.message,
             messageType: response.messageType,
             statusLine: response.statusLine,
+            navigation: response.navigation ?? null,
             // Use server-provided field values if explicitly provided, otherwise preserve on same screen
             fieldValues: response.fieldValues !== undefined
               ? response.fieldValues
@@ -313,10 +316,29 @@ export function useTerminal() {
     wsRef.current.send(JSON.stringify(request));
   }, [state.sessionId, state.screenId, state.cursor, state.fieldValues]);
 
+  // Send key with additional field value overrides (used for row actions without setState roundtrip)
+  const sendKeyWithInput = useCallback((key: string, inputOverrides: Record<string, string>) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const request: ClientRequest = {
+      sessionId: state.sessionId,
+      screenId: state.screenId,
+      cursor: state.cursor,
+      input: { ...state.fieldValues, ...inputOverrides },
+      key,
+      deviceId: deviceIdRef.current,
+    };
+
+    wsRef.current.send(JSON.stringify(request));
+  }, [state.sessionId, state.screenId, state.cursor, state.fieldValues]);
+
   return {
     ...state,
     setFieldValue,
     setCursor,
     sendKey,
+    sendKeyWithInput,
   };
 }
