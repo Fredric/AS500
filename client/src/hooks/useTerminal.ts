@@ -149,7 +149,7 @@ export function useTerminal() {
             };
             ws.send(JSON.stringify(pingRequest));
           }
-        }, 60000); // Send heartbeat every 60 seconds
+        }, 60000);
       };
 
       ws.onmessage = (event) => {

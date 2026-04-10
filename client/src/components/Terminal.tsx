@@ -258,7 +258,6 @@ export default function Terminal() {
         {connected ? '● Connected' : '○ Disconnected'}
       </div>
 
-      {/* Version info */}
       <div className="version-info">
         v{__APP_VERSION__} · {__BUILD_DATE__}
       </div>
