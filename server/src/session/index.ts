@@ -10,7 +10,8 @@ const sessions = new Map<string, Session>();
 const SESSION_TIMEOUT = 15 * 60 * 1000;
 
 // Session persistence for development
-const PERSIST_SESSIONS = process.env.NODE_ENV !== 'production';
+//const PERSIST_SESSIONS = process.env.NODE_ENV !== 'production';
+const PERSIST_SESSIONS = true;
 const SESSIONS_FILE = join(process.cwd(), 'data', 'sessions.json');
 
 // Debounce session saves to avoid excessive file writes

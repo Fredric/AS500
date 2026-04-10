@@ -61,6 +61,8 @@ interface TerminalState {
 
 export function useTerminal() {
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectDelayRef = useRef(1000); // ms, doubles on each failure up to 30s
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [state, setState] = useState<TerminalState>({
     connected: false,
     sessionId: getCookie(SESSION_COOKIE_NAME), // Load from cookie on init
@@ -82,155 +84,176 @@ export function useTerminal() {
   const storedRefreshTokenRef = useRef(getCookie(REFRESH_TOKEN_COOKIE_NAME));
   const deviceIdRef = useRef(getDeviceId());
 
-  // Connect to WebSocket
+  // Connect to WebSocket (called on mount and after every disconnect)
   useEffect(() => {
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
-    hasResumedRef.current = false;
+    let destroyed = false;
 
-    // Heartbeat interval to keep session alive (every 60 seconds)
-    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    function connect() {
+      if (destroyed) return;
 
-    ws.onopen = () => {
-      setState(prev => ({ ...prev, connected: true }));
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+      hasResumedRef.current = false;
 
-      const storedSession = storedSessionRef.current;
-      const storedAccessToken = storedAccessTokenRef.current;
-      const storedRefreshToken = storedRefreshTokenRef.current;
-      const deviceId = deviceIdRef.current;
+      // Heartbeat interval to keep session alive (every 60 seconds)
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
-      if ((storedSession || storedAccessToken || storedRefreshToken) && !hasResumedRef.current) {
-        // Try to resume existing session with tokens
-        hasResumedRef.current = true;
-        const resumeRequest: ClientRequest = {
-          sessionId: storedSession,
-          screenId: '',
-          cursor: { row: 0, col: 0 },
-          input: {},
-          key: 'RESUME',
-          accessToken: storedAccessToken ?? undefined,
-          refreshToken: storedRefreshToken ?? undefined,
-          deviceId,
-        };
-        ws.send(JSON.stringify(resumeRequest));
-      } else {
-        // No stored session or tokens - request initial screen
-        const initRequest: ClientRequest = {
-          sessionId: null,
-          screenId: '',
-          cursor: { row: 0, col: 0 },
-          input: {},
-          key: 'CONNECT',
-        };
-        ws.send(JSON.stringify(initRequest));
-      }
+      ws.onopen = () => {
+        if (destroyed) { ws.close(); return; }
 
-      // Start heartbeat to keep session alive
-      heartbeatInterval = setInterval(() => {
-        const currentSessionId = storedSessionRef.current;
-        if (ws.readyState === WebSocket.OPEN && currentSessionId) {
-          const pingRequest: ClientRequest = {
-            sessionId: currentSessionId,
+        // Successful connection — reset backoff
+        reconnectDelayRef.current = 1000;
+        setState(prev => ({ ...prev, connected: true }));
+
+        const storedSession = storedSessionRef.current;
+        const storedAccessToken = storedAccessTokenRef.current;
+        const storedRefreshToken = storedRefreshTokenRef.current;
+        const deviceId = deviceIdRef.current;
+
+        if ((storedSession || storedAccessToken || storedRefreshToken) && !hasResumedRef.current) {
+          // Try to resume existing session with tokens
+          hasResumedRef.current = true;
+          const resumeRequest: ClientRequest = {
+            sessionId: storedSession,
             screenId: '',
             cursor: { row: 0, col: 0 },
             input: {},
-            key: 'PING',
+            key: 'RESUME',
+            accessToken: storedAccessToken ?? undefined,
+            refreshToken: storedRefreshToken ?? undefined,
+            deviceId,
           };
-          ws.send(JSON.stringify(pingRequest));
-        }
-      }, 60000); // Send heartbeat every 60 seconds
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'PONG') {
-          return;
-        }
-
-        const response: ScreenResponse = data;
-
-        // Play bell if requested
-        if (response.bell) {
-          playBell();
+          ws.send(JSON.stringify(resumeRequest));
+        } else {
+          // No stored session or tokens - request initial screen
+          const initRequest: ClientRequest = {
+            sessionId: null,
+            screenId: '',
+            cursor: { row: 0, col: 0 },
+            input: {},
+            key: 'CONNECT',
+          };
+          ws.send(JSON.stringify(initRequest));
         }
 
-        // Save session to cookie (7 days so it survives typical usage between sessions)
-        if (response.sessionId) {
-          setCookie(SESSION_COOKIE_NAME, response.sessionId, 7 * 24);
-          storedSessionRef.current = response.sessionId;
-        }
-
-        if (response.accessToken !== undefined) {
-          if (response.accessToken === null) {
-            deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
-            storedAccessTokenRef.current = null;
-          } else {
-            const expiryHours = response.accessExpiresAt
-              ? Math.max(0.1, (new Date(response.accessExpiresAt).getTime() - Date.now()) / 3600000)
-              : 1;
-            setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, expiryHours);
-            storedAccessTokenRef.current = response.accessToken;
+        // Start heartbeat to keep session alive
+        heartbeatInterval = setInterval(() => {
+          const currentSessionId = storedSessionRef.current;
+          if (ws.readyState === WebSocket.OPEN && currentSessionId) {
+            const pingRequest: ClientRequest = {
+              sessionId: currentSessionId,
+              screenId: '',
+              cursor: { row: 0, col: 0 },
+              input: {},
+              key: 'PING',
+            };
+            ws.send(JSON.stringify(pingRequest));
           }
-        }
+        }, 60000); // Send heartbeat every 60 seconds
+      };
 
-        if (response.refreshToken !== undefined) {
-          if (response.refreshToken === null) {
-            deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
-            storedRefreshTokenRef.current = null;
-          } else {
-            const expiryHours = response.refreshExpiresAt
-              ? Math.max(0.1, (new Date(response.refreshExpiresAt).getTime() - Date.now()) / 3600000)
-              : 30 * 24;
-            setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, expiryHours);
-            storedRefreshTokenRef.current = response.refreshToken;
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'PONG') {
+            return;
           }
+
+          const response: ScreenResponse = data;
+
+          // Play bell if requested
+          if (response.bell) {
+            playBell();
+          }
+
+          // Save session to cookie (7 days so it survives typical usage between sessions)
+          if (response.sessionId) {
+            setCookie(SESSION_COOKIE_NAME, response.sessionId, 7 * 24);
+            storedSessionRef.current = response.sessionId;
+          }
+
+          if (response.accessToken !== undefined) {
+            if (response.accessToken === null) {
+              deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
+              storedAccessTokenRef.current = null;
+            } else {
+              const expiryHours = response.accessExpiresAt
+                ? Math.max(0.1, (new Date(response.accessExpiresAt).getTime() - Date.now()) / 3600000)
+                : 1;
+              setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, expiryHours);
+              storedAccessTokenRef.current = response.accessToken;
+            }
+          }
+
+          if (response.refreshToken !== undefined) {
+            if (response.refreshToken === null) {
+              deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
+              storedRefreshTokenRef.current = null;
+            } else {
+              const expiryHours = response.refreshExpiresAt
+                ? Math.max(0.1, (new Date(response.refreshExpiresAt).getTime() - Date.now()) / 3600000)
+                : 30 * 24;
+              setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, expiryHours);
+              storedRefreshTokenRef.current = response.refreshToken;
+            }
+          }
+
+          // Clear session cookie on sign-off (returning to LOGIN after being authenticated)
+          if (response.screenId === 'LOGIN' && state.screenId !== 'LOGIN' && state.screenId !== '') {
+            deleteCookie(SESSION_COOKIE_NAME);
+            storedSessionRef.current = null;
+          }
+
+          setState(prev => ({
+            ...prev,
+            sessionId: response.sessionId,
+            screenId: response.screenId,
+            rows: response.rows,
+            fields: response.fields,
+            cursor: response.cursor,
+            message: response.message,
+            messageType: response.messageType,
+            statusLine: response.statusLine,
+            // Use server-provided field values if explicitly provided, otherwise preserve on same screen
+            fieldValues: response.fieldValues !== undefined
+              ? response.fieldValues
+              : (response.screenId !== prev.screenId ? {} : prev.fieldValues),
+            responseCount: prev.responseCount + 1, // Trigger focus on every response
+          }));
+        } catch (error) {
+          console.error('Failed to parse message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        setState(prev => ({ ...prev, connected: false }));
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
         }
 
-        // Clear session cookie on sign-off (returning to LOGIN after being authenticated)
-        if (response.screenId === 'LOGIN' && state.screenId !== 'LOGIN' && state.screenId !== '') {
-          deleteCookie(SESSION_COOKIE_NAME);
-          storedSessionRef.current = null;
+        // Schedule reconnect with exponential backoff (1s → 2s → 4s → … → 30s)
+        if (!destroyed) {
+          const delay = reconnectDelayRef.current;
+          reconnectDelayRef.current = Math.min(delay * 2, 30000);
+          reconnectTimeoutRef.current = setTimeout(connect, delay);
         }
+      };
 
-        setState(prev => ({
-          ...prev,
-          sessionId: response.sessionId,
-          screenId: response.screenId,
-          rows: response.rows,
-          fields: response.fields,
-          cursor: response.cursor,
-          message: response.message,
-          messageType: response.messageType,
-          statusLine: response.statusLine,
-          // Use server-provided field values if explicitly provided, otherwise preserve on same screen
-          fieldValues: response.fieldValues !== undefined
-            ? response.fieldValues
-            : (response.screenId !== prev.screenId ? {} : prev.fieldValues),
-          responseCount: prev.responseCount + 1, // Trigger focus on every response
-        }));
-      } catch (error) {
-        console.error('Failed to parse message:', error);
-      }
-    };
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    }
 
-    ws.onclose = () => {
-      setState(prev => ({ ...prev, connected: false }));
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+    connect();
 
     return () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
+      destroyed = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
-      ws.close();
+      wsRef.current?.close();
     };
   }, []);
 

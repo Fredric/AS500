@@ -120,9 +120,12 @@ export async function teardownTestData() {
 
       // Reset day total
       await pool.query('UPDATE days SET daysum = $1 WHERE id = $2', [0, dayId]);
-
-      console.log('✅ Test data cleaned up');
     }
+
+    // Delete all auth tokens created during tests for this user
+    await pool.query('DELETE FROM auth_tokens WHERE user_id = $1', [userId]);
+
+    console.log('✅ Test data cleaned up');
   } catch (error) {
     console.error('⚠️  Cleanup warning:', error);
     // Don't throw on cleanup errors
