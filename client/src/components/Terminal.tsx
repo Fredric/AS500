@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import { useTerminal } from '../hooks/useTerminal';
 import type { Field } from '../types';
 
@@ -42,6 +42,35 @@ export default function Terminal() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+
+  // Responsive scaling: fit terminal to window while preserving aspect ratio
+  const [fontSize, setFontSize] = useState(16);
+  const naturalDimsRef = useRef<{ width: number; height: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const PADDING = 32; // gap kept on each side of the terminal
+    const BASE_FONT_SIZE = 16;
+
+    const computeScale = () => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      // Capture natural (unscaled) dimensions exactly once, at base font-size
+      if (!naturalDimsRef.current) {
+        naturalDimsRef.current = { width: el.offsetWidth, height: el.offsetHeight };
+      }
+
+      const { width: natW, height: natH } = naturalDimsRef.current;
+      const availW = window.innerWidth - PADDING * 2;
+      const availH = window.innerHeight - PADDING * 2;
+      const scale = Math.min(availW / natW, availH / natH);
+      setFontSize(Math.max(8, BASE_FONT_SIZE * scale));
+    };
+
+    computeScale();
+    window.addEventListener('resize', computeScale);
+    return () => window.removeEventListener('resize', computeScale);
+  }, []);
 
   // Row focus state for list navigation
   const [focusedDataRowIndex, setFocusedDataRowIndex] = useState<number | null>(null);
@@ -402,6 +431,7 @@ export default function Terminal() {
       ref={containerRef}
       onKeyDown={handleKeyDown}
       tabIndex={0}
+      style={{ fontSize: `${fontSize}px` }}
     >
       {/* Connection status */}
       <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
