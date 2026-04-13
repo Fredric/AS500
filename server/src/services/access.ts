@@ -48,7 +48,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
   ],
   aiagent: [
     PERMISSIONS.TIME_REG_READ,
-    PERMISSIONS.TIME_REG_WRITE,
+    //PERMISSIONS.TIME_REG_WRITE,
   ],
   admin: [
     PERMISSIONS.TIME_REG_READ,

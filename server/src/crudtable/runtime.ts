@@ -23,6 +23,7 @@ const LIST_START_ROW = 7;
 // Check if a session has permission to execute a service call
 function checkServicePermission(session: Session, svc: ServiceCall | undefined): boolean {
   if (!svc?.requirePermission) return true;
+
   return hasPermission(session, svc.requirePermission);
 }
 

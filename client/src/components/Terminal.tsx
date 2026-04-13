@@ -41,6 +41,7 @@ export default function Terminal() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const pendingFocusFrameRef = useRef<number | null>(null);
 
   // Responsive scaling: fit terminal to window while preserving aspect ratio
   const [fontSize, setFontSize] = useState(16);
@@ -193,6 +194,15 @@ export default function Terminal() {
     sendKeyWithInput('ENTER', { [`${optFieldPrefix}_${rowIndex}`]: option });
   }, [navigation, sendKeyWithInput]);
 
+  const hasManualListOption = useCallback(() => {
+    if (!navigation?.list) return false;
+
+    const prefix = `${navigation.list.optFieldPrefix}_`;
+    return fields.some((field) =>
+      field.name.startsWith(prefix) && (fieldValues[field.name] || '').trim() !== ''
+    );
+  }, [navigation, fields, fieldValues]);
+
   // Handle keyboard events on the container
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const list = navigation?.list;
@@ -267,10 +277,18 @@ export default function Terminal() {
         return;
       }
 
-      // Enter: trigger primary action on focused row
-      if (e.key === 'Enter' && focusedDataRowIndex !== null && list.primaryAction) {
+      // Enter: honor manually typed options before row-level primary action
+      if (e.key === 'Enter') {
         e.preventDefault();
-        triggerRowAction(focusedDataRowIndex, list.primaryAction);
+
+        if (hasManualListOption()) {
+          sendKey('ENTER');
+          return;
+        }
+
+        if (focusedDataRowIndex !== null && list.primaryAction) {
+          triggerRowAction(focusedDataRowIndex, list.primaryAction);
+        }
         return;
       }
 
@@ -323,7 +341,7 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction]);
+  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction, hasManualListOption]);
 
   // Handle keyboard events on input fields
   // In list mode, input fields still use normal field behavior (user can type opt codes directly).
@@ -361,8 +379,14 @@ export default function Terminal() {
     }
   }, [cursor, navigation, isListMode, getNextField, getPrevField, focusField, sendKey]);
 
-  // Focus management after every server response
-  useEffect(() => {
+  // Focus management after every server response.
+  // Avoid stealing focus back from a field the user already moved to.
+  useLayoutEffect(() => {
+    if (pendingFocusFrameRef.current !== null) {
+      cancelAnimationFrame(pendingFocusFrameRef.current);
+      pendingFocusFrameRef.current = null;
+    }
+
     if (isListMode || isMenuMode) {
       // In list/menu navigation mode, focus the container so arrow keys work
       containerRef.current?.focus();
@@ -370,11 +394,33 @@ export default function Terminal() {
       const targetField = fields.find(
         f => f.row === cursor.row && f.col === cursor.col
       ) || fields[0];
-      setTimeout(() => focusField(targetField), 50);
+
+      pendingFocusFrameRef.current = requestAnimationFrame(() => {
+        pendingFocusFrameRef.current = null;
+
+        const activeElement = document.activeElement;
+        const activeInsideTerminal = !!(
+          activeElement &&
+          containerRef.current &&
+          containerRef.current.contains(activeElement)
+        );
+        const activeIsField = activeElement instanceof HTMLInputElement;
+
+        if (!activeInsideTerminal || !activeIsField) {
+          focusField(targetField);
+        }
+      });
     } else {
       containerRef.current?.focus();
     }
-  }, [responseCount, focusField, isListMode, isMenuMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      if (pendingFocusFrameRef.current !== null) {
+        cancelAnimationFrame(pendingFocusFrameRef.current);
+        pendingFocusFrameRef.current = null;
+      }
+    };
+  }, [responseCount, focusField, isListMode, isMenuMode, fields, cursor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Render a row with field inputs overlaid
   const renderRow = (row: string, rowIndex: number) => {

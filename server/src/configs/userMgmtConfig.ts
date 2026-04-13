@@ -2,6 +2,9 @@
 import type { CRUDTableConfig } from '../crudtable/types.js';
 import type { Session } from '../types/index.js';
 import * as userService from '../services/userService.js';
+import type { UserRole } from '../services/userService.js';
+
+const VALID_ROLES_UPPER = ['USER', 'SUPERUSER', 'AIAGENT', 'ADMIN'] as const;
 
 export const userMgmtConfig: CRUDTableConfig = {
   id: 'user_mgmt',
@@ -24,7 +27,7 @@ export const userMgmtConfig: CRUDTableConfig = {
         password: ctx.values.password,
         fullName: ctx.values.full_name || null,
         active: ctx.values.active === 'Y',
-        isAdmin: ctx.values.is_admin === 'Y',
+        role: (ctx.values.role || 'USER').toLowerCase() as UserRole,
       }),
     },
     update: {
@@ -35,7 +38,7 @@ export const userMgmtConfig: CRUDTableConfig = {
         id: (ctx.editRecord!.id as number),
         fullName: ctx.values.full_name || null,
         active: ctx.values.active === 'Y',
-        isAdmin: ctx.values.is_admin === 'Y',
+        role: (ctx.values.role || 'USER').toLowerCase() as UserRole,
         password: ctx.values.password || null,
       }),
     },
@@ -119,45 +122,48 @@ export const userMgmtConfig: CRUDTableConfig = {
       },
     },
 
-    is_admin: {
-      field: 'is_admin',
-      label: 'Admin (Y/N)',
-      length: 1,
+    role: {
+      field: 'role',
+      label: 'Role',
+      length: 9,
       form: {
         required: true,
         uppercase: true,
-        formValue: (v) => v === true ? 'Y' : v === false ? 'N' : String(v ?? ''),
+        hint: '(USER/SUPERUSER/AIAGENT/ADMIN)',
+        formValue: (v) => String(v ?? 'USER').toUpperCase(),
         validators: [
           (ctx) => {
-            const v = ctx.values.is_admin;
-            if (v && v !== 'Y' && v !== 'N') return 'Admin must be Y or N';
+            const v = ctx.values.role;
+            if (v && !(VALID_ROLES_UPPER as readonly string[]).includes(v)) {
+              return 'Role must be USER, SUPERUSER, AIAGENT, or ADMIN';
+            }
             return null;
           },
           (ctx) => {
             if (
               ctx.formMode === 'edit' &&
               (ctx.editRecord?.id as number) === (ctx.input.currentUserId as number) &&
-              ctx.values.is_admin === 'N'
+              ctx.values.role !== 'ADMIN'
             ) {
-              return 'Cannot remove your own admin status';
+              return 'Cannot change your own role away from ADMIN';
             }
             return null;
           },
         ],
       },
       column: {
-        width: 5,
-        cellRenderer: (record) => (record.is_admin as boolean) ? 'Yes' : 'No',
+        width: 10,
+        cellRenderer: (record) => String(record.role ?? '').toUpperCase(),
       },
     },
   },
 
-  columnBuilder: ['username', 'full_name', 'active', 'is_admin'],
-  formBuilder: ['username', 'full_name', 'password', 'confirm', 'active', 'is_admin'],
+  columnBuilder: ['username', 'full_name', 'active', 'role'],
+  formBuilder: ['username', 'full_name', 'password', 'confirm', 'active', 'role'],
 
   getInitialValues: () => ({
     active: 'Y',
-    is_admin: 'N',
+    role: 'USER',
   }),
 };
 
