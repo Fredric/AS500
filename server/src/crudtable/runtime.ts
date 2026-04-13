@@ -764,6 +764,8 @@ export async function buildDeleteConfirmScreen(
   const crudCtx = loadContext(session, config.id);
 
   // Build a summary of the record fields for display
+  const CONFIRM_SCREEN_LEFT_MARGIN = 10;
+  const CONFIRM_LINE_MAX_LENGTH = 80 - CONFIRM_SCREEN_LEFT_MARGIN;
   const recordTextElements = [];
   const record = crudCtx.pendingDeleteRecord ?? {};
   let displayRow = 9;
@@ -771,8 +773,8 @@ export async function buildDeleteConfirmScreen(
     const fc = config.fieldConfigs[fieldKey];
     if (!fc) continue;
     const val = record[fc.field] ?? '';
-    const lineContent = `${fc.label} . . . : ${String(val)}`.substring(0, 60);
-    recordTextElements.push(text(displayRow, 10, lineContent));
+    const lineContent = `${fc.label} . . . : ${String(val)}`.substring(0, CONFIRM_LINE_MAX_LENGTH);
+    recordTextElements.push(text(displayRow, CONFIRM_SCREEN_LEFT_MARGIN, lineContent));
     displayRow++;
     if (displayRow > 17) break;
   }
@@ -783,10 +785,10 @@ export async function buildDeleteConfirmScreen(
       header({ system: 'AS500 SYSTEM', title: `CONFIRM DELETE - ${config.title.toUpperCase()}`, showDateTime: true, showUser: true }),
       text(7, 2, 'The following record will be permanently deleted:'),
       ...recordTextElements,
-      text(19, 2, 'Type Y to confirm deletion, or press Esc to cancel.'),
+      text(19, 2, 'Type Y to confirm, or press Esc / F3 / F12 to cancel.'),
       form(20, [['Confirm delete . . :', field('confirm', 1, 'alpha', { uppercase: true })]], { labelCol: 2, fieldCol: 22 }),
     ],
-    statusLine: 'Y=Confirm  Esc=Cancel',
+    statusLine: 'Y=Confirm  Esc=Cancel  F3=Cancel  F12=Cancel',
     defaultCursor: 'confirm',
   });
 
