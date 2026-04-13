@@ -259,6 +259,36 @@ body {
   border-bottom-color: var(--bg-color);
 }
 
+/* Field Dropdown */
+.field-dropdown {
+  background-color: var(--bg-color);
+  border: 1px solid var(--field-border);
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: inherit;
+  box-shadow: 0 0 12px rgba(51, 255, 51, 0.2);
+}
+
+.field-dropdown__list {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-dim) var(--bg-color);
+}
+
+.field-dropdown__item {
+  padding: 0 0.5ch;
+  line-height: 1.4;
+  color: var(--text-color);
+  white-space: pre;
+  cursor: pointer;
+  text-shadow: 0 0 5px rgba(51, 255, 51, 0.5);
+}
+
+.field-dropdown__item--highlighted {
+  background: var(--text-color);
+  color: var(--bg-color);
+  text-shadow: none;
+}
+
 /* Phosphor glow effect */
 @keyframes phosphor {
   0% { text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
