@@ -121,8 +121,11 @@ test.describe('Keyboard Row Navigation', () => {
     // Wait for confirmation screen
     await page.locator('text=CONFIRM DELETE').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Type Y to confirm deletion
-    await page.keyboard.type('Y');
+    // Fill Y in the confirm input and press Enter
+    const confirmInput = page.locator('input[data-field="confirm"]');
+    await confirmInput.waitFor({ state: 'visible', timeout: 5000 });
+    await confirmInput.click();
+    await confirmInput.fill('Y');
     await page.keyboard.press('Enter');
 
     await page.locator('text=Record deleted').waitFor({ state: 'visible', timeout: 10000 });
