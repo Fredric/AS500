@@ -155,6 +155,11 @@ export interface RenderOptions {
 }
 
 // Rendered field (matches existing Field type)
+export interface FieldOption {
+  value: string;
+  display: string;
+}
+
 export interface RenderedField {
   row: number;
   col: number;
@@ -163,6 +168,7 @@ export interface RenderedField {
   name: string;
   required?: boolean;
   uppercase?: boolean;
+  options?: FieldOption[];
 }
 
 // Render result - ready for the protocol

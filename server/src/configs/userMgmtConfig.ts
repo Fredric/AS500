@@ -126,10 +126,15 @@ export const userMgmtConfig: CRUDTableConfig = {
       field: 'role',
       label: 'Role',
       length: 9,
+      staticOptions: [
+        { value: 'USER', display: 'USER' },
+        { value: 'SUPERUSER', display: 'SUPERUSER' },
+        { value: 'AIAGENT', display: 'AIAGENT' },
+        { value: 'ADMIN', display: 'ADMIN' },
+      ],
       form: {
         required: true,
         uppercase: true,
-        hint: '(USER/SUPERUSER/AIAGENT/ADMIN)',
         formValue: (v) => String(v ?? 'USER').toUpperCase(),
         validators: [
           (ctx) => {

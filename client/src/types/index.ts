@@ -24,6 +24,11 @@ export interface ScreenNavigation {
   menu?: MenuNavigation;
 }
 
+export interface FieldOption {
+  value: string;
+  display: string;
+}
+
 export interface Field {
   row: number;
   col: number;
@@ -32,6 +37,7 @@ export interface Field {
   name: string;
   required?: boolean;
   uppercase?: boolean;
+  options?: FieldOption[];
 }
 
 export interface ScreenResponse {

@@ -598,6 +598,23 @@ export async function buildFormScreen(
     user: session.username || 'UNKNOWN',
   });
 
+  // Attach dropdown options to rendered fields
+  for (const renderedField of result.fields) {
+    const fieldKey = config.formBuilder.find(k => config.fieldConfigs[k]?.field === renderedField.name);
+    if (!fieldKey) continue;
+    const fc = config.fieldConfigs[fieldKey];
+    if (!fc) continue;
+
+    if (fc.staticOptions) {
+      renderedField.options = fc.staticOptions;
+    } else if (fc.datasource && crudCtx.datasources[fieldKey]) {
+      renderedField.options = crudCtx.datasources[fieldKey].map(row => ({
+        value: String(row[fc.datasource!.valueField] ?? ''),
+        display: String(row[fc.datasource!.displayField] ?? ''),
+      }));
+    }
+  }
+
   saveContext(session, config.id, crudCtx);
 
   return {

@@ -47,6 +47,7 @@ export interface FieldConfig {
   length: number;
   type?: FieldType;
 
+  staticOptions?: Array<{ value: string; display: string }>;
   datasource?: DatasourceConfig;
 
   form?: {

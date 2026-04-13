@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import { useTerminal } from '../hooks/useTerminal';
+import FieldDropdown from './FieldDropdown';
+import type { DropdownHandle } from './FieldDropdown';
 import type { Field } from '../types';
 
 // Special keys to intercept
@@ -102,6 +104,19 @@ export default function Terminal() {
   const [focusedDataRowIndex, setFocusedDataRowIndex] = useState<number | null>(null);
   const prevNavKeyRef = useRef<string | null>(null);
   const focusLastOnNextPageRef = useRef(false);
+
+  // Dropdown state: track which field with options has dropdown open
+  const [activeDropdownField, setActiveDropdownField] = useState<Field | null>(null);
+  const [dropdownAnchorRect, setDropdownAnchorRect] = useState<DOMRect | null>(null);
+  const [dropdownFilterText, setDropdownFilterText] = useState('');
+  const dropdownRef = useRef<DropdownHandle>(null);
+  const dropdownOpenRef = useRef(false);
+
+  // Close dropdown when screen changes
+  useEffect(() => {
+    setActiveDropdownField(null);
+    setDropdownFilterText('');
+  }, [screenId]);
 
   // Reset row/menu focus when entering a new screen or page
   useEffect(() => {
@@ -346,11 +361,87 @@ export default function Terminal() {
   // Handle keyboard events on input fields
   // In list mode, input fields still use normal field behavior (user can type opt codes directly).
   // Row navigation (arrow keys, Enter shortcuts) only activates when the container has focus.
+  // Open dropdown for a field
+  const openDropdown = useCallback((field: Field, inputEl: HTMLElement) => {
+    dropdownOpenRef.current = true;
+    setActiveDropdownField(field);
+    setDropdownAnchorRect(inputEl.getBoundingClientRect());
+    setDropdownFilterText('');
+  }, []);
+
+  const closeDropdown = useCallback(() => {
+    dropdownOpenRef.current = false;
+    setActiveDropdownField(null);
+    setDropdownFilterText('');
+  }, []);
+
+  // Look up Field object from an input element's data-field attribute
+  const getFieldFromInput = useCallback((input: HTMLInputElement): Field | null => {
+    const fieldName = input.getAttribute('data-field');
+    if (!fieldName) return null;
+    return fields.find(f => f.name === fieldName) || null;
+  }, [fields]);
+
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // ArrowDown on a field with options: open dropdown (or navigate if already open)
+    if (e.key === 'ArrowDown') {
+      if (activeDropdownField && dropdownRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropdownRef.current.moveHighlight(1);
+        return;
+      }
+      const currentField = getFieldFromInput(e.currentTarget);
+      if (currentField?.options && currentField.options.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        openDropdown(currentField, e.currentTarget);
+        return;
+      }
+    }
+
+    // Dropdown navigation when a dropdown is active
+    if (activeDropdownField && dropdownRef.current) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        dropdownRef.current.moveHighlight(-1);
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (dropdownRef.current.hasItems()) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropdownRef.current.selectHighlighted();
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeDropdown();
+        return;
+      }
+      // Typing filters the dropdown (single printable characters)
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        setDropdownFilterText(prev => prev + e.key);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'Backspace') {
+        setDropdownFilterText(prev => prev.slice(0, -1));
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
+
     // Tab navigation (works in all modes)
     if (e.key === 'Tab') {
       e.preventDefault();
       e.stopPropagation();
+      closeDropdown();
       if (isListMode && navigation?.list) {
         // Tab moves between data rows
         const { dataRowCount } = navigation.list;
@@ -374,10 +465,11 @@ export default function Terminal() {
     if (SPECIAL_KEYS[e.key]) {
       e.preventDefault();
       e.stopPropagation();
+      closeDropdown();
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, navigation, isListMode, getNextField, getPrevField, focusField, sendKey]);
+  }, [cursor, navigation, isListMode, getFieldFromInput, getNextField, getPrevField, focusField, sendKey, activeDropdownField, openDropdown, closeDropdown]);
 
   // Focus management after every server response.
   // Avoid stealing focus back from a field the user already moved to.
@@ -509,6 +601,17 @@ export default function Terminal() {
               setFocusedDataRowIndex(relativeRowIndex);
             }
           }}
+          onBlur={() => {
+            // Delay closing to allow dropdown click to fire first.
+            // Check ref to avoid closing if the dropdown was re-opened or
+            // if a React re-render caused a transient blur.
+            const wasOpen = dropdownOpenRef.current;
+            setTimeout(() => {
+              if (wasOpen && !dropdownOpenRef.current) return; // already closed by explicit action
+              if (dropdownOpenRef.current && document.activeElement instanceof HTMLInputElement) return; // refocused
+              closeDropdown();
+            }, 150);
+          }}
           disabled={field.type === 'readonly'}
         />
       );
@@ -563,6 +666,26 @@ export default function Terminal() {
       <div className={`terminal-message ${messageType || ''}`}>
         {message || rows[23] || ''}
       </div>
+
+      {/* Dropdown overlay for fields with options */}
+      {activeDropdownField?.options && dropdownAnchorRect && (
+        <FieldDropdown
+          ref={dropdownRef}
+          options={activeDropdownField.options}
+          currentValue={fieldValues[activeDropdownField.name] || ''}
+          filterText={dropdownFilterText}
+          anchorRect={dropdownAnchorRect}
+          onSelect={(value) => {
+            setFieldValue(activeDropdownField.name, value);
+            closeDropdown();
+            // Move to next field after selection
+            const nextField = getNextField(activeDropdownField.row, activeDropdownField.col);
+            if (nextField) {
+              requestAnimationFrame(() => focusField(nextField));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
