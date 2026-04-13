@@ -42,14 +42,15 @@ body {
 /* Terminal Container */
 .terminal-container {
   background-color: var(--bg-color);
-  border: 3px solid #1a3a1a;
+  border: 0.1875em solid #1a3a1a;
   border-radius: 12px;
-  padding: 20px;
-  box-shadow: 
+  padding: 1.25em;
+  box-shadow:
     0 0 20px rgba(51, 255, 51, 0.1),
     inset 0 0 60px rgba(0, 0, 0, 0.5);
   position: relative;
   overflow: hidden;
+  font-size: 16px;
 }
 
 /* CRT screen effect */
@@ -128,7 +129,7 @@ body {
   width: 80ch;
   min-height: calc(22 * 1.4em);
   color: var(--text-color);
-  font-size: 16px;
+  font-size: inherit;
   line-height: 1.4;
   white-space: pre;
   text-shadow: 0 0 5px rgba(51, 255, 51, 0.5);
@@ -187,11 +188,11 @@ body {
   width: 80ch;
   height: 1.4em;
   color: var(--text-dim);
-  font-size: 16px;
+  font-size: inherit;
   line-height: 1.4;
   white-space: pre;
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: 0.25em;
+  padding-top: 0.25em;
   border-top: 1px solid #1a3a1a;
 }
 
@@ -199,7 +200,7 @@ body {
 .terminal-message {
   width: 80ch;
   height: 1.4em;
-  font-size: 16px;
+  font-size: inherit;
   line-height: 1.4;
   white-space: pre;
   color: var(--text-color);
