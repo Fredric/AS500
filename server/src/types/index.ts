@@ -5,6 +5,8 @@ export interface Session {
   username: string | null;
   authenticated: boolean;
   isAdmin: boolean;
+  userRole: 'user' | 'superuser' | 'aiagent' | 'admin' | null;
+  permissions: Set<string> | null; // null = not yet loaded; reloaded from DB on resume
   currentScreen: string;
   screenStack: string[];
   context: Record<string, unknown>;
@@ -88,6 +90,7 @@ export interface User {
   full_name: string | null;
   active: boolean;
   is_admin: boolean;
+  role: 'user' | 'superuser' | 'aiagent' | 'admin';
   created_at: Date;
 }
 

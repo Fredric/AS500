@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   serial,
   text,
   boolean,
@@ -9,9 +10,12 @@ import {
   date,
   unique,
   index,
+  primaryKey,
   customType,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+
+export const userRoleEnum = pgEnum('user_role', ['user', 'superuser', 'aiagent', 'admin']);
 
 const inet = customType<{ data: string }>({
   dataType() {
@@ -26,6 +30,7 @@ export const users = pgTable('users', {
   full_name: text('full_name'),
   active: boolean('active').default(true).notNull(),
   is_admin: boolean('is_admin').default(false).notNull(),
+  role: userRoleEnum('role').default('user').notNull(),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -73,4 +78,50 @@ export const authTokens = pgTable('auth_tokens', {
   index('idx_auth_tokens_user_id').on(table.user_id),
   index('idx_auth_tokens_expires_at').on(table.expires_at),
   index('idx_auth_tokens_user_device').on(table.user_id, table.device_id).where(sql`${table.revoked_at} IS NULL`),
+]);
+
+// ============================================
+// RBAC — Groups, Permissions, Role mappings
+// ============================================
+
+export const groups = pgTable('groups', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const userGroups = pgTable('user_groups', {
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  group_id: integer('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+}, (t) => [
+  primaryKey({ columns: [t.user_id, t.group_id] }),
+]);
+
+export const permissions = pgTable('permissions', {
+  key: text('key').primaryKey(),
+  description: text('description').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const rolePermissions = pgTable('role_permissions', {
+  role: userRoleEnum('role').notNull(),
+  permission_key: text('permission_key').notNull().references(() => permissions.key, { onDelete: 'cascade' }),
+}, (t) => [
+  primaryKey({ columns: [t.role, t.permission_key] }),
+]);
+
+export const groupPermissions = pgTable('group_permissions', {
+  group_id: integer('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+  permission_key: text('permission_key').notNull().references(() => permissions.key, { onDelete: 'cascade' }),
+}, (t) => [
+  primaryKey({ columns: [t.group_id, t.permission_key] }),
+]);
+
+export const userPermissions = pgTable('user_permissions', {
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  permission_key: text('permission_key').notNull().references(() => permissions.key, { onDelete: 'cascade' }),
+  granted: boolean('granted').default(true).notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.user_id, t.permission_key] }),
 ]);

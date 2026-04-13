@@ -16,6 +16,7 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 - **Mouse row selection** — Click to select a row, double-click to open
 - **Modern token-based authentication** — OAuth 2.0-inspired access/refresh token pattern
 - **Secure session management** — 30-day auto-login with 1-hour token rotation
+- **Role-based access control** — Roles (`user`, `superuser`, `aiagent`, `admin`), user groups, and named permission keys with per-operation CRUDTable enforcement
 - **Device tracking** — Multi-device session management with device fingerprinting
 - **Rate limiting** — Protection against brute force and token abuse
 - bcrypt password hashing with PostgreSQL storage
@@ -318,6 +319,12 @@ See [CLAUDE.MD](CLAUDE.MD) for detailed documentation including:
 - Adding new screens
 - Session management
 - Troubleshooting
+
+See [ACCESS.md](ACCESS.md) for the access control reference including:
+- Roles and default permissions
+- Groups and user-level overrides
+- Adding permission keys
+- CRUDTable `requirePermission` integration
 
 See [BACKUP.md](BACKUP.md) for backup system documentation including:
 - Automated backup configuration

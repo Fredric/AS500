@@ -8,6 +8,13 @@
       "when": 1775733064632,
       "tag": "0000_reflective_wolfpack",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776075160439,
+      "tag": "0001_quick_red_ghost",
+      "breakpoints": true
     }
   ]
 }

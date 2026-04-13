@@ -1,5 +1,6 @@
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { validateCredentials, createAuthTokens, DEFAULT_DEVICE_NAME } from '../services/auth.js';
+import { loadUserPermissions } from '../services/access.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { persistSessions } from '../session/index.js';
 import { loginRateLimiter } from '../utils/rateLimiter.js';
@@ -118,7 +119,9 @@ export async function handleLogin(
   session.authenticated = true;
   session.viserId = user.id;
   session.username = user.username;
-  session.isAdmin = user.is_admin;
+  session.userRole = user.role;
+  session.isAdmin = user.role === 'admin' || user.is_admin;
+  session.permissions = await loadUserPermissions(user.id, session.isAdmin);
   session.currentScreen = 'MAIN_MENU';
   session.screenStack = ['LOGIN'];
   

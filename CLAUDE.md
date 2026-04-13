@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **AS500** emulates a classic AS/400 green-screen mainframe experience as a modern web app. It's a time-tracking system built on a strict **dumb terminal architecture**: the server owns all logic and renders every screen; the client is purely presentational.
 
+> **Access control:** See [ACCESS.md](ACCESS.md) for the full RBAC reference — roles, groups, permission keys, CRUDTable integration, and how to add new permissions.
+
 ---
 
 ## Commands
@@ -90,6 +92,8 @@ The client uses `navigation` to drive row selection UI. When present, arrow keys
 ### Authentication
 
 Uses JWT-style **access tokens + refresh tokens** stored in the DB (`auth_tokens` table). Access tokens expire in 1 hour; refresh tokens in 30 days. Token refresh is rate-limited (`server/src/utils/rateLimiter.ts`). The server validates `accessToken` on every WebSocket connection.
+
+**Access control (RBAC):** Roles (`user`, `superuser`, `aiagent`, `admin`), groups, and named permission keys. Permissions are resolved at login and cached on the session as a `Set<string>`. See **[ACCESS.md](ACCESS.md)** for the full reference.
 
 ### Session Management
 
@@ -180,6 +184,7 @@ No changes to `server/src/index.ts` needed.
 | DSL public API | `server/src/dsl/index.ts` |
 | Session management | `server/src/session/index.ts` |
 | Auth service (tokens) | `server/src/services/auth.ts` |
+| **RBAC access service** | `server/src/services/access.ts` — see [ACCESS.md](ACCESS.md) |
 | DB pool + Drizzle instance | `server/src/db/index.ts` |
 | Drizzle table definitions (schema) | `server/src/db/schema.ts` |
 | Rate limiter utility | `server/src/utils/rateLimiter.ts` |

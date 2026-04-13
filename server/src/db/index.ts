@@ -72,6 +72,10 @@ export async function initializeDatabase(): Promise<void> {
 
   await migrate(db, { migrationsFolder: join(__dirname, 'migrations') });
   console.log('Database migrations applied');
+
+  // Seed permission registry and role defaults (idempotent)
+  const { seedPermissions } = await import('../services/access.js');
+  await seedPermissions();
 }
 
 /**

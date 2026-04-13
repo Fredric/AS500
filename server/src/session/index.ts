@@ -24,10 +24,12 @@ interface PersistedSession {
   username: string | null;
   authenticated: boolean;
   isAdmin: boolean;
+  userRole: string | null;
   currentScreen: string;
   screenStack: string[];
   context: Record<string, unknown>;
   lastActivity: string; // ISO string
+  // permissions is intentionally NOT persisted — Set doesn't serialize; reloaded from DB on resume
 }
 
 // Load sessions from file on startup
@@ -53,6 +55,8 @@ function loadSessions(): void {
           username: p.username,
           authenticated: p.authenticated,
           isAdmin: p.isAdmin ?? false,
+          userRole: (p.userRole as Session['userRole']) ?? null,
+          permissions: null, // always reloaded from DB on first request after restore
           currentScreen: p.currentScreen,
           screenStack: p.screenStack,
           context: p.context,
@@ -90,6 +94,7 @@ function saveSessions(immediate: boolean = false): void {
         username: s.username,
         authenticated: s.authenticated,
         isAdmin: s.isAdmin,
+        userRole: s.userRole,
         currentScreen: s.currentScreen,
         screenStack: s.screenStack,
         context: s.context,
@@ -127,6 +132,8 @@ export function createSession(): Session {
     username: null,
     authenticated: false,
     isAdmin: false,
+    userRole: null,
+    permissions: null,
     currentScreen: 'LOGIN',
     screenStack: [],
     context: {},
@@ -153,6 +160,8 @@ export function getSession(sessionId: string): Session | null {
     // Session expired - reset to unauthenticated
     session.authenticated = false;
     session.isAdmin = false;
+    session.userRole = null;
+    session.permissions = null;
     session.viserId = null;
     session.username = null;
     session.currentScreen = 'LOGIN';

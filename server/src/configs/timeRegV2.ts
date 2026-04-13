@@ -9,6 +9,7 @@ export const timeRegV2Config: CRUDTableConfig = {
   id: 'timereg_v2',
   title: 'Time Registration',
   requireAuth: true,
+  requirePermission: 'time_reg:read',
 
   // ============================================
   // Services
@@ -27,6 +28,7 @@ export const timeRegV2Config: CRUDTableConfig = {
     create: {
       service: timeRegCrud,
       method: 'createEntry',
+      requirePermission: 'time_reg:write',
       params: (ctx) => ({
         dayId: ctx.input.dayId as number,
         start_hour: ctx.values.start_hour,
@@ -39,6 +41,7 @@ export const timeRegV2Config: CRUDTableConfig = {
     update: {
       service: timeRegCrud,
       method: 'updateEntry',
+      requirePermission: 'time_reg:write',
       params: (ctx) => ({
         itemId: ctx.editRecord!.id as number,
         start_hour: ctx.values.start_hour,
@@ -51,6 +54,7 @@ export const timeRegV2Config: CRUDTableConfig = {
     delete: {
       service: timeRegCrud,
       method: 'deleteEntry',
+      requirePermission: 'time_reg:write',
       params: (ctx) => ctx.selection[0].id as number,
     },
   },

@@ -2,9 +2,10 @@
 // Builds and handles list + form screens from declarative config
 
 import type { Session, ClientRequest, ScreenResponse, ListNavigation } from '../types/index.js';
-import type { CRUDTableConfig, CRUDContext, BoolExpr, FieldConfig } from './types.js';
+import type { CRUDTableConfig, CRUDContext, BoolExpr, FieldConfig, ServiceCall } from './types.js';
 import { listScreenId, formScreenId, getConfig } from './registry.js';
 import { loadContext, saveContext, clearContext } from './context.js';
+import { hasPermission } from '../services/access.js';
 import {
   defineScreen,
   render,
@@ -18,6 +19,12 @@ import type { SubfileColumnDef, FieldDef } from '../dsl/types.js';
 
 const LIST_PAGE_SIZE = 12;
 const LIST_START_ROW = 7;
+
+// Check if a session has permission to execute a service call
+function checkServicePermission(session: Session, svc: ServiceCall | undefined): boolean {
+  if (!svc?.requirePermission) return true;
+  return hasPermission(session, svc.requirePermission);
+}
 
 // Evaluate a BoolExpr
 function evalBool(expr: BoolExpr | undefined, context: CRUDContext, defaultValue: boolean): boolean {
@@ -93,10 +100,10 @@ export async function buildListScreen(
     });
   }
 
-  // Build option hints line
+  // Build option hints line (only show operations the user has permission for)
   const optionHints: string[] = [];
-  if (config.services.update) optionHints.push('2=Edit');
-  if (config.services.delete) optionHints.push('4=Delete');
+  if (config.services.update && checkServicePermission(session, config.services.update)) optionHints.push('2=Edit');
+  if (config.services.delete && checkServicePermission(session, config.services.delete)) optionHints.push('4=Delete');
 
   // OpenUI gets option 9
   if (config.openUI) {
@@ -154,7 +161,7 @@ export async function buildListScreen(
 
   // Build shortcut list for keyboard navigation
   const navShortcuts: ListNavigation['shortcuts'] = [];
-  if (config.services.delete) {
+  if (config.services.delete && checkServicePermission(session, config.services.delete)) {
     navShortcuts.push({ key: 'd', option: '4', label: 'Delete' });
   }
   if (config.navigation?.shortcuts) {
@@ -178,7 +185,7 @@ export async function buildListScreen(
   const shortcutHints: string[] = [];
   if (primaryAction === '2') shortcutHints.push('Enter=Edit');
   else if (primaryAction === '9') shortcutHints.push('Enter=Open');
-  if (config.services.delete) shortcutHints.push('D=Delete');
+  if (config.services.delete && checkServicePermission(session, config.services.delete)) shortcutHints.push('D=Delete');
   if (config.navigation?.shortcuts) {
     for (const s of config.navigation.shortcuts) {
       shortcutHints.push(`${String(s.key).toUpperCase()}=${s.label}`);
@@ -186,7 +193,7 @@ export async function buildListScreen(
   }
 
   const fKeyParts: string[] = ['Esc=Exit'];
-  if (config.services.create) fKeyParts.push('N=New');
+  if (config.services.create && checkServicePermission(session, config.services.create)) fKeyParts.push('N=New');
   if (config.listKeys) {
     const keyLabel: Record<string, string> = { F7: '←', F8: '→' };
     for (const [key, keyConfig] of Object.entries(config.listKeys)) {
@@ -292,6 +299,12 @@ export async function handleList(
 
   // F6 - Create new record
   if (request.key === 'F6' && config.services.create) {
+    if (!checkServicePermission(session, config.services.create)) {
+      return {
+        ...(await buildListScreen(config, session, 'Access denied: cannot create records', 'error')),
+        ...base,
+      };
+    }
     crudCtx.formMode = 'create';
     crudCtx.editRecord = null;
     saveContext(session, config.id, crudCtx);
@@ -359,6 +372,12 @@ export async function handleList(
 
       // Option 2 - Edit
       if (opt === '2' && config.services.update) {
+        if (!checkServicePermission(session, config.services.update)) {
+          return {
+            ...(await buildListScreen(config, session, 'Access denied: cannot edit records', 'error')),
+            ...base,
+          };
+        }
         crudCtx.formMode = 'edit';
         crudCtx.editRecord = records[i];
         crudCtx.selection = [records[i]];
@@ -375,6 +394,12 @@ export async function handleList(
 
       // Option 4 - Delete
       if (opt === '4' && config.services.delete) {
+        if (!checkServicePermission(session, config.services.delete)) {
+          return {
+            ...(await buildListScreen(config, session, 'Access denied: cannot delete records', 'error')),
+            ...base,
+          };
+        }
         try {
           crudCtx.selection = [records[i]];
           const deleteParams = config.services.delete.params?.(crudCtx);
@@ -667,9 +692,21 @@ export async function handleForm(
     // Call create or update service
     try {
       if (isCreate && config.services.create) {
+        if (!checkServicePermission(session, config.services.create)) {
+          return {
+            ...(await buildFormScreen(config, session, 'Access denied: cannot create records', 'error')),
+            ...base,
+          };
+        }
         const createParams = config.services.create.params?.(crudCtx) ?? values;
         await callService(config.services.create.service, config.services.create.method, createParams);
       } else if (!isCreate && config.services.update) {
+        if (!checkServicePermission(session, config.services.update)) {
+          return {
+            ...(await buildFormScreen(config, session, 'Access denied: cannot edit records', 'error')),
+            ...base,
+          };
+        }
         const updateParams = config.services.update.params?.(crudCtx) ?? values;
         await callService(config.services.update.service, config.services.update.method, updateParams);
       }

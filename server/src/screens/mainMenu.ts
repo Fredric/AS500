@@ -3,6 +3,7 @@ import { buildLoginScreen } from './login.js';
 import { initTimeRegV2Context } from '../configs/timeRegV2.js';
 import { initUserMgmtContext } from '../configs/userMgmtConfig.js';
 import { revokeAllUserTokens } from '../services/auth.js';
+import { hasPermission, PERMISSIONS } from '../services/access.js';
 
 import {
   defineScreen,
@@ -56,8 +57,9 @@ const ADMIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
 // ============================================
 
 export function mainMenuScreen(session: Session): Omit<ScreenResponse, 'sessionId'> {
-  const screenDef = session.isAdmin ? ADMIN_MENU_SCREEN : MAIN_MENU_SCREEN;
-  const menuItems = session.isAdmin ? ADMIN_MENU_ITEMS : USER_MENU_ITEMS;
+  const canAccessUserMgmt = session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN);
+  const screenDef = canAccessUserMgmt ? ADMIN_MENU_SCREEN : MAIN_MENU_SCREEN;
+  const menuItems = canAccessUserMgmt ? ADMIN_MENU_ITEMS : USER_MENU_ITEMS;
 
   const result = render(screenDef, {}, {
     user: session.username || 'UNKNOWN',
@@ -90,6 +92,8 @@ async function signOff(session: Session): Promise<Omit<ScreenResponse, 'sessionI
 
   session.authenticated = false;
   session.isAdmin = false;
+  session.userRole = null;
+  session.permissions = null;
   session.viserId = null;
   session.username = null;
   session.currentScreen = 'LOGIN';
@@ -140,9 +144,9 @@ export async function handleMainMenu(
       return { ...(await buildListScreen(config, session)), ...base };
     }
 
-    // Option 2 — User Management (admin) or Log Off (regular user)
+    // Option 2 — User Management (admin/superuser) or Log Off (regular user)
     if (option === 2) {
-      if (session.isAdmin) {
+      if (session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN)) {
         session.screenStack.push('MAIN_MENU');
         session.currentScreen = 'CRUD_USER_MGMT';
         initUserMgmtContext(session);
@@ -158,8 +162,8 @@ export async function handleMainMenu(
       return { ...(await signOff(session)), ...base };
     }
 
-    // Option 3 — Log Off (admin only)
-    if (option === 3 && session.isAdmin) {
+    // Option 3 — Log Off (admin/superuser)
+    if (option === 3 && (session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN))) {
       return { ...(await signOff(session)), ...base };
     }
 

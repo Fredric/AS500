@@ -9,6 +9,7 @@ import { buildLoginScreen, handleLogin } from './screens/login.js';
 import { mainMenuScreen, handleMainMenu } from './screens/mainMenu.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './services/auth.js';
+import { loadUserPermissions } from './services/access.js';
 import { tokenRefreshRateLimiter } from './utils/rateLimiter.js';
 
 // Import database initialization
@@ -19,6 +20,13 @@ import { registerCRUDConfigs } from './configs/index.js';
 import { handleCRUDScreen, buildCRUDScreenForResume } from './crudtable/router.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+
+// Lazily load permissions into session after resume from disk (permissions are not persisted)
+async function ensurePermissionsLoaded(session: Session): Promise<void> {
+  if (session.authenticated && session.viserId && !session.permissions) {
+    session.permissions = await loadUserPermissions(session.viserId, session.isAdmin);
+  }
+}
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // Static file serving for production
@@ -184,7 +192,9 @@ async function startServer() {
               session.authenticated = true;
               session.viserId = user.id;
               session.username = user.username;
-              session.isAdmin = user.is_admin;
+              session.userRole = user.role;
+              session.isAdmin = user.role === 'admin' || user.is_admin;
+              session.permissions = await loadUserPermissions(user.id, session.isAdmin);
               if (session.currentScreen === 'LOGIN') {
                 session.currentScreen = 'MAIN_MENU';
                 session.screenStack = ['LOGIN'];
@@ -236,7 +246,9 @@ async function startServer() {
                 session.authenticated = true;
                 session.viserId = refreshedUser.id;
                 session.username = refreshedUser.username;
-                session.isAdmin = refreshedUser.is_admin;
+                session.userRole = refreshedUser.role;
+                session.isAdmin = refreshedUser.role === 'admin' || refreshedUser.is_admin;
+                session.permissions = await loadUserPermissions(refreshedUser.id, session.isAdmin);
                 if (session.currentScreen === 'LOGIN') {
                   session.currentScreen = 'MAIN_MENU';
                   session.screenStack = ['LOGIN'];
@@ -332,6 +344,9 @@ async function startServer() {
 
         // Update connection mapping
         connectionSessions.set(ws, currentSession.id);
+
+        // Ensure permissions are loaded (needed after disk-restore where Set is not persisted)
+        await ensurePermissionsLoaded(currentSession);
 
         // Route to appropriate handler based on current screen
         let response: ScreenResponse;

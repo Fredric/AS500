@@ -28,6 +28,7 @@ export interface ServiceCall {
   service: Record<string, Function>;
   method: string;
   params?: (context: CRUDContext) => unknown;
+  requirePermission?: string; // Optional permission key required to execute this operation
 }
 
 // Datasource: lookup data for select-like fields
@@ -104,6 +105,7 @@ export interface CRUDTableConfig {
 
   requireAuth?: boolean;
   requireAdmin?: boolean;
+  requirePermission?: string; // Permission key required to access this screen at all
 
   services: {
     list: ServiceCall;

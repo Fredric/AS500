@@ -8,6 +8,7 @@ export const userMgmtConfig: CRUDTableConfig = {
   title: 'User Management',
   requireAuth: true,
   requireAdmin: true,
+  requirePermission: 'user_mgmt:read',
 
   services: {
     list: {
@@ -17,6 +18,7 @@ export const userMgmtConfig: CRUDTableConfig = {
     create: {
       service: userService as unknown as Record<string, Function>,
       method: 'createUser',
+      requirePermission: 'user_mgmt:admin',
       params: (ctx) => ({
         username: ctx.values.username,
         password: ctx.values.password,
@@ -28,6 +30,7 @@ export const userMgmtConfig: CRUDTableConfig = {
     update: {
       service: userService as unknown as Record<string, Function>,
       method: 'updateUser',
+      requirePermission: 'user_mgmt:admin',
       params: (ctx) => ({
         id: (ctx.editRecord!.id as number),
         fullName: ctx.values.full_name || null,
@@ -39,6 +42,7 @@ export const userMgmtConfig: CRUDTableConfig = {
     delete: {
       service: userService as unknown as Record<string, Function>,
       method: 'deleteUser',
+      requirePermission: 'user_mgmt:admin',
       params: (ctx) => (ctx.selection[0].id as number),
     },
   },

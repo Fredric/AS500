@@ -5,6 +5,7 @@ import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { getConfigByScreenId } from './registry.js';
 import { buildListScreen, handleList, buildFormScreen, handleForm } from './runtime.js';
 import { buildLoginScreen } from '../screens/login.js';
+import { hasPermission } from '../services/access.js';
 
 // Handle a CRUD screen request (called from message handler)
 export async function handleCRUDScreen(
@@ -34,6 +35,14 @@ export async function handleCRUDScreen(
     };
   }
 
+  if (config.requirePermission && !hasPermission(session, config.requirePermission)) {
+    session.currentScreen = 'MAIN_MENU';
+    return {
+      ...buildLoginScreen('Access denied. Insufficient permissions.', 'error'),
+      ...base,
+    };
+  }
+
   if (mode === 'list') {
     return await handleList(config, session, request);
   }
@@ -59,6 +68,11 @@ export async function buildCRUDScreenForResume(
   if (config.requireAdmin && !session.isAdmin) {
     session.currentScreen = 'LOGIN';
     return buildLoginScreen('Access denied. Admin privileges required.', 'error');
+  }
+
+  if (config.requirePermission && !hasPermission(session, config.requirePermission)) {
+    session.currentScreen = 'MAIN_MENU';
+    return buildLoginScreen('Access denied. Insufficient permissions.', 'error');
   }
 
   if (mode === 'list') {
