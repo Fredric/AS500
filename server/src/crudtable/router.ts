@@ -3,7 +3,7 @@
 
 import type { Session, ClientRequest, ScreenResponse } from '../types/index.js';
 import { getConfigByScreenId } from './registry.js';
-import { buildListScreen, handleList, buildFormScreen, handleForm } from './runtime.js';
+import { buildListScreen, handleList, buildFormScreen, handleForm, buildDeleteConfirmScreen, handleDeleteConfirm } from './runtime.js';
 import { buildLoginScreen } from '../screens/login.js';
 import { hasPermission } from '../services/access.js';
 
@@ -47,6 +47,10 @@ export async function handleCRUDScreen(
     return await handleList(config, session, request);
   }
 
+  if (mode === 'confirm_delete') {
+    return await handleDeleteConfirm(config, session, request);
+  }
+
   return await handleForm(config, session, request);
 }
 
@@ -77,6 +81,10 @@ export async function buildCRUDScreenForResume(
 
   if (mode === 'list') {
     return await buildListScreen(config, session);
+  }
+
+  if (mode === 'confirm_delete') {
+    return await buildDeleteConfirmScreen(config, session);
   }
 
   return await buildFormScreen(config, session);

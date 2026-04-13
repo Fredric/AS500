@@ -5,13 +5,17 @@ import type { CRUDTableConfig } from './types.js';
 
 const configs = new Map<string, CRUDTableConfig>();
 
-// Screen ID convention: CRUD_{ID} for list, CRUD_{ID}_FORM for form
+// Screen ID convention: CRUD_{ID} for list, CRUD_{ID}_FORM for form, CRUD_{ID}_DELETE_CONFIRM for delete confirmation
 export function listScreenId(configId: string): string {
   return `CRUD_${configId.toUpperCase()}`;
 }
 
 export function formScreenId(configId: string): string {
   return `CRUD_${configId.toUpperCase()}_FORM`;
+}
+
+export function deleteConfirmScreenId(configId: string): string {
+  return `CRUD_${configId.toUpperCase()}_DELETE_CONFIRM`;
 }
 
 export function registerConfig(config: CRUDTableConfig): void {
@@ -23,7 +27,7 @@ export function getConfig(id: string): CRUDTableConfig | undefined {
 }
 
 // Match a screen ID back to its config + mode
-export function getConfigByScreenId(screenId: string): { config: CRUDTableConfig; mode: 'list' | 'form' } | null {
+export function getConfigByScreenId(screenId: string): { config: CRUDTableConfig; mode: 'list' | 'form' | 'confirm_delete' } | null {
   if (!screenId.startsWith('CRUD_')) return null;
 
   for (const config of configs.values()) {
@@ -32,6 +36,9 @@ export function getConfigByScreenId(screenId: string): { config: CRUDTableConfig
     }
     if (screenId === formScreenId(config.id)) {
       return { config, mode: 'form' };
+    }
+    if (screenId === deleteConfirmScreenId(config.id)) {
+      return { config, mode: 'confirm_delete' };
     }
   }
 

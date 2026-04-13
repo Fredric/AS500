@@ -19,6 +19,7 @@ export interface CRUDContext {
   user: string | null;
   formMode: 'create' | 'edit' | null;
   editRecord: Record<string, unknown> | null;
+  pendingDeleteRecord: Record<string, unknown> | null;
   pageOffset: number;
   datasources: Record<string, Record<string, unknown>[]>;
 }

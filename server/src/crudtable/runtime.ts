@@ -3,7 +3,7 @@
 
 import type { Session, ClientRequest, ScreenResponse, ListNavigation } from '../types/index.js';
 import type { CRUDTableConfig, CRUDContext, BoolExpr, FieldConfig, ServiceCall } from './types.js';
-import { listScreenId, formScreenId, getConfig } from './registry.js';
+import { listScreenId, formScreenId, deleteConfirmScreenId, getConfig } from './registry.js';
 import { loadContext, saveContext, clearContext } from './context.js';
 import { hasPermission } from '../services/access.js';
 import {
@@ -393,7 +393,7 @@ export async function handleList(
         };
       }
 
-      // Option 4 - Delete
+      // Option 4 - Delete (navigate to confirmation screen)
       if (opt === '4' && config.services.delete) {
         if (!checkServicePermission(session, config.services.delete)) {
           return {
@@ -401,26 +401,17 @@ export async function handleList(
             ...base,
           };
         }
-        try {
-          crudCtx.selection = [records[i]];
-          const deleteParams = config.services.delete.params?.(crudCtx);
-          await callService(config.services.delete.service, config.services.delete.method, deleteParams);
+        crudCtx.pendingDeleteRecord = records[i];
+        crudCtx.selection = [records[i]];
+        saveContext(session, config.id, crudCtx);
 
-          crudCtx.selection = [];
-          saveContext(session, config.id, crudCtx);
+        session.screenStack.push(listScreenId(config.id));
+        session.currentScreen = deleteConfirmScreenId(config.id);
 
-          return {
-            ...(await buildListScreen(config, session, 'Record deleted', 'info')),
-            ...base,
-            fieldValues: {},
-          };
-        } catch (error) {
-          console.error('CRUDTable delete error:', error);
-          return {
-            ...(await buildListScreen(config, session, 'Failed to delete record', 'error')),
-            ...base,
-          };
-        }
+        return {
+          ...(await buildDeleteConfirmScreen(config, session)),
+          ...base,
+        };
       }
 
       // Option 9 - OpenUI
@@ -761,8 +752,150 @@ export async function handleForm(
 }
 
 // ============================================
-// HELPERS
+// DELETE CONFIRMATION SCREEN
 // ============================================
+
+export async function buildDeleteConfirmScreen(
+  config: CRUDTableConfig,
+  session: Session,
+  message?: string | null,
+  messageType?: 'info' | 'warning' | 'error' | null
+): Promise<Omit<ScreenResponse, 'sessionId'>> {
+  const crudCtx = loadContext(session, config.id);
+
+  // Build a summary of the record fields for display
+  const CONFIRM_SCREEN_LEFT_MARGIN = 10;
+  const CONFIRM_LINE_MAX_LENGTH = 80 - CONFIRM_SCREEN_LEFT_MARGIN;
+  const recordTextElements = [];
+  const record = crudCtx.pendingDeleteRecord ?? {};
+  let displayRow = 9;
+  for (const fieldKey of config.columnBuilder) {
+    const fc = config.fieldConfigs[fieldKey];
+    if (!fc) continue;
+    const val = record[fc.field] ?? '';
+    const lineContent = `${fc.label} . . . : ${String(val)}`.substring(0, CONFIRM_LINE_MAX_LENGTH);
+    recordTextElements.push(text(displayRow, CONFIRM_SCREEN_LEFT_MARGIN, lineContent));
+    displayRow++;
+    if (displayRow > 17) break;
+  }
+
+  const screenId = deleteConfirmScreenId(config.id);
+  const screenDef = defineScreen(screenId, {
+    elements: [
+      header({ system: 'AS500 SYSTEM', title: `CONFIRM DELETE - ${config.title.toUpperCase()}`, showDateTime: true, showUser: true }),
+      text(7, 2, 'The following record will be permanently deleted:'),
+      ...recordTextElements,
+      text(19, 2, 'Type Y to confirm, or press Esc / F3 / F12 to cancel.'),
+      form(20, [['Confirm delete . . :', field('confirm', 1, 'alpha', { uppercase: true })]], { labelCol: 2, fieldCol: 22 }),
+    ],
+    statusLine: 'Y=Confirm  Esc=Cancel  F3=Cancel  F12=Cancel',
+    defaultCursor: 'confirm',
+  });
+
+  const result = render(screenDef, {}, {
+    message,
+    messageType,
+    user: session.username || 'UNKNOWN',
+  });
+
+  return {
+    screenId: result.screenId,
+    cursor: result.cursor,
+    rows: result.rows,
+    fields: result.fields,
+    message: result.message,
+    messageType: result.messageType,
+    statusLine: result.statusLine,
+    bell: result.bell,
+  };
+}
+
+export async function handleDeleteConfirm(
+  config: CRUDTableConfig,
+  session: Session,
+  request: ClientRequest
+): Promise<ScreenResponse> {
+  const base = { sessionId: session.id };
+  const crudCtx = loadContext(session, config.id);
+
+  // F3, F12, or Escape - cancel and return to list
+  if (request.key === 'F3' || request.key === 'F12' || request.key === 'ESCAPE') {
+    crudCtx.pendingDeleteRecord = null;
+    crudCtx.selection = [];
+    saveContext(session, config.id, crudCtx);
+
+    session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
+
+    return {
+      ...(await buildListScreen(config, session, 'Delete cancelled', 'info')),
+      ...base,
+    };
+  }
+
+  // ENTER - check confirmation value
+  if (request.key === 'ENTER') {
+    const confirmValue = (request.input['confirm'] ?? '').trim().toUpperCase();
+
+    if (confirmValue !== 'Y') {
+      // Not confirmed - return to list
+      crudCtx.pendingDeleteRecord = null;
+      crudCtx.selection = [];
+      saveContext(session, config.id, crudCtx);
+
+      session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
+
+      return {
+        ...(await buildListScreen(config, session, 'Delete cancelled', 'info')),
+        ...base,
+      };
+    }
+
+    // Confirmed - perform deletion
+    if (!config.services.delete) {
+      crudCtx.pendingDeleteRecord = null;
+      crudCtx.selection = [];
+      saveContext(session, config.id, crudCtx);
+
+      session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
+
+      return {
+        ...(await buildListScreen(config, session, 'Delete not configured', 'error')),
+        ...base,
+      };
+    }
+
+    try {
+      const deleteParams = config.services.delete.params?.(crudCtx);
+      await callService(config.services.delete.service, config.services.delete.method, deleteParams);
+
+      crudCtx.pendingDeleteRecord = null;
+      crudCtx.selection = [];
+      saveContext(session, config.id, crudCtx);
+
+      session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
+
+      return {
+        ...(await buildListScreen(config, session, 'Record deleted', 'info')),
+        ...base,
+        fieldValues: {},
+      };
+    } catch (error) {
+      console.error('CRUDTable delete error:', error);
+      return {
+        ...(await buildDeleteConfirmScreen(config, session, 'Failed to delete record', 'error')),
+        ...base,
+      };
+    }
+  }
+
+  // Default - show confirm screen
+  return {
+    ...(await buildDeleteConfirmScreen(config, session)),
+    ...base,
+  };
+}
+
+
 
 // Build the appropriate return screen when navigating back
 async function buildReturnScreen(session: Session): Promise<Omit<ScreenResponse, 'sessionId'>> {
@@ -775,6 +908,9 @@ async function buildReturnScreen(session: Session): Promise<Omit<ScreenResponse,
   if (match) {
     if (match.mode === 'list') {
       return await buildListScreen(match.config, session);
+    }
+    if (match.mode === 'confirm_delete') {
+      return await buildDeleteConfirmScreen(match.config, session);
     }
     return await buildFormScreen(match.config, session);
   }
