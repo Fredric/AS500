@@ -107,7 +107,7 @@ test.describe('Keyboard Row Navigation', () => {
     await page.locator('text=Day total').waitFor({ state: 'visible', timeout: 10000 });
   });
 
-  test('D shortcut key deletes the focused row', async ({ page }) => {
+  test('D shortcut key shows delete confirmation then deletes the focused row', async ({ page }) => {
     await page.locator('text=TASK-').first().waitFor({ state: 'visible', timeout: 10000 });
     await page.waitForTimeout(200);
 
@@ -117,6 +117,13 @@ test.describe('Keyboard Row Navigation', () => {
     await container.focus();
 
     await page.keyboard.press('d');
+
+    // Wait for confirmation screen
+    await page.locator('text=CONFIRM DELETE').waitFor({ state: 'visible', timeout: 10000 });
+
+    // Type Y to confirm deletion
+    await page.keyboard.type('Y');
+    await page.keyboard.press('Enter');
 
     await page.locator('text=Record deleted').waitFor({ state: 'visible', timeout: 10000 });
 

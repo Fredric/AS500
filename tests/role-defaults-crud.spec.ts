@@ -116,6 +116,14 @@ test.describe('Role Default Permissions CRUD', () => {
     await updatedRowOpt.fill('4');
     await page.keyboard.press('Enter');
 
+    // Wait for confirmation screen
+    await page.locator('text=CONFIRM DELETE').waitFor({ state: 'visible', timeout: 10000 });
+
+    // Type Y to confirm deletion
+    const confirmInput = page.locator('input[type="text"]').first();
+    await confirmInput.fill('Y');
+    await page.keyboard.press('Enter');
+
     await page.locator('text=Record deleted').waitFor({ state: 'visible', timeout: 10000 });
     await expect(page.locator('text=AIAGENT time_reg:write')).toHaveCount(0);
   });
