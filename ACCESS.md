@@ -183,6 +183,7 @@ You can have a screen-level `requirePermission` for coarse access and operation-
 |--------|--------|----------------------|
 | `timereg_v2` | `time_reg:read` | `time_reg:write` |
 | `user_mgmt` | `user_mgmt:read` | `user_mgmt:admin` |
+| `role_defaults` | `sys:admin` | `sys:admin` |
 
 ---
 

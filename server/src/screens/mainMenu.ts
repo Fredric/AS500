@@ -19,47 +19,53 @@ import {
 // Option rows (0-indexed in 24-row screen)
 const ITEM_ROW_BASE = 8;
 
-// Regular user menu items
-const USER_MENU_ITEMS = [
-  { option: '1', label: '1. Time Registration', row: ITEM_ROW_BASE },
-  { option: '2', label: '2. Log Off',            row: ITEM_ROW_BASE + 1 },
-];
+type MainMenuAction = 'time_reg' | 'user_mgmt' | 'role_defaults' | 'log_off';
 
-// Admin menu items
-const ADMIN_MENU_ITEMS = [
-  { option: '1', label: '1. Time Registration', row: ITEM_ROW_BASE },
-  { option: '2', label: '2. User Management',   row: ITEM_ROW_BASE + 1 },
-  { option: '3', label: '3. Log Off',            row: ITEM_ROW_BASE + 2 },
-];
+interface MainMenuItem {
+  option: string;
+  label: string;
+  row: number;
+  action: MainMenuAction;
+}
 
-const MAIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
-  elements: [
-    header({ system: 'AS500 SYSTEM', title: 'MAIN MENU', showDateTime: true, showUser: true }),
-    text(7, 8, 'Select one of the following:'),
-    ...USER_MENU_ITEMS.map(item => text(item.row, 13, item.label)),
-  ],
-  statusLine: '↑↓=Navigate  Enter=Select',
-  defaultCursor: undefined,
-});
+function getMainMenuItems(session: Session): MainMenuItem[] {
+  const actions: Array<{ label: string; action: MainMenuAction }> = [
+    { label: 'Time Registration', action: 'time_reg' },
+  ];
 
-const ADMIN_MENU_SCREEN = defineScreen('MAIN_MENU', {
-  elements: [
-    header({ system: 'AS500 SYSTEM', title: 'MAIN MENU', showDateTime: true, showUser: true }),
-    text(7, 8, 'Select one of the following:'),
-    ...ADMIN_MENU_ITEMS.map(item => text(item.row, 13, item.label)),
-  ],
-  statusLine: '↑↓=Navigate  Enter=Select',
-  defaultCursor: undefined,
-});
+  if (session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN)) {
+    actions.push({ label: 'User Management', action: 'user_mgmt' });
+  }
+
+  if (session.isAdmin || hasPermission(session, PERMISSIONS.SYS_ADMIN)) {
+    actions.push({ label: 'Role Defaults', action: 'role_defaults' });
+  }
+
+  actions.push({ label: 'Log Off', action: 'log_off' });
+
+  return actions.map((item, index) => ({
+    option: String(index + 1),
+    label: `${index + 1}. ${item.label}`,
+    row: ITEM_ROW_BASE + index,
+    action: item.action,
+  }));
+}
 
 // ============================================
 // Screen Builder
 // ============================================
 
 export function mainMenuScreen(session: Session): Omit<ScreenResponse, 'sessionId'> {
-  const canAccessUserMgmt = session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN);
-  const screenDef = canAccessUserMgmt ? ADMIN_MENU_SCREEN : MAIN_MENU_SCREEN;
-  const menuItems = canAccessUserMgmt ? ADMIN_MENU_ITEMS : USER_MENU_ITEMS;
+  const menuItems = getMainMenuItems(session);
+  const screenDef = defineScreen('MAIN_MENU', {
+    elements: [
+      header({ system: 'AS500 SYSTEM', title: 'MAIN MENU', showDateTime: true, showUser: true }),
+      text(7, 8, 'Select one of the following:'),
+      ...menuItems.map(item => text(item.row, 13, item.label)),
+    ],
+    statusLine: '↑↓=Navigate  Enter=Select',
+    defaultCursor: undefined,
+  });
 
   const result = render(screenDef, {}, {
     user: session.username || 'UNKNOWN',
@@ -130,9 +136,10 @@ export async function handleMainMenu(
   if (request.key === 'ENTER') {
     const selection = request.input['selection'] || '';
     const option = parseInt(selection, 10);
+    const menuItems = getMainMenuItems(session);
+    const selectedItem = menuItems[option - 1];
 
-    // Option 1 — Time Registration (both user types)
-    if (option === 1) {
+    if (selectedItem?.action === 'time_reg') {
       session.screenStack.push('MAIN_MENU');
       session.currentScreen = 'CRUD_TIMEREG_V2';
       await initTimeRegV2Context(session);
@@ -144,26 +151,30 @@ export async function handleMainMenu(
       return { ...(await buildListScreen(config, session)), ...base };
     }
 
-    // Option 2 — User Management (admin/superuser) or Log Off (regular user)
-    if (option === 2) {
-      if (session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN)) {
-        session.screenStack.push('MAIN_MENU');
-        session.currentScreen = 'CRUD_USER_MGMT';
-        initUserMgmtContext(session);
+    if (selectedItem?.action === 'user_mgmt') {
+      session.screenStack.push('MAIN_MENU');
+      session.currentScreen = 'CRUD_USER_MGMT';
+      initUserMgmtContext(session);
 
-        const { buildListScreen } = await import('../crudtable/runtime.js');
-        const { getConfig } = await import('../crudtable/registry.js');
-        const config = getConfig('user_mgmt')!;
+      const { buildListScreen } = await import('../crudtable/runtime.js');
+      const { getConfig } = await import('../crudtable/registry.js');
+      const config = getConfig('user_mgmt')!;
 
-        return { ...(await buildListScreen(config, session)), ...base };
-      }
-
-      // Regular user: option 2 = Log Off
-      return { ...(await signOff(session)), ...base };
+      return { ...(await buildListScreen(config, session)), ...base };
     }
 
-    // Option 3 — Log Off (admin/superuser)
-    if (option === 3 && (session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN))) {
+    if (selectedItem?.action === 'role_defaults') {
+      session.screenStack.push('MAIN_MENU');
+      session.currentScreen = 'CRUD_ROLE_DEFAULTS';
+
+      const { buildListScreen } = await import('../crudtable/runtime.js');
+      const { getConfig } = await import('../crudtable/registry.js');
+      const config = getConfig('role_defaults')!;
+
+      return { ...(await buildListScreen(config, session)), ...base };
+    }
+
+    if (selectedItem?.action === 'log_off') {
       return { ...(await signOff(session)), ...base };
     }
 
