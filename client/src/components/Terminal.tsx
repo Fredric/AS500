@@ -50,15 +50,12 @@ export default function Terminal() {
   useLayoutEffect(() => {
     const PADDING = 32; // gap kept on each side of the terminal
     const BASE_FONT_SIZE = 16;
+    let cancelled = false;
 
     const computeScale = () => {
       const el = containerRef.current;
-      if (!el) return;
-
-      // Capture natural (unscaled) dimensions exactly once, at base font-size
-      if (!naturalDimsRef.current) {
-        naturalDimsRef.current = { width: el.offsetWidth, height: el.offsetHeight };
-      }
+      // Don't measure until natural dims are known (i.e. after fonts load)
+      if (!el || !naturalDimsRef.current) return;
 
       const { width: natW, height: natH } = naturalDimsRef.current;
       const availW = window.innerWidth - PADDING * 2;
@@ -67,9 +64,22 @@ export default function Terminal() {
       setFontSize(Math.max(8, BASE_FONT_SIZE * scale));
     };
 
-    computeScale();
+    // Wait for the webfont (IBM Plex Mono) to finish loading before capturing
+    // natural dimensions, so measurements are based on actual glyph metrics
+    // rather than fallback font metrics.
+    document.fonts.ready.then(() => {
+      if (cancelled) return;
+      const el = containerRef.current;
+      if (!el) return;
+      naturalDimsRef.current = { width: el.offsetWidth, height: el.offsetHeight };
+      computeScale();
+    });
+
     window.addEventListener('resize', computeScale);
-    return () => window.removeEventListener('resize', computeScale);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('resize', computeScale);
+    };
   }, []);
 
   // Row focus state for list navigation
