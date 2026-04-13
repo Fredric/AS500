@@ -15,6 +15,7 @@ import {
   getNextDay,
   type DayItem,
 } from './timeReg.js';
+import { getJiraTasks, jiraTask, searchIssuesByName } from './jiraTasks.js';
 
 export interface ListParams {
   userId: number;
@@ -110,6 +111,10 @@ export async function updateEntry(params: UpdateParams): Promise<DayItem | undef
     params.jiratask,
     params.description
   );
+}
+
+export async function listJiraTasks(): Promise<jiraTask[]> {
+  return await getJiraTasks();
 }
 
 /**

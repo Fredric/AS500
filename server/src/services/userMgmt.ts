@@ -29,6 +29,9 @@ const SELECT_COLS = {
 };
 
 export async function getAllUsers(): Promise<UserDisplay[]> {
+
+
+
   return db.select(SELECT_COLS).from(users).orderBy(users.username);
 }
 
