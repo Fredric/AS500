@@ -154,12 +154,13 @@ body {
   color: var(--text-bright);
   font-family: inherit;
   font-size: inherit;
-  line-height: inherit;
   padding: 0;
   margin: 0;
   outline: none;
   caret-color: var(--text-bright);
   text-shadow: 0 0 8px rgba(0, 255, 0, 0.7);
+  position: relative;
+  z-index: 1;
 }
 
 .terminal-field:focus {
@@ -227,24 +228,10 @@ body {
   100% { opacity: 1; }
 }
 
-/* Cursor blink */
-.terminal-field:focus {
-  animation: cursor-blink 1s step-end infinite;
-}
-
-@keyframes cursor-blink {
-  0%, 100% { border-bottom-color: var(--text-bright); }
-  50% { border-bottom-color: transparent; }
-}
 
 /* List row navigation */
 .terminal-row--selectable {
-  cursor: pointer;
   transition: background-color 0.05s ease;
-}
-
-.terminal-row--selectable:hover {
-  background: rgba(51, 255, 51, 0.08);
 }
 
 .terminal-row--focused {

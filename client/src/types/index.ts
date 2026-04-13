@@ -10,9 +10,18 @@ export interface ListNavigation {
   shortcuts: Array<{ key: string; option: string; label: string }>;
 }
 
+export interface MenuNavigation {
+  items: Array<{
+    row: number;
+    value: string;
+  }>;
+  selectionField: string;
+}
+
 export interface ScreenNavigation {
   type: 'list' | 'form' | 'menu';
   list?: ListNavigation;
+  menu?: MenuNavigation;
 }
 
 export interface Field {

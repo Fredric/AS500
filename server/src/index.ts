@@ -7,17 +7,12 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createSession, getSession } from './session/index.js';
 import { buildLoginScreen, handleLogin } from './screens/login.js';
 import { mainMenuScreen, handleMainMenu } from './screens/mainMenu.js';
-import { buildTimeRegScreen, handleTimeReg } from './screens/timeReg.js';
-import { buildTimeEntryScreen, handleTimeEntry } from './screens/timeEntry.js';
-import { buildUserMgmtScreen, handleUserMgmt } from './screens/userMgmt.js';
-import { buildUserEditScreen, handleUserEdit } from './screens/userEdit.js';
 import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
 import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './services/auth.js';
 import { tokenRefreshRateLimiter } from './utils/rateLimiter.js';
 
 // Import database initialization
 import { initializeDatabase, closeDatabase } from './db/index.js';
-import { handleTimeRegHelp } from './screens/timeRegHelp.js';
 
 // CRUDTable system
 import { registerCRUDConfigs } from './configs/index.js';
@@ -90,34 +85,6 @@ async function getCurrentScreenResponse(session: Session): Promise<Omit<ScreenRe
       // Fall through to login if not authenticated
       session.currentScreen = 'LOGIN';
       return buildLoginScreen();
-
-    case 'TIME_REG':
-      if (session.authenticated) {
-        return await buildTimeRegScreen(session);
-      }
-      session.currentScreen = 'LOGIN';
-      return buildLoginScreen();
-
-    case 'TIME_ENTRY':
-      if (session.authenticated) {
-        return await buildTimeEntryScreen(session);
-      }
-      session.currentScreen = 'LOGIN';
-      return buildLoginScreen();
-
-    case 'USER_MGMT':
-      if (session.authenticated && session.isAdmin) {
-        return await buildUserMgmtScreen(session);
-      }
-      session.currentScreen = 'LOGIN';
-      return buildLoginScreen('Access denied. Admin privileges required.', 'error');
-
-    case 'USER_EDIT':
-      if (session.authenticated && session.isAdmin) {
-        return await buildUserEditScreen(session);
-      }
-      session.currentScreen = 'LOGIN';
-      return buildLoginScreen('Access denied. Admin privileges required.', 'error');
 
     case 'LOGIN':
       return buildLoginScreen();
@@ -384,71 +351,6 @@ async function startServer() {
               };
             } else {
               response = await handleMainMenu(currentSession, request);
-            }
-            break;
-
-          case 'TIME_REG':
-            // Check authentication
-            if (!currentSession.authenticated) {
-              currentSession.currentScreen = 'LOGIN';
-              response = {
-                ...buildLoginScreen('Please sign on to continue', 'warning'),
-                sessionId: currentSession.id,
-              };
-            } else {
-              response = await handleTimeReg(currentSession, request);
-            }
-            break;
-
-          case 'TIME_ENTRY':
-            // Check authentication
-            if (!currentSession.authenticated) {
-              currentSession.currentScreen = 'LOGIN';
-              response = {
-                ...buildLoginScreen('Please sign on to continue', 'warning'),
-                sessionId: currentSession.id,
-              };
-            } else {
-              response = await handleTimeEntry(currentSession, request);
-            }
-            break;
-
-          case 'TIME_REG_HELP':
-            // Check authentication
-            if (!currentSession.authenticated) {
-              currentSession.currentScreen = 'LOGIN';
-              response = {
-                ...buildLoginScreen('Please sign on to continue', 'warning'),
-                sessionId: currentSession.id,
-              };
-            } else {
-              response = await handleTimeRegHelp(currentSession, request);
-            }
-            break;
-
-          case 'USER_MGMT':
-            // Check authentication and admin status
-            if (!currentSession.authenticated || !currentSession.isAdmin) {
-              currentSession.currentScreen = 'LOGIN';
-              response = {
-                ...buildLoginScreen('Access denied. Admin privileges required.', 'error'),
-                sessionId: currentSession.id,
-              };
-            } else {
-              response = await handleUserMgmt(currentSession, request);
-            }
-            break;
-
-          case 'USER_EDIT':
-            // Check authentication and admin status
-            if (!currentSession.authenticated || !currentSession.isAdmin) {
-              currentSession.currentScreen = 'LOGIN';
-              response = {
-                ...buildLoginScreen('Access denied. Admin privileges required.', 'error'),
-                sessionId: currentSession.id,
-              };
-            } else {
-              response = await handleUserEdit(currentSession, request);
             }
             break;
 

@@ -56,6 +56,7 @@ export interface FieldConfig {
     uppercase?: boolean;
     validators?: Validator[];
     hint?: string;
+    formValue?: (rawValue: unknown) => string;
   };
 
   column?: {

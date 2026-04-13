@@ -73,8 +73,19 @@ export async function updateUser(
   id: number,
   fullName: string | null,
   active: boolean,
-  isAdmin: boolean
+  isAdmin: boolean,
+  password?: string | null
 ): Promise<UserDisplay | null> {
+  if (password) {
+    const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+    const rows = await db
+      .update(users)
+      .set({ full_name: fullName, active, is_admin: isAdmin, password_hash })
+      .where(eq(users.id, id))
+      .returning(SELECT_COLS);
+    return rows[0] ?? null;
+  }
+
   const rows = await db
     .update(users)
     .set({ full_name: fullName, active, is_admin: isAdmin })
@@ -82,6 +93,14 @@ export async function updateUser(
     .returning(SELECT_COLS);
 
   return rows[0] ?? null;
+}
+
+export async function deleteUser(id: number): Promise<boolean> {
+  const rows = await db
+    .delete(users)
+    .where(eq(users.id, id))
+    .returning({ id: users.id });
+  return rows.length > 0;
 }
 
 export async function resetUserPassword(id: number, newPassword: string): Promise<boolean> {

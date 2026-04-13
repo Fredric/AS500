@@ -185,16 +185,29 @@ export async function buildListScreen(
     }
   }
 
-  const fKeyParts: string[] = ['F3=Exit'];
-  if (config.services.create) fKeyParts.push('F6=Create');
+  const fKeyParts: string[] = ['Esc=Exit'];
+  if (config.services.create) fKeyParts.push('N=New');
   if (config.listKeys) {
+    const keyLabel: Record<string, string> = { F7: '←', F8: '→' };
     for (const [key, keyConfig] of Object.entries(config.listKeys)) {
-      fKeyParts.push(`${key}=${keyConfig.label}`);
+      const displayKey = keyLabel[key] ?? key;
+      fKeyParts.push(`${displayKey}=${keyConfig.label}`);
     }
   }
-  fKeyParts.push('F12=Cancel');
 
-  const statusParts = [...shortcutHints, ...fKeyParts];
+  // Build status line, truncating at 80 chars if needed
+  const allParts = [...shortcutHints, ...fKeyParts];
+  const statusParts: string[] = [];
+  let statusLen = 0;
+  for (const part of allParts) {
+    const needed = statusLen === 0 ? part.length : 2 + part.length;
+    if (statusLen + needed <= 80) {
+      statusParts.push(part);
+      statusLen += needed;
+    } else {
+      break;
+    }
+  }
 
   // Build dynamic header elements
   const headerElements = config.listHeader
@@ -211,7 +224,7 @@ export async function buildListScreen(
       ...headerElements,
       subfile('data', LIST_START_ROW, LIST_PAGE_SIZE, columns),
     ],
-    statusLine: statusParts.join('  '),
+    statusLine: statusParts.join('  ').substring(0, 80),
     defaultCursor: 'opt_0',
   });
 
@@ -488,7 +501,11 @@ export async function buildFormScreen(
       const fc = config.fieldConfigs[fieldKey];
       if (!fc) continue;
       const val = crudCtx.editRecord[fc.field];
-      fieldValues[fc.field] = val !== null && val !== undefined ? String(val) : '';
+      if (fc.form?.formValue) {
+        fieldValues[fc.field] = fc.form.formValue(val);
+      } else {
+        fieldValues[fc.field] = val !== null && val !== undefined ? String(val) : '';
+      }
     }
   }
 
@@ -545,7 +562,7 @@ export async function buildFormScreen(
       form(7, formRows, { labelCol: 8, fieldCol: 30 }),
       ...hintElements,
     ],
-    statusLine: 'F3=Exit  F12=Cancel',
+    statusLine: 'Esc=Back',
     defaultCursor: firstFieldName,
   });
 

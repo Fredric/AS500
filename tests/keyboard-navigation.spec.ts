@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { setupTestData, teardownTestData } from './testSetup.js';
 
 /**
- * Tests for keyboard/mouse row navigation on CRUDTable list screens.
- * Uses option 7 (Time Registration V2) which is the CRUDTable version.
- * Validates arrow key movement, Enter to edit, shortcut keys, and mouse click.
+ * Tests for keyboard row navigation on CRUDTable list screens.
+ * Uses Time Registration (option 1 in the new main menu) which is the CRUDTable version.
+ * Validates arrow key movement, Enter to edit, shortcut keys.
  */
 
 test.describe('Keyboard Row Navigation', () => {
@@ -30,13 +30,14 @@ test.describe('Keyboard Row Navigation', () => {
     await passwordInput.press('Enter');
 
     await page.locator('text=MAIN MENU').waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForTimeout(600); // Let React commit menu navigation state
 
-    // Option 7 = Time Registration V2 (CRUDTable screen with navigation metadata)
-    const selectionInput = page.locator('input[type="text"]').last();
-    await selectionInput.fill('7');
-    await selectionInput.press('Enter');
+    // Time Registration is option 1 (already focused as first item)
+    const container = page.locator('.terminal-container');
+    await container.focus();
+    await page.keyboard.press('Enter');
 
-    // Wait for CRUDTable list screen - it shows "Day total" in the listHeader
+    // Wait for CRUDTable list screen
     await page.locator('text=Day total').waitFor({ state: 'visible', timeout: 10000 });
     await page.waitForTimeout(600); // Let React commit navigation state
   });
@@ -44,7 +45,6 @@ test.describe('Keyboard Row Navigation', () => {
   test('first data row is highlighted on load', async ({ page }) => {
     await page.locator('text=TASK-').first().waitFor({ state: 'visible', timeout: 10000 });
 
-    // The first data row should have the focused class
     const focusedRows = page.locator('.terminal-row--focused');
     await expect(focusedRows).toHaveCount(1);
   });
@@ -97,14 +97,13 @@ test.describe('Keyboard Row Navigation', () => {
     const container = page.locator('.terminal-container');
     await container.focus();
 
-    // Enter triggers primary action (edit) on focused row
     await page.keyboard.press('Enter');
 
-    // CRUDTable form title is "EDIT TIME REGISTRATION"
+    // CRUDTable form title for edit mode
     await page.locator('text=EDIT TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Cancel back to list
-    await page.keyboard.press('F12');
+    // Cancel back to list via Esc
+    await page.keyboard.press('Escape');
     await page.locator('text=Day total').waitFor({ state: 'visible', timeout: 10000 });
   });
 
@@ -119,26 +118,20 @@ test.describe('Keyboard Row Navigation', () => {
 
     await page.keyboard.press('d');
 
-    // CRUDTable delete success message is "Record deleted"
     await page.locator('text=Record deleted').waitFor({ state: 'visible', timeout: 10000 });
 
-    // After deletion the first focused row should show different content
     await page.waitForTimeout(300);
     const textAfter = await page.locator('.terminal-row--focused').textContent();
     expect(textAfter).not.toBe(textBefore);
   });
 
-  test('mouse click selects a row', async ({ page }) => {
+  test('Esc key navigates back to main menu', async ({ page }) => {
     await page.locator('text=TASK-').first().waitFor({ state: 'visible', timeout: 10000 });
-    await page.waitForTimeout(200);
 
-    // Click the second selectable data row
-    const selectableRows = page.locator('.terminal-row--selectable');
-    const secondRowText = await selectableRows.nth(1).textContent();
-    await selectableRows.nth(1).click();
-    await page.waitForTimeout(100);
+    const container = page.locator('.terminal-container');
+    await container.focus();
 
-    const focusedText = await page.locator('.terminal-row--focused').textContent();
-    expect(focusedText).toBe(secondRowText);
+    await page.keyboard.press('Escape');
+    await page.locator('text=MAIN MENU').waitFor({ state: 'visible', timeout: 10000 });
   });
 });

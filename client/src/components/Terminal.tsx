@@ -5,6 +5,7 @@ import type { Field } from '../types';
 // Special keys to intercept
 const SPECIAL_KEYS: Record<string, string> = {
   'Enter': 'ENTER',
+  'Escape': 'F3',
   'F1': 'F1',
   'F2': 'F2',
   'F3': 'F3',
@@ -17,8 +18,6 @@ const SPECIAL_KEYS: Record<string, string> = {
   'F10': 'F10',
   'F11': 'F11',
   'F12': 'F12',
-  'PageUp': 'PAGEUP',
-  'PageDown': 'PAGEDOWN',
 };
 
 export default function Terminal() {
@@ -103,10 +102,12 @@ export default function Terminal() {
   const prevNavKeyRef = useRef<string | null>(null);
   const focusLastOnNextPageRef = useRef(false);
 
-  // Reset row focus when entering a new list screen page or different screen
+  // Reset row/menu focus when entering a new screen or page
   useEffect(() => {
     const navKey = navigation?.list
       ? `${screenId}:${navigation.list.pageOffset}`
+      : navigation?.menu
+      ? `${screenId}:menu`
       : null;
 
     if (navKey !== prevNavKeyRef.current) {
@@ -118,6 +119,8 @@ export default function Terminal() {
         } else {
           setFocusedDataRowIndex(0);
         }
+      } else if (navigation?.menu) {
+        setFocusedDataRowIndex(0);
       } else {
         setFocusedDataRowIndex(null);
       }
@@ -125,6 +128,7 @@ export default function Terminal() {
   }, [navigation, screenId]);
 
   const isListMode = !!navigation?.list;
+  const isMenuMode = !!navigation?.menu;
 
   // Find field at position
   const getFieldAt = useCallback((row: number, col: number): Field | null => {
@@ -192,6 +196,29 @@ export default function Terminal() {
   // Handle keyboard events on the container
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const list = navigation?.list;
+    const menuNav = navigation?.menu;
+
+    // --- Menu mode navigation ---
+    if (isMenuMode && menuNav) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedDataRowIndex(prev => Math.min((prev ?? 0) + 1, menuNav.items.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedDataRowIndex(prev => Math.max((prev ?? 0) - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && focusedDataRowIndex !== null) {
+        e.preventDefault();
+        const item = menuNav.items[focusedDataRowIndex];
+        if (item) {
+          sendKeyWithInput('ENTER', { [menuNav.selectionField]: item.value });
+        }
+        return;
+      }
+    }
 
     // --- List mode navigation ---
     if (isListMode && list) {
@@ -228,6 +255,18 @@ export default function Terminal() {
         return;
       }
 
+      // Arrow left/right: send F7/F8 for screen-level prev/next (e.g. day navigation)
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        sendKey('F7');
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        sendKey('F8');
+        return;
+      }
+
       // Enter: trigger primary action on focused row
       if (e.key === 'Enter' && focusedDataRowIndex !== null && list.primaryAction) {
         e.preventDefault();
@@ -257,10 +296,14 @@ export default function Terminal() {
           triggerRowAction(focusedDataRowIndex, shortcut.option);
           return;
         }
+        // 'n' → create new record (server handles as F6)
+        if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          sendKey('F6');
+          return;
+        }
       }
-
-      // F6 and other F-keys pass through normally (create, etc.)
-    } else {
+    } else if (!isMenuMode) {
       // --- Normal mode: Tab navigation between fields ---
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -280,7 +323,7 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, navigation, isListMode, focusedDataRowIndex, getNextField, getPrevField, focusField, sendKey, triggerRowAction]);
+  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction]);
 
   // Handle keyboard events on input fields
   // In list mode, input fields still use normal field behavior (user can type opt codes directly).
@@ -320,8 +363,8 @@ export default function Terminal() {
 
   // Focus management after every server response
   useEffect(() => {
-    if (isListMode) {
-      // In list navigation mode, focus the container so arrow keys work
+    if (isListMode || isMenuMode) {
+      // In list/menu navigation mode, focus the container so arrow keys work
       containerRef.current?.focus();
     } else if (fields.length > 0) {
       const targetField = fields.find(
@@ -331,7 +374,7 @@ export default function Terminal() {
     } else {
       containerRef.current?.focus();
     }
-  }, [responseCount, focusField, isListMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [responseCount, focusField, isListMode, isMenuMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Render a row with field inputs overlaid
   const renderRow = (row: string, rowIndex: number) => {
@@ -339,13 +382,18 @@ export default function Terminal() {
 
     // Compute list row states
     const listNav = navigation?.list;
+    const menuNav = navigation?.menu;
     const relativeRowIndex = listNav
       ? rowIndex - listNav.dataStartRow
       : -1;
     const isSelectableRow = listNav !== undefined
       && relativeRowIndex >= 0
       && relativeRowIndex < listNav.dataRowCount;
-    const isFocusedRow = isSelectableRow && relativeRowIndex === focusedDataRowIndex;
+    const isFocusedListRow = isSelectableRow && relativeRowIndex === focusedDataRowIndex;
+    const isFocusedMenuRow = menuNav !== undefined
+      && focusedDataRowIndex !== null
+      && menuNav.items[focusedDataRowIndex]?.row === rowIndex;
+    const isFocusedRow = isFocusedListRow || isFocusedMenuRow;
 
     const rowClasses = [
       'terminal-row',
@@ -353,22 +401,9 @@ export default function Terminal() {
       isFocusedRow ? 'terminal-row--focused' : '',
     ].filter(Boolean).join(' ');
 
-    const rowClickProps = isSelectableRow ? {
-      onClick: () => {
-        setFocusedDataRowIndex(relativeRowIndex);
-        containerRef.current?.focus();
-      },
-      onDoubleClick: () => {
-        setFocusedDataRowIndex(relativeRowIndex);
-        if (listNav?.primaryAction) {
-          triggerRowAction(relativeRowIndex, listNav.primaryAction);
-        }
-      },
-    } : {};
-
     if (rowFields.length === 0) {
       return (
-        <div key={rowIndex} className={rowClasses} {...rowClickProps}>
+        <div key={rowIndex} className={rowClasses}>
           <span className="terminal-text">{row}</span>
         </div>
       );
@@ -445,7 +480,7 @@ export default function Terminal() {
     }
 
     return (
-      <div key={rowIndex} className={rowClasses} {...rowClickProps}>
+      <div key={rowIndex} className={rowClasses}>
         {segments}
       </div>
     );

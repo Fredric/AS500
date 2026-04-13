@@ -2,192 +2,131 @@ import { test, expect } from '@playwright/test';
 import { setupTestData, teardownTestData } from './testSetup.js';
 
 /**
- * Test for scrollable subfile functionality in TIME_REG screen
- *
- * This test verifies that:
- * 1. The subfile shows "More..." when there are more than 10 entries
- * 2. PageDown scrolls to the next page
- * 3. PageUp scrolls back to the previous page
- * 4. The correct entries are displayed on each page
+ * Tests for subfile pagination on the Time Registration CRUDTable screen.
+ * 15 test entries, page size 12: page 1 shows TASK-101..TASK-111, page 2 shows TASK-112..TASK-114.
+ * Pagination is triggered by ArrowDown at the last row (advances page)
+ * and ArrowUp at the first row of page 2 (goes back to page 1).
+ * Day navigation uses ArrowLeft (prev day) and ArrowRight (next day).
  */
+
+const PAGE_SIZE = 12; // LIST_PAGE_SIZE in runtime.ts
 
 test.describe('Scrollable Subfile', () => {
   test.beforeAll(async () => {
-    // Setup test data before all tests
     await setupTestData();
   });
 
   test.afterAll(async () => {
-    // Cleanup test data after all tests
     await teardownTestData();
   });
+
   test.beforeEach(async ({ page }) => {
-    // Navigate to the application
     await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
-
-    // Wait for connection
     await page.locator('text=● Connected').waitFor({ state: 'visible', timeout: 10000 });
-
-    // Wait a bit for React to render
     await page.waitForTimeout(200);
 
-    // Login - wait for login inputs to be ready
     const usernameInput = page.locator('input[type="text"]').first();
     await usernameInput.waitFor({ state: 'visible', timeout: 10000 });
     await usernameInput.fill('KALLE');
     await usernameInput.press('Tab');
-
     const passwordInput = page.locator('input[type="password"]');
     await passwordInput.fill('password');
     await passwordInput.press('Enter');
 
-    // Wait for main menu to appear
     await page.locator('text=MAIN MENU').waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForTimeout(600);
 
-    // Wait a bit for React to render
-    await page.waitForTimeout(200);
+    // Select Time Registration (first menu item, already focused)
+    const container = page.locator('.terminal-container');
+    await container.focus();
+    await page.keyboard.press('Enter');
 
-    // Navigate to Time Registration (option 6)
-    const selectionInputs = page.locator('input[type="text"]');
-    const selectionInput = selectionInputs.last();
-    await selectionInput.waitFor({ state: 'visible', timeout: 10000 });
-    await selectionInput.focus();
-    await selectionInput.fill('6');
-    await selectionInput.press('Enter');
-
-    // Wait for TIME REGISTRATION screen
     await page.locator('text=TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
-
-    // Give server time to query and render the data (WebSocket delay)
     await page.waitForTimeout(800);
 
-    // Wait for the first entry to appear (sign the page loaded)
     await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 15000 });
-
-    // Wait for More indicator to appear (confirms data is loaded)
     await page.locator('text=More...').waitFor({ state: 'visible', timeout: 15000 });
 
-    // Click on the terminal area to ensure keyboard focus
     const terminalContainer = page.locator('.terminal-container');
     await terminalContainer.waitFor({ state: 'visible', timeout: 5000 });
-    await terminalContainer.click();
-    // Give it a moment to focus
+    await terminalContainer.focus();
     await page.waitForTimeout(200);
   });
 
   test('should show "More..." indicator when there are more entries than page size', async ({ page }) => {
-    // Verify that "More..." is displayed
     await expect(page.locator('text=More...')).toBeVisible();
   });
 
-  test('should display first 10 entries on the first page', async ({ page }) => {
-    // Check that the first entry is visible
+  test('should display first page entries', async ({ page }) => {
     await expect(page.locator('text=TASK-101')).toBeVisible();
     await expect(page.locator('text=Morning standup meeting')).toBeVisible();
-
-    // Check that the 10th entry is visible
     await expect(page.locator('text=TASK-109')).toBeVisible();
     await expect(page.locator('text=Testing new feature')).toBeVisible();
-
-    // Check that entries beyond the 10th are not visible
-    await expect(page.locator('text=TASK-110')).not.toBeVisible();
-    await expect(page.locator('text=Email and admin')).not.toBeVisible();
+    // TASK-112 is on page 2 (entry index 12)
+    await expect(page.locator('text=TASK-112')).not.toBeVisible();
   });
 
-  test('should scroll to next page when PageDown is pressed', async ({ page }) => {
-    // Press PageDown
-    await page.keyboard.press('PageDown');
+  test('should advance to next page when ArrowDown reaches the last row', async ({ page }) => {
+    // Press ArrowDown PAGE_SIZE times to move past the last row and trigger page advance
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(30);
+    }
 
-    // Wait for the screen to update - wait for new entries to appear AND old ones to disappear
     await page.locator('text=TASK-114').waitFor({ state: 'visible', timeout: 10000 });
     await page.locator('text=TASK-101').waitFor({ state: 'hidden', timeout: 10000 });
 
-    // Verify that we're now on the second page
-    await expect(page.locator('text=TASK-101')).not.toBeVisible();
-    await expect(page.locator('text=Morning standup meeting')).not.toBeVisible();
-
-    // The last entries should now be visible
     await expect(page.locator('text=TASK-114')).toBeVisible();
     await expect(page.locator('text=Final code cleanup')).toBeVisible();
-
-    // "More..." should not be visible on the last page
     await expect(page.locator('text=More...')).not.toBeVisible();
   });
 
-  test('should scroll back to previous page when PageUp is pressed', async ({ page }) => {
-    // First, scroll down to page 2
-    await page.keyboard.press('PageDown');
+  test('should return to previous page when ArrowUp at first row of page 2', async ({ page }) => {
+    // Advance to page 2
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(30);
+    }
     await page.locator('text=TASK-114').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Press PageUp to go back to page 1
-    await page.keyboard.press('PageUp');
+    // ArrowUp at row 0 of page 2 → goes back to page 1
+    await page.keyboard.press('ArrowUp');
     await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 10000 });
     await page.locator('text=TASK-114').waitFor({ state: 'hidden', timeout: 10000 });
 
-    // Verify we're back on page 1
     await expect(page.locator('text=TASK-101')).toBeVisible();
-    await expect(page.locator('text=Morning standup meeting')).toBeVisible();
-    await expect(page.locator('text=TASK-109')).toBeVisible();
-
-    // The last entry should not be visible
-    await expect(page.locator('text=TASK-114')).not.toBeVisible();
-
-    // "More..." should be visible again
     await expect(page.locator('text=More...')).toBeVisible();
   });
 
-  test('should not scroll beyond the first page when PageUp is pressed on page 1', async ({ page }) => {
-    // Ensure we start on page 1
-    await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 10000 });
-
-    // Press PageUp (should stay on page 1)
-    await page.keyboard.press('PageUp');
-
-    // Page shouldn't change - TASK-101 should still be visible
-    await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 10000 });
-
-    // Verify we're still on page 1
-    await expect(page.locator('text=TASK-101')).toBeVisible();
-
-    // "More..." should still be visible
-    await expect(page.locator('text=More...')).toBeVisible();
-  });
-
-  test('should not scroll beyond the last page when PageDown is pressed on last page', async ({ page }) => {
-    // Scroll to last page
-    await page.keyboard.press('PageDown');
+  test('should not advance beyond last page', async ({ page }) => {
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(30);
+    }
     await page.locator('text=TASK-114').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Press PageDown again (should stay on last page)
-    await page.keyboard.press('PageDown');
+    // Press ArrowDown beyond last row — should not change page
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(300);
 
-    // Page shouldn't change - TASK-114 should still be visible
-    await page.locator('text=TASK-114').waitFor({ state: 'visible', timeout: 10000 });
-
-    // Verify we're still on the last page
     await expect(page.locator('text=TASK-114')).toBeVisible();
   });
 
-  test('should show updated status line with PageUp/PageDn hint', async ({ page }) => {
-    // Verify the status line includes the PageUp/PageDn hint
-    await expect(page.locator('text=PageUp/PageDn=Scroll')).toBeVisible();
-  });
-
-  test('should reset to first page when switching days', async ({ page }) => {
-    // Get the initial date
-    const initialDateMatch = await page.locator('text=Date:').textContent();
-
-    // Scroll to page 2
-    await page.keyboard.press('PageDown');
+  test('should reset to first page when switching days with arrow keys', async ({ page }) => {
+    // Advance to page 2
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(30);
+    }
     await page.locator('text=TASK-114').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Switch to previous day (F7)
-    await page.keyboard.press('F7');
-    // Wait for the date to change (previous day)
+    // ArrowLeft = previous day (F7 under the hood)
+    await page.keyboard.press('ArrowLeft');
     let dateChanged = false;
     for (let i = 0; i < 10; i++) {
-      const currentDate = await page.locator('text=Date:').textContent();
-      if (currentDate !== initialDateMatch) {
+      const row = await page.locator('.terminal-screen').textContent();
+      if (row && !row.includes('TASK-114')) {
         dateChanged = true;
         break;
       }
@@ -195,13 +134,16 @@ test.describe('Scrollable Subfile', () => {
     }
     expect(dateChanged).toBe(true);
 
-    // Switch back to current day (F8)
-    await page.keyboard.press('F8');
-    // Wait for the date to change back and data to reload
+    // ArrowRight = next day (F8) — back to test data day
+    await page.keyboard.press('ArrowRight');
     await page.locator('text=TASK-101').waitFor({ state: 'visible', timeout: 10000 });
-
-    // Verify we're back on page 1
     await expect(page.locator('text=TASK-101')).toBeVisible();
-    await expect(page.locator('text=Morning standup meeting')).toBeVisible();
+  });
+
+  test('status line shows navigation hints', async ({ page }) => {
+    const statusLine = page.locator('.terminal-status');
+    const statusText = await statusLine.textContent();
+    expect(statusText).toContain('Esc=Exit');
+    expect(statusText).toContain('N=New');
   });
 });
