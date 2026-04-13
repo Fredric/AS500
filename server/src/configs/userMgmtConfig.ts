@@ -145,7 +145,7 @@ export const userMgmtConfig: CRUDTableConfig = {
               (ctx.editRecord?.id as number) === (ctx.input.currentUserId as number) &&
               ctx.values.role !== 'ADMIN'
             ) {
-              return 'Cannot change your own role from ADMIN';
+              return 'Cannot change your own role away from ADMIN';
             }
             return null;
           },
