@@ -42,7 +42,7 @@ body {
 /* Terminal Container */
 .terminal-container {
   background-color: var(--bg-color);
-  border: 3px solid #1a3a1a;
+  border: 0.1875em solid #1a3a1a;
   border-radius: 12px;
   padding: 1.25em;
   box-shadow:

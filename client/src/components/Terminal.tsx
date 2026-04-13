@@ -45,40 +45,56 @@ export default function Terminal() {
 
   // Responsive scaling: fit terminal to window while preserving aspect ratio
   const [fontSize, setFontSize] = useState(16);
-  const naturalDimsRef = useRef<{ width: number; height: number } | null>(null);
+  const naturalDimsRef = useRef<{ width: number; height: number; baseFontSize: number } | null>(null);
 
   useLayoutEffect(() => {
     const PADDING = 32; // gap kept on each side of the terminal
-    const BASE_FONT_SIZE = 16;
     let cancelled = false;
+    let rafId: number | null = null;
 
     const computeScale = () => {
       const el = containerRef.current;
       // Don't measure until natural dims are known (i.e. after fonts load)
       if (!el || !naturalDimsRef.current) return;
 
-      const { width: natW, height: natH } = naturalDimsRef.current;
+      const { width: natW, height: natH, baseFontSize } = naturalDimsRef.current;
       const availW = window.innerWidth - PADDING * 2;
       const availH = window.innerHeight - PADDING * 2;
       const scale = Math.min(availW / natW, availH / natH);
-      setFontSize(Math.max(8, BASE_FONT_SIZE * scale));
+      setFontSize(Math.max(8, baseFontSize * scale));
+    };
+
+    // Throttle resize via requestAnimationFrame to avoid excessive layout reads
+    // during interactive window resizing.
+    const handleResize = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        computeScale();
+      });
     };
 
     // Wait for the webfont (IBM Plex Mono) to finish loading before capturing
     // natural dimensions, so measurements are based on actual glyph metrics
-    // rather than fallback font metrics.
+    // rather than fallback font metrics. Base font-size is also read from
+    // getComputedStyle so it stays in sync with the CSS definition.
     document.fonts.ready.then(() => {
       if (cancelled) return;
       const el = containerRef.current;
       if (!el) return;
-      naturalDimsRef.current = { width: el.offsetWidth, height: el.offsetHeight };
+      const baseFontSize = parseFloat(getComputedStyle(el).fontSize);
+      naturalDimsRef.current = { width: el.offsetWidth, height: el.offsetHeight, baseFontSize };
       computeScale();
     });
 
-    window.addEventListener('resize', computeScale);
+    window.addEventListener('resize', handleResize);
     return () => {
       cancelled = true;
-      window.removeEventListener('resize', computeScale);
+      window.removeEventListener('resize', handleResize);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
     };
   }, []);
 
