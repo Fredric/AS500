@@ -5,12 +5,16 @@ import { users } from '../db/schema.js';
 
 const SALT_ROUNDS = 10;
 
+export type UserRole = 'user' | 'superuser' | 'aiagent' | 'admin';
+export const VALID_ROLES: UserRole[] = ['user', 'superuser', 'aiagent', 'admin'];
+
 export interface UserDisplay {
   id: number;
   username: string;
   full_name: string | null;
   active: boolean;
   is_admin: boolean;
+  role: UserRole;
   created_at: Date;
 }
 
@@ -20,6 +24,7 @@ const SELECT_COLS = {
   full_name: users.full_name,
   active: users.active,
   is_admin: users.is_admin,
+  role: users.role,
   created_at: users.created_at,
 };
 
@@ -56,14 +61,15 @@ export async function createUser(
   password: string,
   fullName: string | null,
   active: boolean,
-  isAdmin: boolean
+  role: UserRole
 ): Promise<UserDisplay> {
   const normalized = username.toUpperCase().trim();
   const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+  const isAdmin = role === 'admin';
 
   const rows = await db
     .insert(users)
-    .values({ username: normalized, password_hash, full_name: fullName, active, is_admin: isAdmin })
+    .values({ username: normalized, password_hash, full_name: fullName, active, is_admin: isAdmin, role })
     .returning(SELECT_COLS);
 
   return rows[0];
@@ -73,14 +79,15 @@ export async function updateUser(
   id: number,
   fullName: string | null,
   active: boolean,
-  isAdmin: boolean,
+  role: UserRole,
   password?: string | null
 ): Promise<UserDisplay | null> {
+  const isAdmin = role === 'admin';
   if (password) {
     const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
     const rows = await db
       .update(users)
-      .set({ full_name: fullName, active, is_admin: isAdmin, password_hash })
+      .set({ full_name: fullName, active, is_admin: isAdmin, role, password_hash })
       .where(eq(users.id, id))
       .returning(SELECT_COLS);
     return rows[0] ?? null;
@@ -88,7 +95,7 @@ export async function updateUser(
 
   const rows = await db
     .update(users)
-    .set({ full_name: fullName, active, is_admin: isAdmin })
+    .set({ full_name: fullName, active, is_admin: isAdmin, role })
     .where(eq(users.id, id))
     .returning(SELECT_COLS);
 
