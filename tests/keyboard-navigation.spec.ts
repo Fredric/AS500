@@ -119,7 +119,7 @@ test.describe('Keyboard Row Navigation', () => {
     await page.keyboard.press('d');
 
     // Wait for confirmation screen
-    await page.locator('text=CONFIRM DELETE').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('text=CONFIRM DELETE - TIME REGISTRATION').waitFor({ state: 'visible', timeout: 10000 });
 
     // Fill Y in the confirm input and press Enter
     const confirmInput = page.locator('input[data-field="confirm"]');
