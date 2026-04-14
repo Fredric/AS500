@@ -15,7 +15,7 @@ import {
   getNextDay,
   type DayItem,
 } from './timeReg.js';
-import { getJiraTasks, jiraTask, searchIssuesByName } from './jiraTasks.js';
+import { getJiraTasks, jiraTask } from './jiraTasks.js';
 
 export interface ListParams {
   userId: number;
