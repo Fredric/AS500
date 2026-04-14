@@ -99,12 +99,12 @@ export const timeRegV2Config: CRUDTableConfig = {
       length: 11,
       form: { uppercase: true },
       column: { width: 11 },
-      datasource: {
+      /*datasource: {
         service: timeRegCrud,
         method: 'listJiraTasks',
         valueField: 'id',
         displayField: 'name',
-      }
+      }*/
     },
 
     description: {
