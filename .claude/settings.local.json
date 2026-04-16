@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api *)",
+      "Bash(curl -s https://raw.githubusercontent.com/anthropics/skills/main/skills/mcp-builder/SKILL.md)",
+      "mcp__MCP_DOCKER__mcp-add",
+      "Bash(npm run *)",
+      "Bash(PGPORT=5433 timeout 3 node mcp/as500-mcp-server/dist/index.js)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "atlassian",
+    "as500-mcp-server"
+  ]
+}

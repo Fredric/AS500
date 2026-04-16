@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "as500-mcp-server": {
+      "command": "node",
+      "args": ["C:/Users/fredr/code/AS500/mcp/as500-mcp-server/dist/index.js"],
+      "env": {
+        "PGPORT": "5433",
+        "AS500_USERNAME": "FREDRIC"
+      }
+    }
+  }
+}
