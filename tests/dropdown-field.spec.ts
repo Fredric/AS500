@@ -26,8 +26,15 @@ async function loginAsAdmin(page: Page) {
 async function openUserMgmt(page: Page) {
   const container = page.locator('.terminal-container');
   await container.focus();
-  // User Management is the second menu item (after Time Registration)
+  // Administration is option 3 (ArrowDown x2 from Time Registration)
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  // Now in Administration sub-menu
+  await page.locator('text=ADMINISTRATION').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(300);
+  // User Management is option 1 — already focused, press Enter
+  await container.focus();
   await page.keyboard.press('Enter');
   await page.locator('text=USER MANAGEMENT').waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(500);

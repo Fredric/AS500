@@ -137,6 +137,33 @@ export const motorcycles = pgTable('motorcycles', {
   index('idx_motorcycles_user_id').on(table.user_id),
 ]);
 
+export const mods = pgTable('mods', {
+  id: serial('id').primaryKey(),
+  motorcycle_id: integer('motorcycle_id').notNull().references(() => motorcycles.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  category: text('category'),
+  cost: numeric('cost', { precision: 10, scale: 2 }),
+  installed_date: date('installed_date', { mode: 'string' }),
+  notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_mods_motorcycle_id').on(t.motorcycle_id),
+]);
+
+export const servicesPerformed = pgTable('services_performed', {
+  id: serial('id').primaryKey(),
+  motorcycle_id: integer('motorcycle_id').notNull().references(() => motorcycles.id, { onDelete: 'cascade' }),
+  service_type: text('service_type').notNull(),
+  service_date: date('service_date', { mode: 'string' }).notNull(),
+  odometer_km: integer('odometer_km'),
+  cost: numeric('cost', { precision: 10, scale: 2 }),
+  shop: text('shop'),
+  notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_services_performed_motorcycle_id').on(t.motorcycle_id),
+]);
+
 export const userPermissions = pgTable('user_permissions', {
   user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   permission_key: text('permission_key').notNull().references(() => permissions.key, { onDelete: 'cascade' }),

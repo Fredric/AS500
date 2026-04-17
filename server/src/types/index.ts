@@ -57,10 +57,21 @@ export interface MenuNavigation {
   selectionField: string;
 }
 
+// Action in a form's status bar — a tab stop the user can navigate to with Tab/Enter
+export interface FormAction {
+  key: string;    // Key sent to server when activated  e.g. 'F3', 'M', 'S'
+  label: string;  // Display text  e.g. 'Esc=Back', 'M=Mods', 'S=Services'
+}
+
+export interface FormNavigation {
+  actions: FormAction[];
+}
+
 export interface ScreenNavigation {
   type: 'list' | 'form' | 'menu';
   list?: ListNavigation;
   menu?: MenuNavigation;
+  form?: FormNavigation;
 }
 
 // Server response

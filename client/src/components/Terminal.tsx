@@ -100,10 +100,13 @@ export default function Terminal() {
     };
   }, []);
 
-  // Row focus state for list navigation
+  // Row focus state for list/menu navigation
   const [focusedDataRowIndex, setFocusedDataRowIndex] = useState<number | null>(null);
   const prevNavKeyRef = useRef<string | null>(null);
   const focusLastOnNextPageRef = useRef(false);
+
+  // Form action focus state (Tab stops in form status bar)
+  const [focusedActionIndex, setFocusedActionIndex] = useState<number | null>(null);
 
   // Dropdown state: track which field with options has dropdown open
   const [activeDropdownField, setActiveDropdownField] = useState<Field | null>(null);
@@ -112,10 +115,11 @@ export default function Terminal() {
   const dropdownRef = useRef<DropdownHandle>(null);
   const dropdownOpenRef = useRef(false);
 
-  // Close dropdown when screen changes
+  // Close dropdown and reset action focus when screen changes
   useEffect(() => {
     setActiveDropdownField(null);
     setDropdownFilterText('');
+    setFocusedActionIndex(null);
   }, [screenId]);
 
   // Reset row/menu focus when entering a new screen or page
@@ -145,6 +149,7 @@ export default function Terminal() {
 
   const isListMode = !!navigation?.list;
   const isMenuMode = !!navigation?.menu;
+  const formActions = navigation?.form?.actions ?? [];
 
   // Find field at position
   const getFieldAt = useCallback((row: number, col: number): Field | null => {
@@ -280,6 +285,18 @@ export default function Terminal() {
         return;
       }
 
+      // PageDown/PageUp: explicit page navigation
+      if (e.key === 'PageDown') {
+        e.preventDefault();
+        if (list.hasMore) sendKey('PAGEDOWN');
+        return;
+      }
+      if (e.key === 'PageUp') {
+        e.preventDefault();
+        if (list.hasPrev) sendKey('PAGEUP');
+        return;
+      }
+
       // Arrow left/right: send F7/F8 for screen-level prev/next (e.g. day navigation)
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -337,16 +354,59 @@ export default function Terminal() {
         }
       }
     } else if (!isMenuMode) {
-      // --- Normal mode: Tab navigation between fields ---
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const nextField = e.shiftKey
-          ? getPrevField(cursor.row, cursor.col)
-          : getNextField(cursor.row, cursor.col);
-        if (nextField) {
-          focusField(nextField);
+      // --- Form action tab stop mode ---
+      if (focusedActionIndex !== null && formActions.length > 0) {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          if (!e.shiftKey) {
+            if (focusedActionIndex < formActions.length - 1) {
+              setFocusedActionIndex(focusedActionIndex + 1);
+            } else {
+              // Last action → wrap back to first field
+              setFocusedActionIndex(null);
+              const sorted = [...fields]
+                .filter(f => f.type !== 'readonly')
+                .sort((a, b) => a.row !== b.row ? a.row - b.row : a.col - b.col);
+              if (sorted[0]) focusField(sorted[0]);
+            }
+          } else {
+            if (focusedActionIndex > 0) {
+              setFocusedActionIndex(focusedActionIndex - 1);
+            } else {
+              // First action + Shift+Tab → wrap back to last field
+              setFocusedActionIndex(null);
+              const sorted = [...fields]
+                .filter(f => f.type !== 'readonly')
+                .sort((a, b) => a.row !== b.row ? a.row - b.row : a.col - b.col);
+              const last = sorted[sorted.length - 1];
+              if (last) focusField(last);
+            }
+          }
+          return;
         }
-        return;
+
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const action = formActions[focusedActionIndex];
+          if (action) {
+            setFocusedActionIndex(null);
+            sendKey(action.key);
+          }
+          return;
+        }
+        // Other keys (including Escape) fall through to SPECIAL_KEYS below
+      } else {
+        // --- Normal mode: Tab navigation between fields ---
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const nextField = e.shiftKey
+            ? getPrevField(cursor.row, cursor.col)
+            : getNextField(cursor.row, cursor.col);
+          if (nextField) {
+            focusField(nextField);
+          }
+          return;
+        }
       }
     }
 
@@ -356,7 +416,7 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction, hasManualListOption]);
+  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, focusedActionIndex, formActions, fields, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction, hasManualListOption]);
 
   // Handle keyboard events on input fields
   // In list mode, input fields still use normal field behavior (user can type opt codes directly).
@@ -450,6 +510,32 @@ export default function Terminal() {
           return e.shiftKey ? Math.max(0, cur - 1) : Math.min(dataRowCount - 1, cur + 1);
         });
         containerRef.current?.focus();
+      } else if (formActions.length > 0) {
+        // In form mode: wrap Tab at field boundaries into action tab stops
+        const sortedEditable = [...fields]
+          .filter(f => f.type !== 'readonly')
+          .sort((a, b) => a.row !== b.row ? a.row - b.row : a.col - b.col);
+        const currentIdx = sortedEditable.findIndex(
+          f => f.row === cursor.row && f.col === cursor.col
+        );
+
+        if (!e.shiftKey && currentIdx === sortedEditable.length - 1) {
+          // Last field + Tab → first action
+          setFocusedActionIndex(0);
+          containerRef.current?.focus();
+          return;
+        }
+        if (e.shiftKey && currentIdx === 0) {
+          // First field + Shift+Tab → last action
+          setFocusedActionIndex(formActions.length - 1);
+          containerRef.current?.focus();
+          return;
+        }
+        // Normal field-to-field Tab
+        const nextField = e.shiftKey
+          ? getPrevField(cursor.row, cursor.col)
+          : getNextField(cursor.row, cursor.col);
+        if (nextField) focusField(nextField);
       } else {
         const nextField = e.shiftKey
           ? getPrevField(cursor.row, cursor.col)
@@ -469,7 +555,7 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, navigation, isListMode, getFieldFromInput, getNextField, getPrevField, focusField, sendKey, activeDropdownField, openDropdown, closeDropdown]);
+  }, [cursor, navigation, isListMode, formActions, fields, getFieldFromInput, getNextField, getPrevField, focusField, sendKey, setFocusedActionIndex, activeDropdownField, openDropdown, closeDropdown]);
 
   // Focus management after every server response.
   // Avoid stealing focus back from a field the user already moved to.
@@ -481,6 +567,9 @@ export default function Terminal() {
 
     if (isListMode || isMenuMode) {
       // In list/menu navigation mode, focus the container so arrow keys work
+      containerRef.current?.focus();
+    } else if (focusedActionIndex !== null) {
+      // Form action button is focused — keep container focused
       containerRef.current?.focus();
     } else if (fields.length > 0) {
       const targetField = fields.find(
@@ -512,7 +601,7 @@ export default function Terminal() {
         pendingFocusFrameRef.current = null;
       }
     };
-  }, [responseCount, focusField, isListMode, isMenuMode, fields, cursor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [responseCount, focusField, isListMode, isMenuMode, focusedActionIndex, fields, cursor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Render a row with field inputs overlaid
   const renderRow = (row: string, rowIndex: number) => {
@@ -657,9 +746,23 @@ export default function Terminal() {
         {rows.slice(0, 22).map((row, i) => renderRow(row, i))}
       </div>
 
-      {/* Status line */}
+      {/* Status line — interactive action tab stops in form mode */}
       <div className="terminal-status">
-        {statusLine || rows[22] || ''}
+        {formActions.length > 0 ? (
+          formActions.map((action, idx) => (
+            <span key={action.key}>
+              {idx > 0 && '  '}
+              <span
+                className={`form-action-btn${focusedActionIndex === idx ? ' form-action-btn--focused' : ''}`}
+                onClick={() => { setFocusedActionIndex(null); sendKey(action.key); }}
+              >
+                {action.label}
+              </span>
+            </span>
+          ))
+        ) : (
+          statusLine || rows[22] || ''
+        )}
       </div>
 
       {/* Message line */}

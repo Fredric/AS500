@@ -208,6 +208,27 @@ export const motorcyclesConfig: CRUDTableConfig = {
     'notes',
   ],
 
+  relations: [
+    {
+      label: 'Mods',
+      actionKey: 'M',
+      targetConfigId: 'mods',
+      mapInput: (rec) => ({
+        motorcycleId: rec.id,
+        motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+      }),
+    },
+    {
+      label: 'Services',
+      actionKey: 'S',
+      targetConfigId: 'services_performed',
+      mapInput: (rec) => ({
+        motorcycleId: rec.id,
+        motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+      }),
+    },
+  ],
+
   getInitialValues: () => ({
     year: String(currentYear),
   }),

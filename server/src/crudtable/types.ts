@@ -100,6 +100,15 @@ export interface ListKeyConfig {
   handler: (context: CRUDContext, session: Session) => Promise<void>;
 }
 
+// Relation config: hotkey on the edit form that opens a scoped child CRUD list
+export interface RelationConfig {
+  label: string;        // Shown in form status bar  e.g. 'Mods'
+  actionKey: string;    // Single key the user presses  e.g. 'M'
+  targetConfigId: string; // CRUDTableConfig.id of the child  e.g. 'mods'
+  mapInput: (editRecord: Record<string, unknown>) => Record<string, unknown>;
+  // Returns the input context for the child list  e.g. rec => ({ motorcycleId: rec.id, motorcycleLabel: `${rec.brand} ...` })
+}
+
 // Main CRUDTable config
 export interface CRUDTableConfig {
   id: string;
@@ -136,4 +145,7 @@ export interface CRUDTableConfig {
     primaryAction?: 'edit' | 'open'; // Defaults to 'edit' if update service exists
     shortcuts?: Array<{ key: string; option: string | number; label: string }>;
   };
+
+  // Relations: child CRUDTable screens accessible from the edit form via hotkeys
+  relations?: RelationConfig[];
 }

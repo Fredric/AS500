@@ -572,6 +572,15 @@ export async function buildFormScreen(
     hintRowIndex++;
   }
 
+  // Build status line: Esc=Back followed by relation hotkeys
+  const relationParts: string[] = [];
+  if (config.relations) {
+    for (const rel of config.relations) {
+      relationParts.push(`${rel.actionKey.toUpperCase()}=${rel.label}`);
+    }
+  }
+  const formStatusLine = ['Esc=Back', ...relationParts].join('  ');
+
   const screenId = formScreenId(config.id);
   const screenDef = defineScreen(screenId, {
     elements: [
@@ -579,7 +588,7 @@ export async function buildFormScreen(
       form(7, formRows, { labelCol: 8, fieldCol: 30 }),
       ...hintElements,
     ],
-    statusLine: 'Esc=Back',
+    statusLine: formStatusLine,
     defaultCursor: firstFieldName,
   });
 
@@ -606,6 +615,19 @@ export async function buildFormScreen(
     }
   }
 
+  // Build form navigation actions (Esc=Back + relation hotkeys)
+  const formNavActions: Array<{ key: string; label: string }> = [
+    { key: 'F3', label: 'Esc=Back' },
+  ];
+  if (config.relations) {
+    for (const rel of config.relations) {
+      formNavActions.push({
+        key: rel.actionKey.toUpperCase(),
+        label: `${rel.actionKey.toUpperCase()}=${rel.label}`,
+      });
+    }
+  }
+
   saveContext(session, config.id, crudCtx);
 
   return {
@@ -618,6 +640,10 @@ export async function buildFormScreen(
     messageType: result.messageType,
     statusLine: result.statusLine,
     bell: result.bell,
+    navigation: {
+      type: 'form' as const,
+      form: { actions: formNavActions },
+    },
   };
 }
 
@@ -628,6 +654,22 @@ export async function handleForm(
 ): Promise<ScreenResponse> {
   const base = { sessionId: session.id };
   const crudCtx = loadContext(session, config.id);
+
+  // Relation hotkeys — only available when editing an existing record
+  if (config.relations && crudCtx.formMode === 'edit' && crudCtx.editRecord) {
+    for (const rel of config.relations) {
+      if (request.key === rel.actionKey || request.key === rel.actionKey.toUpperCase()) {
+        const targetConfig = getConfig(rel.targetConfigId);
+        if (targetConfig) {
+          session.context[`crud_${rel.targetConfigId}_input`] = rel.mapInput(crudCtx.editRecord);
+          session.screenStack.push(formScreenId(config.id));
+          session.currentScreen = listScreenId(rel.targetConfigId);
+          saveContext(session, config.id, crudCtx);
+          return { ...(await buildListScreen(targetConfig, session)), ...base };
+        }
+      }
+    }
+  }
 
   // F3 or F12 - Cancel, return to list
   if (request.key === 'F3' || request.key === 'F12') {
@@ -899,10 +941,9 @@ export async function handleDeleteConfirm(
 
 // Build the appropriate return screen when navigating back
 async function buildReturnScreen(session: Session): Promise<Omit<ScreenResponse, 'sessionId'>> {
-  // Import dynamically to avoid circular dependencies
   const currentScreen = session.currentScreen;
 
-  // Check if returning to another CRUD screen
+  // Check CRUD screens first
   const { getConfigByScreenId } = await import('./registry.js');
   const match = getConfigByScreenId(currentScreen);
   if (match) {
@@ -915,14 +956,14 @@ async function buildReturnScreen(session: Session): Promise<Omit<ScreenResponse,
     return await buildFormScreen(match.config, session);
   }
 
-  // For non-CRUD screens, we need the caller to handle this
-  // Return a minimal response that the router will override
-  const { buildLoginScreen } = await import('../screens/login.js');
-  const { mainMenuScreen } = await import('../screens/mainMenu.js');
-
-  if (currentScreen === 'MAIN_MENU' && session.authenticated) {
-    return mainMenuScreen(session);
+  // Check menu screens (MAIN_MENU and MENU_*)
+  if (currentScreen === 'MAIN_MENU' || currentScreen.startsWith('MENU_')) {
+    if (session.authenticated) {
+      const { getMenuNodeByScreenId, buildMenuScreen } = await import('../menus/menuRuntime.js');
+      const menuNode = getMenuNodeByScreenId(currentScreen);
+      if (menuNode) return buildMenuScreen(menuNode, session);
+    }
   }
 
-  return buildLoginScreen();
+  return (await import('../screens/login.js')).buildLoginScreen();
 }

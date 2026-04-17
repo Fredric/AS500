@@ -101,6 +101,14 @@ async function getCurrentScreenResponse(session: Session): Promise<Omit<ScreenRe
       // Try CRUDTable screens
       const crudScreen = await buildCRUDScreenForResume(session);
       if (crudScreen) return crudScreen;
+
+      // Try MENU_* screens
+      if (session.currentScreen.startsWith('MENU_') && session.authenticated) {
+        const { getMenuNodeByScreenId, buildMenuScreen: buildMenu } = await import('./menus/menuRuntime.js');
+        const menuNode = getMenuNodeByScreenId(session.currentScreen);
+        if (menuNode) return buildMenu(menuNode, session);
+      }
+
       return buildLoginScreen();
     }
   }
@@ -374,14 +382,25 @@ async function startServer() {
             const crudResponse = await handleCRUDScreen(currentSession, request);
             if (crudResponse) {
               response = crudResponse;
-            } else {
-              // Unknown screen - return to login
-              currentSession.currentScreen = 'LOGIN';
-              response = {
-                ...buildLoginScreen(),
-                sessionId: currentSession.id,
-              };
+              break;
             }
+
+            // Try MENU_* screens
+            if (currentSession.currentScreen.startsWith('MENU_')) {
+              const { getMenuNodeByScreenId, handleMenuScreen } = await import('./menus/menuRuntime.js');
+              const menuNode = getMenuNodeByScreenId(currentSession.currentScreen);
+              if (menuNode) {
+                response = await handleMenuScreen(menuNode, currentSession, request);
+                break;
+              }
+            }
+
+            // Unknown screen - return to login
+            currentSession.currentScreen = 'LOGIN';
+            response = {
+              ...buildLoginScreen(),
+              sessionId: currentSession.id,
+            };
             break;
           }
         }
