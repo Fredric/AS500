@@ -93,6 +93,42 @@ export async function setupTestData() {
   }
 }
 
+/**
+ * Temporarily promote a user to admin so tests can access admin-only menus
+ * (e.g. Administration → Role Defaults). Returns a function that restores
+ * the user's previous is_admin flag.
+ */
+export async function promoteToAdmin(username: string): Promise<() => Promise<void>> {
+  const connectionString = process.env.DATABASE_URL || 'postgresql://as500:as500@localhost:5433/as500';
+  const pool = new Pool({ connectionString });
+
+  try {
+    const res = await pool.query<{ is_admin: boolean }>(
+      'SELECT is_admin FROM users WHERE username = $1',
+      [username]
+    );
+    if (res.rows.length === 0) {
+      throw new Error(`User ${username} not found. Run seed first.`);
+    }
+    const previous = res.rows[0].is_admin;
+
+    await pool.query('UPDATE users SET is_admin = TRUE WHERE username = $1', [username]);
+    // Invalidate any cached sessions so the next login re-resolves permissions
+    await pool.query('DELETE FROM auth_tokens WHERE user_id = (SELECT id FROM users WHERE username = $1)', [username]);
+
+    return async () => {
+      const restorePool = new Pool({ connectionString });
+      try {
+        await restorePool.query('UPDATE users SET is_admin = $1 WHERE username = $2', [previous, username]);
+      } finally {
+        await restorePool.end();
+      }
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function teardownTestData() {
   // Connection string for local development (Docker maps 5433 -> 5432)
   const connectionString = process.env.DATABASE_URL || 'postgresql://as500:as500@localhost:5433/as500';

@@ -252,36 +252,38 @@ export default function Terminal() {
 
     // --- List mode navigation ---
     if (isListMode && list) {
-      // Arrow down: move focus down or advance page
+      // Arrow down: move focus down or advance page.
+      // IMPORTANT: the sendKey() side effect must live OUTSIDE the setState
+      // updater — React StrictMode double-invokes updater functions in dev,
+      // which would otherwise cause a double PAGEDOWN and skip a page.
+      // We still optimistically reset focus to row 0 on page advance so a
+      // follow-up ArrowUp correctly triggers PAGEUP instead of moving
+      // focus within the just-rendered page.
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setFocusedDataRowIndex(prev => {
-          const cur = prev ?? 0;
-          if (cur < list.dataRowCount - 1) {
-            return cur + 1;
-          } else if (list.hasMore) {
-            sendKey('PAGEDOWN');
-            return 0; // will be reset by effect on page change
-          }
-          return cur;
-        });
+        const cur = focusedDataRowIndex ?? 0;
+        if (cur < list.dataRowCount - 1) {
+          setFocusedDataRowIndex(cur + 1);
+        } else if (list.hasMore) {
+          setFocusedDataRowIndex(0);
+          sendKey('PAGEDOWN');
+        }
         return;
       }
 
-      // Arrow up: move focus up or go to previous page
+      // Arrow up: move focus up or go to previous page. Same rationale as
+      // ArrowDown — keep sendKey() out of the setState updater. Focus is
+      // reset to the last row of the previous page by the effect that
+      // watches pageOffset (via focusLastOnNextPageRef).
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setFocusedDataRowIndex(prev => {
-          const cur = prev ?? 0;
-          if (cur > 0) {
-            return cur - 1;
-          } else if (list.hasPrev) {
-            focusLastOnNextPageRef.current = true;
-            sendKey('PAGEUP');
-            return 0; // will be reset by effect on page change
-          }
-          return cur;
-        });
+        const cur = focusedDataRowIndex ?? 0;
+        if (cur > 0) {
+          setFocusedDataRowIndex(cur - 1);
+        } else if (list.hasPrev) {
+          focusLastOnNextPageRef.current = true;
+          sendKey('PAGEUP');
+        }
         return;
       }
 
