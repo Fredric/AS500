@@ -118,6 +118,25 @@ export const groupPermissions = pgTable('group_permissions', {
   primaryKey({ columns: [t.group_id, t.permission_key] }),
 ]);
 
+export const motorcycles = pgTable('motorcycles', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  brand: text('brand').notNull(),
+  model: text('model').notNull(),
+  year: integer('year').notNull(),
+  purchase_date: date('purchase_date', { mode: 'string' }),
+  sell_date: date('sell_date', { mode: 'string' }),
+  cost: numeric('cost', { precision: 10, scale: 2 }),
+  nickname: text('nickname'),
+  odometer_km: integer('odometer_km'),
+  engine_cc: integer('engine_cc'),
+  color: text('color'),
+  notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_motorcycles_user_id').on(table.user_id),
+]);
+
 export const userPermissions = pgTable('user_permissions', {
   user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   permission_key: text('permission_key').notNull().references(() => permissions.key, { onDelete: 'cascade' }),

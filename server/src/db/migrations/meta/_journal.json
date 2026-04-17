@@ -15,6 +15,13 @@
       "when": 1776075160439,
       "tag": "0001_quick_red_ghost",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776409081534,
+      "tag": "0002_sturdy_invaders",
+      "breakpoints": true
     }
   ]
 }
