@@ -125,3 +125,24 @@ export const userPermissions = pgTable('user_permissions', {
 }, (t) => [
   primaryKey({ columns: [t.user_id, t.permission_key] }),
 ]);
+
+/** Per-user motorcycle ownership log (ADV / touring notes). */
+export const motorcycles1 = pgTable('motorcycles1', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  brand: text('brand').notNull(),
+  make: text('make').notNull(),
+  model_year: integer('model_year').notNull(),
+  purchase_date: date('purchase_date', { mode: 'string' }),
+  sell_date: date('sell_date', { mode: 'string' }),
+  cost: numeric('cost', { precision: 12, scale: 2 }),
+  odometer_km: integer('odometer_km'),
+  displacement_cc: integer('displacement_cc'),
+  seat_height_mm: integer('seat_height_mm'),
+  heated_grips: boolean('heated_grips').default(false).notNull(),
+  longest_trip_km: integer('longest_trip_km'),
+  notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_motorcycles1_user_id').on(table.user_id),
+]);

@@ -23,6 +23,8 @@ export const PERMISSIONS = {
   USER_MGMT_READ:  'user_mgmt:read',
   USER_MGMT_ADMIN: 'user_mgmt:admin',
   SYS_ADMIN:       'sys:admin',
+  MOTORCYCLES1_READ:  'motorcycles1:read',
+  MOTORCYCLES1_WRITE: 'motorcycles1:write',
 } as const;
 
 export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -33,6 +35,8 @@ export const PERMISSION_REGISTRY: Array<{ key: PermissionKey; description: strin
   { key: PERMISSIONS.USER_MGMT_READ,  description: 'View user list' },
   { key: PERMISSIONS.USER_MGMT_ADMIN, description: 'Create/edit/delete users' },
   { key: PERMISSIONS.SYS_ADMIN,       description: 'Full system administration' },
+  { key: PERMISSIONS.MOTORCYCLES1_READ,  description: 'View own motorcycle register' },
+  { key: PERMISSIONS.MOTORCYCLES1_WRITE, description: 'Add/edit/delete own motorcycles' },
 ];
 
 // Default permissions granted to each role
@@ -40,11 +44,15 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
   user: [
     PERMISSIONS.TIME_REG_READ,
     PERMISSIONS.TIME_REG_WRITE,
+    PERMISSIONS.MOTORCYCLES1_READ,
+    PERMISSIONS.MOTORCYCLES1_WRITE,
   ],
   superuser: [
     PERMISSIONS.TIME_REG_READ,
     PERMISSIONS.TIME_REG_WRITE,
     PERMISSIONS.USER_MGMT_READ,
+    PERMISSIONS.MOTORCYCLES1_READ,
+    PERMISSIONS.MOTORCYCLES1_WRITE,
   ],
   aiagent: [
     PERMISSIONS.TIME_REG_READ,
@@ -56,6 +64,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSIONS.USER_MGMT_READ,
     PERMISSIONS.USER_MGMT_ADMIN,
     PERMISSIONS.SYS_ADMIN,
+    PERMISSIONS.MOTORCYCLES1_READ,
+    PERMISSIONS.MOTORCYCLES1_WRITE,
   ],
 };
 

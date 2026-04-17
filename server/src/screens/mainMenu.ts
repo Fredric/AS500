@@ -1,6 +1,7 @@
 import type { Session, ClientRequest, ScreenResponse, MenuNavigation } from '../types/index.js';
 import { buildLoginScreen } from './login.js';
 import { initTimeRegV2Context } from '../configs/timeRegV2.js';
+import { initMotorcycles1Context } from '../configs/motorcycles1Config.js';
 import { initUserMgmtContext } from '../configs/userMgmtConfig.js';
 import { revokeAllUserTokens } from '../services/auth.js';
 import { hasPermission, PERMISSIONS } from '../services/access.js';
@@ -19,7 +20,7 @@ import {
 // Option rows (0-indexed in 24-row screen)
 const ITEM_ROW_BASE = 8;
 
-type MainMenuAction = 'time_reg' | 'user_mgmt' | 'role_defaults' | 'log_off';
+type MainMenuAction = 'time_reg' | 'motorcycles' | 'user_mgmt' | 'role_defaults' | 'log_off';
 
 interface MainMenuItem {
   option: string;
@@ -32,6 +33,10 @@ function getMainMenuItems(session: Session): MainMenuItem[] {
   const actions: Array<{ label: string; action: MainMenuAction }> = [
     { label: 'Time Registration', action: 'time_reg' },
   ];
+
+  if (hasPermission(session, PERMISSIONS.MOTORCYCLES1_READ)) {
+    actions.push({ label: 'My Motorcycles', action: 'motorcycles' });
+  }
 
   if (session.isAdmin || hasPermission(session, PERMISSIONS.USER_MGMT_ADMIN)) {
     actions.push({ label: 'User Management', action: 'user_mgmt' });
@@ -147,6 +152,18 @@ export async function handleMainMenu(
       const { buildListScreen } = await import('../crudtable/runtime.js');
       const { getConfig } = await import('../crudtable/registry.js');
       const config = getConfig('timereg_v2')!;
+
+      return { ...(await buildListScreen(config, session)), ...base };
+    }
+
+    if (selectedItem?.action === 'motorcycles') {
+      session.screenStack.push('MAIN_MENU');
+      session.currentScreen = 'CRUD_MOTORCYCLES1';
+      initMotorcycles1Context(session);
+
+      const { buildListScreen } = await import('../crudtable/runtime.js');
+      const { getConfig } = await import('../crudtable/registry.js');
+      const config = getConfig('motorcycles1')!;
 
       return { ...(await buildListScreen(config, session)), ...base };
     }
