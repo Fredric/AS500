@@ -171,6 +171,8 @@ session.currentScreen = session.screenStack.pop() || 'MAIN_MENU';
 
 No changes to `server/src/index.ts` needed.
 
+> **Full reference:** See `.claude/skills/crudtable/SKILL.md` for the complete recipe (copy-pastable service + config skeleton, patterns table, anti-patterns, verification checklist). Background docs: `DOCS/CRUDTABLE/5. CRUDTable Concept.md` (mental model) and `DOCS/CRUDTABLE/6. CRUDTable Reference.md` (field-by-field reference).
+
 ---
 
 ## Key Files

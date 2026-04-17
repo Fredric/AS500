@@ -63,3 +63,11 @@ AS500 is a server-driven terminal emulator, not a REST-style SPA. The client ren
 - Screen IDs are `UPPER_CASE_SNAKE`; CRUDTable screen IDs are `CRUD_{CONFIG_ID_UPPERCASE}`.
 - Screen files typically keep the DSL definition, `build...Screen()`, and `handle...()` together.
 - RBAC is central to navigation and CRUD actions. Prefer permission keys and CRUDTable `requirePermission` / service-level `requirePermission` instead of scattering role checks. See `ACCESS.md` and `server/src/services/access.ts`.
+
+## Skills and deeper references
+
+For task-specific guidance, read the matching skill/doc before non-trivial work:
+
+- **CRUDTable (any CRUD screen work)** → `.github/instructions/crudtable.instructions.md` (auto-applies under `server/src/configs/**` etc.), or the full skill at `.cursor/skills/crudtable/SKILL.md` / `.claude/skills/crudtable/SKILL.md`. Background: `DOCS/CRUDTABLE/5. CRUDTable Concept.md` and `DOCS/CRUDTABLE/6. CRUDTable Reference.md`.
+- **RBAC / permissions** → `ACCESS.md`.
+- **Neutral agent entry point (any AI tool)** → `AGENTS.md` at repo root.
