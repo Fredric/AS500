@@ -103,13 +103,16 @@ Sessions are in-memory (Map) and persisted to `server/data/sessions.json` in dev
 
 ## Screen System
 
-### Two Approaches
+### Three Approaches
 
 **1. CRUDTable (preferred for list + form CRUD)**  
 Write a config object (~50-80 lines). The runtime auto-generates list and form screens with pagination, F6=Create, keyboard row navigation, F3/F12 navigation.
 
-**2. Manual Screen (for login, menus, help, custom flows)**  
-Write DSL definition + `buildScreen()` + `handleScreen()` + register in `server/src/index.ts`.
+**2. Menu (for all menu screens — main menu, submenus)**  
+Add a `MenuNode` to the central menu tree in `server/src/menus/menuTree.ts`. The generic runtime in `server/src/menus/menuRuntime.ts` builds every menu screen (numbered list, Esc=back, permission filtering) automatically. **Do not hand-roll menu screens.**
+
+**3. Manual Screen (for login, help, wizards, fully custom flows)**  
+Write DSL definition + `buildScreen()` + `handleScreen()`. Only `login.ts` and the menu delegator `mainMenu.ts` live in `server/src/screens/` today.
 
 ### Keyboard Navigation (CRUDTable list screens)
 
@@ -153,9 +156,71 @@ navigation: {
 session.screenStack.push('CURRENT_SCREEN');
 session.currentScreen = 'NEXT_SCREEN';
 
-// Go back (F12)
+// Go back (F12 / Esc)
 session.currentScreen = session.screenStack.pop() || 'MAIN_MENU';
 ```
+
+For menu → submenu / menu → CRUDTable transitions, the menu runtime handles the stack push for you — see the Menu System section below.
+
+---
+
+## Menu System
+
+All menus (main menu, admin submenus, any future grouped navigation) are driven by a single declarative tree plus one generic runtime. **Do not write custom menu screens.**
+
+### Key files
+
+| Purpose | Path |
+|---------|------|
+| Menu tree (source of truth for all navigation) | `server/src/menus/menuTree.ts` |
+| Generic build/handle for all menu screens | `server/src/menus/menuRuntime.ts` |
+| Thin delegator for the main menu entry point | `server/src/screens/mainMenu.ts` |
+
+### How it works
+
+- `menuTree.ts` exports `appMenuTree: MenuNode`. Every menu screen is a nested `MenuNode` with `items: AppNode[]`.
+- Each item is one of three node types:
+  - `MenuNode` — a nested submenu (renders a new screen, selecting navigates into it)
+  - `CrudNode` — links a menu entry directly to a registered `CRUDTableConfig` (by `configId`)
+  - `ActionNode` — a built-in action (currently only `action: 'log_off'`)
+- `menuRuntime.ts` handles **every** menu screen generically: permission-filters items, renders a numbered list, pushes onto `session.screenStack`, and navigates on Enter. F3/F12/Esc always pop back to the parent.
+- Screen IDs: the root menu is `MAIN_MENU`; every nested menu is `MENU_{KEY_UPPERCASE}` (derived via `menuScreenId(key)` from `menuTree.ts`).
+- Access control: `requirePermission` or `requireAdmin` on any node hides it for users who lack access — enforced before render, so invisible items are never selectable.
+- CRUDTable context seeding: if a `CrudNode` declares `initContext(session)`, the runtime calls it **before** handing control to the CRUD runtime. This replaces the old pattern of seeding context from a screen handler.
+
+### Shape of a menu node
+
+```typescript
+// server/src/menus/menuTree.ts
+export const appMenuTree: MenuNode = {
+  type: 'menu',
+  key: 'main',
+  name: 'Main Menu',
+  title: 'MAIN MENU',
+  items: [
+    {
+      type: 'crudtable',
+      key: 'time_reg',
+      name: 'Time Registration',
+      requirePermission: PERMISSIONS.TIME_REG_READ,
+      configId: 'timereg_v2',            // must match a registered CRUDTableConfig.id
+      initContext: initTimeRegV2Context, // optional — seeds session.context before navigation
+    },
+    {
+      type: 'menu',
+      key: 'admin',
+      name: 'Administration',
+      requireAdmin: true,
+      items: [ /* nested nodes — renders screen MENU_ADMIN */ ],
+    },
+    { type: 'action', key: 'log_off', name: 'Log Off', action: 'log_off' },
+  ],
+};
+```
+
+### Adding a menu entry
+
+To expose a new CRUD screen or submenu, **add a node to the tree**. No other file changes are needed — `menuRuntime.ts` picks it up automatically and the router in `server/src/index.ts` already dispatches every `MENU_*` screen to the runtime.
 
 ---
 
@@ -167,9 +232,20 @@ session.currentScreen = session.screenStack.pop() || 'MAIN_MENU';
 
 **Step 3** – Register: add `registerConfig(myConfig)` in `server/src/configs/index.ts`.
 
-**Step 4** – Navigate: set `session.currentScreen = 'CRUD_{ID_UPPERCASE}'` from any screen handler.
+**Step 4** – Expose in the menu tree: add a `CrudNode` to `server/src/menus/menuTree.ts` under the appropriate parent menu. Pass `initContext` if the config needs caller context seeded into `session.context` before the list renders.
 
-No changes to `server/src/index.ts` needed.
+```typescript
+{
+  type: 'crudtable',
+  key: 'my_thing',
+  name: 'My Thing',
+  requirePermission: PERMISSIONS.MY_THING_READ,
+  configId: 'my_thing',              // matches CRUDTableConfig.id
+  initContext: initMyThingContext,   // optional
+}
+```
+
+No changes to `server/src/index.ts` or `server/src/screens/mainMenu.ts` needed. The menu runtime will render the entry, enforce permissions, push the stack, call `initContext`, and dispatch to `CRUD_{ID_UPPERCASE}`.
 
 > **Full reference:** See `.claude/skills/crudtable/SKILL.md` for the complete recipe (copy-pastable service + config skeleton, patterns table, anti-patterns, verification checklist). Background docs: `DOCS/CRUDTABLE/5. CRUDTable Concept.md` (mental model) and `DOCS/CRUDTABLE/6. CRUDTable Reference.md` (field-by-field reference).
 
@@ -180,6 +256,8 @@ No changes to `server/src/index.ts` needed.
 | Purpose | Path |
 |---------|------|
 | WebSocket router (entry point) | `server/src/index.ts` |
+| **Menu tree (navigation source of truth)** | `server/src/menus/menuTree.ts` |
+| **Menu runtime (generic build/handle)** | `server/src/menus/menuRuntime.ts` |
 | CRUDTable runtime engine | `server/src/crudtable/runtime.ts` |
 | CRUDTable type definitions | `server/src/crudtable/types.ts` |
 | DSL renderer (80×24 grid) | `server/src/dsl/renderer.ts` |
@@ -198,11 +276,11 @@ No changes to `server/src/index.ts` needed.
 
 ### Screens
 
-`server/src/screens/`: `login`, `mainMenu`, `timeReg`, `timeEntry`, `timeRegHelp`, `userMgmt`, `userEdit`
+`server/src/screens/`: `login`, `mainMenu` (thin delegator to the menu runtime). All other former hand-written screens (time-reg, user management, etc.) are now CRUDTable configs; all menus are nodes in `menuTree.ts`.
 
 ### CRUDTable Configs
 
-`server/src/configs/`: `timeRegV2` (time registration entries)
+`server/src/configs/`: `timeRegV2`, `userMgmtConfig`, `roleDefaultsConfig`, `motorcyclesConfig`, `modsConfig`, `servicesPerformedConfig`. Register new configs in `server/src/configs/index.ts` and expose them via `server/src/menus/menuTree.ts`.
 
 ---
 

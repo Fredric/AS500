@@ -22,6 +22,12 @@ export const PERMISSIONS = {
   TIME_REG_WRITE:  'time_reg:write',
   USER_MGMT_READ:  'user_mgmt:read',
   USER_MGMT_ADMIN: 'user_mgmt:admin',
+  MOTORCYCLES_READ:  'motorcycles:read',
+  MOTORCYCLES_WRITE: 'motorcycles:write',
+  MODS_READ:  'mods:read',
+  MODS_WRITE: 'mods:write',
+  SERVICES_PERFORMED_READ:  'services_performed:read',
+  SERVICES_PERFORMED_WRITE: 'services_performed:write',
   SYS_ADMIN:       'sys:admin',
 } as const;
 
@@ -32,6 +38,12 @@ export const PERMISSION_REGISTRY: Array<{ key: PermissionKey; description: strin
   { key: PERMISSIONS.TIME_REG_WRITE,  description: 'Create/edit/delete time entries' },
   { key: PERMISSIONS.USER_MGMT_READ,  description: 'View user list' },
   { key: PERMISSIONS.USER_MGMT_ADMIN, description: 'Create/edit/delete users' },
+  { key: PERMISSIONS.MOTORCYCLES_READ,  description: 'View own motorcycle garage' },
+  { key: PERMISSIONS.MOTORCYCLES_WRITE, description: 'Create/edit/delete own motorcycles' },
+  { key: PERMISSIONS.MODS_READ,  description: 'View motorcycle mods' },
+  { key: PERMISSIONS.MODS_WRITE, description: 'Create/edit/delete motorcycle mods' },
+  { key: PERMISSIONS.SERVICES_PERFORMED_READ,  description: 'View motorcycle service records' },
+  { key: PERMISSIONS.SERVICES_PERFORMED_WRITE, description: 'Create/edit/delete motorcycle service records' },
   { key: PERMISSIONS.SYS_ADMIN,       description: 'Full system administration' },
 ];
 
@@ -40,11 +52,23 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
   user: [
     PERMISSIONS.TIME_REG_READ,
     PERMISSIONS.TIME_REG_WRITE,
+    PERMISSIONS.MOTORCYCLES_READ,
+    PERMISSIONS.MOTORCYCLES_WRITE,
+    PERMISSIONS.MODS_READ,
+    PERMISSIONS.MODS_WRITE,
+    PERMISSIONS.SERVICES_PERFORMED_READ,
+    PERMISSIONS.SERVICES_PERFORMED_WRITE,
   ],
   superuser: [
     PERMISSIONS.TIME_REG_READ,
     PERMISSIONS.TIME_REG_WRITE,
     PERMISSIONS.USER_MGMT_READ,
+    PERMISSIONS.MOTORCYCLES_READ,
+    PERMISSIONS.MOTORCYCLES_WRITE,
+    PERMISSIONS.MODS_READ,
+    PERMISSIONS.MODS_WRITE,
+    PERMISSIONS.SERVICES_PERFORMED_READ,
+    PERMISSIONS.SERVICES_PERFORMED_WRITE,
   ],
   aiagent: [
     PERMISSIONS.TIME_REG_READ,
@@ -55,6 +79,12 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSIONS.TIME_REG_WRITE,
     PERMISSIONS.USER_MGMT_READ,
     PERMISSIONS.USER_MGMT_ADMIN,
+    PERMISSIONS.MOTORCYCLES_READ,
+    PERMISSIONS.MOTORCYCLES_WRITE,
+    PERMISSIONS.MODS_READ,
+    PERMISSIONS.MODS_WRITE,
+    PERMISSIONS.SERVICES_PERFORMED_READ,
+    PERMISSIONS.SERVICES_PERFORMED_WRITE,
     PERMISSIONS.SYS_ADMIN,
   ],
 };

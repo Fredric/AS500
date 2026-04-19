@@ -47,6 +47,8 @@ For a small change (e.g. adding one field to an existing config), skim this SKIL
 
 ## Fast path: add a new CRUD screen in 4 steps
 
+> **Wiring model (important):** CRUD screens are exposed to the user through the central **menu tree** at `server/src/menus/menuTree.ts`, not by navigating to `CRUD_*` from a hand-written screen handler. Adding a `CrudNode` to the tree is the only UI-wiring step. The generic menu runtime (`server/src/menus/menuRuntime.ts`) handles permission filtering, `initContext`, stack push, and dispatch to the CRUD runtime.
+
 ### Step 1 — Write the service
 
 Create `server/src/services/thingService.ts`. Functions take a **single argument** (usually an object) and return arrays or records. Use Drizzle via `db` from `../db/index.js`; add any new table to `server/src/db/schema.ts` first and run `npm run db:generate` inside `server/`.
@@ -142,18 +144,34 @@ export function registerCRUDConfigs(): void {
 }
 ```
 
-### Step 4 — Navigate in from a screen handler
+### Step 4 — Add a node to the menu tree
 
-Typically from `server/src/screens/mainMenu.ts`:
+Edit `server/src/menus/menuTree.ts` and drop a `CrudNode` under the appropriate parent menu (top-level for user-facing screens; under the `admin` submenu for admin-only screens):
 
 ```ts
-session.screenStack.push('MAIN_MENU');
-session.currentScreen = 'CRUD_THINGS';   // always 'CRUD_' + config.id.toUpperCase()
-// Optional: seed caller context BEFORE returning the response
-// session.context.crud_things_input = { … };
+import { PERMISSIONS } from '../services/access.js';
+import { thingsConfig } from '../configs/thingsConfig.js';
+
+{
+  type: 'crudtable',
+  key: 'things',
+  name: 'Things',
+  requirePermission: PERMISSIONS.THINGS_READ,
+  configId: 'things',              // must match CRUDTableConfig.id
+  // Optional — runs immediately before the CRUD list renders. Use it to seed
+  // session.context.crud_things_input = {…} or other per-user context.
+  // initContext: initThingsContext,
+}
 ```
 
-**No other files need to change.** No edits to `server/src/index.ts`. The router's default case picks up any `CRUD_*` screen ID and dispatches to the runtime.
+**No other files need to change.** No edits to `server/src/index.ts`, `server/src/screens/mainMenu.ts`, or any manual screen handler. The menu runtime:
+
+1. Hides the item if the user lacks `requirePermission` / `requireAdmin`.
+2. Pushes the parent menu onto `session.screenStack` on selection.
+3. Awaits `initContext(session)` if provided.
+4. Sets `session.currentScreen = 'CRUD_THINGS'` (derived as `'CRUD_' + config.id.toUpperCase()`) and returns the list screen.
+
+If the list needs caller-supplied filtering or defaults, put that logic in `initContext` — it is the correct and only place to seed `session.context.crud_{id}_input`.
 
 ## What the config gives you for free
 
@@ -179,21 +197,81 @@ session.currentScreen = 'CRUD_THINGS';   // always 'CRUD_' + config.id.toUpperCa
 | Map backend boolean to `'Y'`/`'N'` in the form | `form.formValue: v => v === true ? 'Y' : 'N'`, plus a validator on submit |
 | Cross-field check (e.g. password == confirm) | Validator on one field reads `ctx.values.other` |
 | Resolve foreign-key id to a label in the list | `column.cellRenderer: (r, ds) => ds?.find(...)?.name` + matching `datasource` |
-| Filter the list by something the caller provides | `services.list.params: ctx => ({ … ctx.input.foo })` + seed `crud_{id}_input` before navigating |
+| Filter the list by something the caller provides | `services.list.params: ctx => ({ … ctx.input.foo })` + seed the child's `ctx.input` via a menu node's `initContext` or a parent's relation `mapInput` |
 | Composite primary key (no single `id`) | Store originals in a hidden field or use `editRecord.original_*`; see `roleDefaultsConfig.ts` |
 | Day / page / group stepping with F7/F8 | `listKeys.F7` + `listKeys.F8` mutating `ctx.input` and `ctx.pageOffset = 0` |
 | Extra contextual text at the top of the list | `listHeader: ctx => [{ row, col, content }, …]` |
+| **"From parent X's edit form, jump to list of child Y's scoped to X"** | `relations: [{ label, actionKey, targetConfigId, mapInput: rec => ({ parentId: rec.id, parentLabel: … }) }]` — see **Relations** below |
+
+## Relations — parent → child navigation from the edit form
+
+`config.relations?: RelationConfig[]` adds **single-key hotkeys on the edit form** (never the create form) that open another registered CRUDTable's list, scoped to the currently edited parent record.
+
+```ts
+// Parent config
+relations: [
+  {
+    label: 'Mods',        // shown in form status bar: 'Esc=Back  M=Mods'
+    actionKey: 'M',       // single key, case-insensitive
+    targetConfigId: 'mods',
+    mapInput: (rec) => ({
+      motorcycleId: rec.id,
+      motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+    }),
+  },
+],
+```
+
+The runtime seeds `session.context['crud_mods_input'] = mapInput(editRecord)`, pushes the parent form onto `screenStack`, and navigates to the child's list. The child reads the scoping via `ctx.input`:
+
+```ts
+// Child config (e.g. modsConfig.ts)
+services: {
+  list: {
+    service: modsService,
+    method: 'listMods',
+    params: (ctx) => ({ motorcycleId: ctx.input.motorcycleId as number }),
+  },
+  create: {
+    service: modsService,
+    method: 'createMod',
+    params: (ctx) => ({
+      motorcycleId: ctx.input.motorcycleId as number,  // echo FK on mutations
+      name: ctx.values.name?.trim() || '',
+      // …
+    }),
+  },
+  // update / delete likewise echo motorcycleId
+},
+listHeader: (ctx) => [
+  { row: 5, col: 2, content: `Mods: ${ctx.input.motorcycleLabel ?? ''}` },
+],
+```
+
+**Rules of thumb.**
+
+- `actionKey` must not collide with `Enter`, `Esc`/`F3`/`F12`, or field input handling. Uppercase letters (`M`, `S`, `L`) are safe.
+- The child **must** be registered in `configs/index.ts`. An unknown `targetConfigId` silently no-ops.
+- The child's list/create/update/delete `params` must all echo the scoping keys from `ctx.input` — otherwise new child rows can be created orphaned.
+- Relations don't do their own permission check; the **child's** `requirePermission` gate still runs on navigation.
+- Use `listHeader(ctx)` on the child to show the parent label — `mapInput` conventionally provides a `*Label` key for exactly this.
+- Esc from the child list (or its own edit form) returns the user to the parent form in its previous state — the runtime handles the stack.
+
+Canonical example: `server/src/configs/motorcyclesConfig.ts` (parent with two relations) + `modsConfig.ts` / `servicesPerformedConfig.ts` (scoped children).
 
 ## Anti-patterns (do NOT)
 
 - **Do not hand-roll a new list/form DSL screen** when CRUDTable fits. Configs are ~50–150 lines; hand-rolled screens are ~250+.
-- **Do not edit `server/src/index.ts`** to add a case for the new screen. The default case handles all `CRUD_*` IDs.
-- **Do not mutate `CRUDContext` outside a service, `listKeys.handler`, or (writing to `input` only) from the navigating screen**. Config functions (`params`, validators, `cellRenderer`, `listHeader`, `getInitialValues`, `mapContext`) are read-only.
+- **Do not hand-roll a new menu screen.** All menu navigation is declared in `server/src/menus/menuTree.ts` and rendered by `server/src/menus/menuRuntime.ts`. New screens are exposed by adding a node there, not by writing a DSL menu.
+- **Do not edit `server/src/index.ts`** to add a case for the new screen. The default case handles all `CRUD_*` and `MENU_*` IDs.
+- **Do not edit `server/src/screens/mainMenu.ts`.** It is a thin delegator to `menuRuntime.ts`; the main-menu contents are in `menuTree.ts`.
+- **Do not navigate into a CRUD screen from a manual screen handler** when a menu entry will do. Put the entry in the tree (`type: 'crudtable'`) and let the runtime dispatch; use `initContext` for any pre-navigation seeding.
+- **Do not mutate `CRUDContext` outside a service, `listKeys.handler`, or `initContext` on the menu node**. Config functions (`params`, validators, `cellRenderer`, `listHeader`, `getInitialValues`, `mapContext`) are read-only.
 - **Do not call services from the config body (top level)**. Anything that needs runtime data goes inside a `params` / `cellRenderer` / `listKeys.handler` closure.
 - **Do not use a different screen-ID convention.** It must be exactly `CRUD_{config.id.toUpperCase()}` — anything else won't route.
 - **Do not forget `length`.** It's required on every `FieldConfig`; it drives form width and is the column-width fallback.
 - **Do not mix config `id` casing.** Use lowercase-snake in `id` (`user_mgmt`, `timereg_v2`) — derived IDs will uppercase it.
-- **Do not bypass `requirePermission`.** If a CRUD operation is sensitive, gate it per-service, not by commenting it out in the UI.
+- **Do not bypass `requirePermission`.** If a CRUD operation is sensitive, gate it per-service, not by commenting it out in the UI. Set `requirePermission` / `requireAdmin` on the menu node too, so the entry is hidden for users without access.
 
 ## Working examples in the repo
 
@@ -202,6 +280,8 @@ session.currentScreen = 'CRUD_THINGS';   // always 'CRUD_' + config.id.toUpperCa
 | `server/src/configs/timeRegV2.ts` | `listHeader` + `listKeys` (F7/F8 day nav) + `input`-driven filtering + init helper |
 | `server/src/configs/userMgmtConfig.ts` | `staticOptions` select, context-sensitive `required`/`disabled`, password+confirm with validator, `formValue` for booleans |
 | `server/src/configs/roleDefaultsConfig.ts` | Composite primary key, `SYS_ADMIN` gate, validators using a seeded registry |
+| `server/src/configs/motorcyclesConfig.ts` | **`relations`** — two edit-form hotkeys (`M=Mods`, `S=Services`) jumping to scoped child lists via `mapInput` |
+| `server/src/configs/modsConfig.ts` / `servicesPerformedConfig.ts` | Child side of a relation: `ctx.input.motorcycleId` scoping on list + all mutations, parent label in `listHeader` |
 
 Open one of these before writing a config from scratch — pattern-matching will save time.
 
@@ -217,8 +297,8 @@ After implementing a new CRUD screen:
 - [ ] Every `fieldConfigs[*]` has `length`
 - [ ] `columnBuilder` and `formBuilder` reference only existing `fieldConfigs` keys
 - [ ] Permissions exist in `server/src/services/access.ts` (add them if new) and are seeded for the relevant roles
-- [ ] Navigating in from `mainMenu.ts` (or wherever) pushes the previous screen onto `session.screenStack`
-- [ ] If the list needs caller context, `session.context.crud_{id}_input = {...}` is seeded **before** setting `currentScreen`
+- [ ] A `CrudNode` for the config is added to `server/src/menus/menuTree.ts` with the right parent menu, `requirePermission` / `requireAdmin`, and `configId` matching the config's `id`
+- [ ] If the list needs caller context, it is seeded inside `initContext(session)` on the menu node — not from a screen handler and not in the config body
 
 ## When to go beyond the fast path
 

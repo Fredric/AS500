@@ -1,10 +1,10 @@
 ---
-applyTo: "server/src/configs/**,server/src/crudtable/**,server/src/services/**,server/src/screens/mainMenu.ts,DOCS/CRUDTABLE/**"
+applyTo: "server/src/configs/**,server/src/crudtable/**,server/src/services/**,server/src/menus/**,server/src/screens/mainMenu.ts,DOCS/CRUDTABLE/**"
 ---
 
 # CRUDTable guidance (auto-applied)
 
-These instructions auto-activate when editing files that touch the CRUDTable runtime, its configs, backing services, or the main menu (which is where new CRUDTable screens are wired in).
+These instructions auto-activate when editing files that touch the CRUDTable runtime, its configs, backing services, or the menu system (which is where new CRUDTable screens are wired into the UI).
 
 ## Core rule
 
@@ -21,17 +21,18 @@ For deep reference, read:
 
 ## Quick decision
 
-- **List + create/edit/delete on some entity?** → CRUDTable config in `server/src/configs/`.
-- **Login, menu, help, dashboard, wizard?** → Manual DSL screen in `server/src/screens/`.
+- **List + create/edit/delete on some entity?** → CRUDTable config in `server/src/configs/`, then expose it via a node in `server/src/menus/menuTree.ts`.
+- **Main menu, submenu, any grouped navigation?** → Add a `MenuNode` to `server/src/menus/menuTree.ts`. Never hand-roll a menu screen; `server/src/menus/menuRuntime.ts` renders every menu generically.
+- **Login, help, dashboard, wizard?** → Manual DSL screen in `server/src/screens/`.
 
 ## Authoring shape (must follow)
 
 1. **Service** in `server/src/services/<entity>Service.ts`. Each function takes a **single argument** (usually an object). Use Drizzle via `db` from `../db/index.js`; never `pool.query`. Add new tables to `server/src/db/schema.ts` and generate a migration with `npm --prefix server run db:generate`.
 2. **Config** in `server/src/configs/<entity>Config.ts` implementing `CRUDTableConfig` from `../crudtable/types.js`.
 3. **Register** with `registerConfig(<entity>Config)` in `server/src/configs/index.ts`.
-4. **Navigate in** from `server/src/screens/mainMenu.ts` (or wherever): `session.screenStack.push(currentScreenId); session.currentScreen = 'CRUD_<ID_UPPERCASE>';` — seed `session.context.crud_<id>_input = {…}` first if the list needs caller context.
+4. **Expose in the menu tree** — add a `CrudNode` to `server/src/menus/menuTree.ts` under the appropriate parent (top-level for user-facing, under `admin` for admin-only). Set `configId` to the config's `id`, set `requirePermission` / `requireAdmin`, and use `initContext(session)` when the list needs caller context seeded into `session.context.crud_<id>_input` before navigation.
 
-Screen IDs are always `CRUD_{config.id.toUpperCase()}`. No edits to `server/src/index.ts` are needed — its default case routes all `CRUD_*` IDs.
+Screen IDs are always `CRUD_{config.id.toUpperCase()}` (CRUD screens) or `MENU_{KEY_UPPERCASE}` / `MAIN_MENU` (menu screens). No edits to `server/src/index.ts` or `server/src/screens/mainMenu.ts` are needed — the router dispatches all `CRUD_*` and `MENU_*` IDs to the appropriate runtime.
 
 ## Must-follow rules
 
@@ -54,6 +55,7 @@ Open one of these before writing a config from scratch.
 - [ ] `npm run typecheck` passes from the repo root
 - [ ] Config `id` is lowercase-snake
 - [ ] Every `fieldConfigs[*]` has `length`
-- [ ] `requireAuth` / `requirePermission` are set as appropriate
+- [ ] `requireAuth` / `requirePermission` are set as appropriate on the config
 - [ ] Permissions used are declared in `access.ts` and seeded for the roles that need them
-- [ ] Navigating in pushes the current screen onto `screenStack`
+- [ ] A `CrudNode` is added to `server/src/menus/menuTree.ts` under the correct parent, with matching `configId` and the same `requirePermission` / `requireAdmin` guard
+- [ ] Per-user list filtering, if any, lives in `initContext` on the menu node — not in a screen handler
