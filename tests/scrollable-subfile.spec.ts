@@ -114,7 +114,7 @@ test.describe('Scrollable Subfile', () => {
     test('should advance to next page when ArrowDown reaches the last row', async ({ page }) => {
       for (let i = 0; i < PAGE_SIZE; i++) {
         await page.keyboard.press('ArrowDown');
-        await page.waitForTimeout(30);
+        await page.waitForTimeout(40);
       }
 
       await page.locator('text=TASK-101').waitFor({ state: 'hidden', timeout: 10000 });
@@ -129,7 +129,7 @@ test.describe('Scrollable Subfile', () => {
     test('should return to previous page when ArrowUp at first row of page 2', async ({ page }) => {
       for (let i = 0; i < PAGE_SIZE; i++) {
         await page.keyboard.press('ArrowDown');
-        await page.waitForTimeout(30);
+        await page.waitForTimeout(40);
       }
       await page.locator('text=TASK-123').waitFor({ state: 'visible', timeout: 10000 });
 
@@ -142,12 +142,19 @@ test.describe('Scrollable Subfile', () => {
     });
 
     test('should not advance beyond last page', async ({ page }) => {
-      // Page 1 → 2 → 3 (24 row moves from focus row 0 across page boundaries)
-      for (let i = 0; i < PAGE_SIZE * 2; i++) {
+      // Page 1 → 2 → 3: sync after each page like the regression tests (CI can drop
+      // rapid ArrowDown if the delay between keys is too short).
+      for (let i = 0; i < PAGE_SIZE; i++) {
         await page.keyboard.press('ArrowDown');
-        await page.waitForTimeout(30);
+        await page.waitForTimeout(40);
       }
-      await page.locator('text=TASK-125').waitFor({ state: 'visible', timeout: 10000 });
+      await waitForSeedPage(page, sliceSeedPage(1));
+
+      for (let i = 0; i < PAGE_SIZE; i++) {
+        await page.keyboard.press('ArrowDown');
+        await page.waitForTimeout(40);
+      }
+      await waitForSeedPage(page, sliceSeedPage(2));
 
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('ArrowDown');
@@ -159,7 +166,7 @@ test.describe('Scrollable Subfile', () => {
     test('should reset to first page when switching days with arrow keys', async ({ page }) => {
       for (let i = 0; i < PAGE_SIZE; i++) {
         await page.keyboard.press('ArrowDown');
-        await page.waitForTimeout(30);
+        await page.waitForTimeout(40);
       }
       await page.locator('text=TASK-123').waitFor({ state: 'visible', timeout: 10000 });
 
