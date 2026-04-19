@@ -21,24 +21,26 @@ Skills are mirrored into each tool's native discovery path. The `SKILL.md` files
 |---|---|
 | CRUDTable — mental model | `DOCS/CRUDTABLE/5. CRUDTable Concept.md` |
 | CRUDTable — field-by-field reference | `DOCS/CRUDTABLE/6. CRUDTable Reference.md` |
-| CRUDTable — earlier design iterations (historical) | `DOCS/CRUDTABLE/1. Concept Specification and Idea.md`, `2. AdminUIConfig help.md`, `3. Communication between UI's.md`, `4. CRUDTable Runtime Implementation.md` |
+| CRUDTable — earlier design iterations (historical) | `DOCS/CRUDTABLE/1. Concept Specification and Idea.md`, `2. AdminUIConfig help.md`, `3. Communication between UI's.md` |
 | Production / deployment runbook | `Prod_hetzner.md` |
 
 ## Decision guide
 
 When a user asks for a new screen or feature, use this quick triage:
 
-- **A list + create/edit/delete on some entity?** → Load the `crudtable` skill and follow its fast-path recipe. Do not hand-roll a DSL screen.
-- **A login, menu, help, dashboard, or wizard screen?** → Write a manual screen in `server/src/screens/` using the DSL, following the patterns in `CLAUDE.md` § "Screen System".
+- **A list + create/edit/delete on some entity?** → Load the `crudtable` skill and follow its fast-path recipe. Do not hand-roll a DSL screen. Expose the new config via a `CrudNode` in `server/src/menus/menuTree.ts`.
+- **A new main-menu entry, submenu, or grouping of existing screens?** → Add a `MenuNode` / `CrudNode` / `ActionNode` to `server/src/menus/menuTree.ts`. Never hand-roll a menu screen — `server/src/menus/menuRuntime.ts` renders every menu generically (numbered list, permission filtering, Esc/F12 back, stack push). See `CLAUDE.md` § "Menu System".
+- **A login, help, dashboard, or wizard screen?** → Write a manual screen in `server/src/screens/` using the DSL, following the patterns in `CLAUDE.md` § "Screen System".
 - **A new backend capability without UI?** → Write a plain service in `server/src/services/` using Drizzle (`db` from `../db/index.js`), plus a table in `server/src/db/schema.ts` and a migration via `npm run db:generate`.
-- **Access-control change?** → Start from `ACCESS.md`; most CRUD-level gating belongs on the `CRUDTableConfig` (`requirePermission` at screen and per-`ServiceCall` level).
+- **Access-control change?** → Start from `ACCESS.md`; most CRUD-level gating belongs on the `CRUDTableConfig` (`requirePermission` at screen and per-`ServiceCall` level). Mirror the guard on the `CrudNode` in `menuTree.ts` so the menu entry is hidden for users without access.
 
 ## Repo-wide conventions (quick reference)
 
 - TypeScript with ES module imports — **always use `.js` extensions in relative imports** (`import { x } from './foo.js'`). This is not a typo; the emitted ESM needs them.
 - Services take a **single argument** (usually an object) and return plain JS values.
-- Screen IDs are `UPPER_SNAKE_CASE`. CRUDTable screens are always `CRUD_{config.id.toUpperCase()}`.
-- Don't edit `server/src/index.ts` to add a new CRUD screen — the default case routes all `CRUD_*` IDs.
+- Screen IDs are `UPPER_SNAKE_CASE`. CRUDTable screens are always `CRUD_{config.id.toUpperCase()}`; menu screens are `MAIN_MENU` or `MENU_{KEY_UPPERCASE}`.
+- Don't edit `server/src/index.ts` to add a new CRUD or menu screen — the default case dispatches all `CRUD_*` and `MENU_*` IDs to their runtimes.
+- Don't edit `server/src/screens/mainMenu.ts` to add or remove menu items — it is a thin delegator. Edit `server/src/menus/menuTree.ts` instead.
 - Run `npm run typecheck` from the repo root before handing back a non-trivial change.
 
 ## Ground truth for "what exists today"
@@ -47,6 +49,8 @@ If a doc and the code disagree, the code wins. Primary sources:
 
 - `server/src/crudtable/types.ts` — every config + context interface
 - `server/src/crudtable/runtime.ts` — screen build/handle logic
-- `server/src/configs/*.ts` — working examples
+- `server/src/menus/menuTree.ts` — the full navigation tree (main menu + submenus + CRUD links)
+- `server/src/menus/menuRuntime.ts` — generic menu build/handle + permission filtering
+- `server/src/configs/*.ts` — working CRUDTable examples
 
 The reference doc (`DOCS/CRUDTABLE/6. CRUDTable Reference.md`) is kept in sync with these files; the older numbered docs (1–4) are historical and may drift.

@@ -100,13 +100,104 @@ export interface ListKeyConfig {
   handler: (context: CRUDContext, session: Session) => Promise<void>;
 }
 
-// Relation config: hotkey on the edit form that opens a scoped child CRUD list
+/**
+ * Relation — a parent→child navigation on the edit form of a CRUDTable.
+ *
+ * A relation adds a **single-key shortcut** to the parent record's edit form
+ * that jumps straight into the list screen of another (child) `CRUDTableConfig`,
+ * scoped to the currently edited parent record. It is the declarative answer to
+ * "from a motorcycle's edit form, press M to see that bike's mods".
+ *
+ * ## Runtime contract
+ *
+ * When the user presses `actionKey` while the form is in `formMode === 'edit'`
+ * and `editRecord` is populated, the runtime:
+ *
+ * 1. Looks up the target config via `registry.getConfig(targetConfigId)`; if
+ *    missing, the keypress is ignored (no error surfaced).
+ * 2. Calls `mapInput(editRecord)` and stores the result in
+ *    `session.context['crud_' + targetConfigId + '_input']`. The child list's
+ *    `services.list.params(ctx)` reads this via `ctx.input` — so whatever
+ *    scoping key the child expects (e.g. `motorcycleId`) must be produced here.
+ * 3. Pushes the parent's **form** screen ID onto `session.screenStack` so
+ *    Esc / F3 / F12 from the child list (or from the child's own form) returns
+ *    to the parent form in its current state.
+ * 4. Sets `session.currentScreen` to the child's list screen and renders it.
+ *
+ * Relations are **only active in edit mode** — never on the create form
+ * (where `editRecord` is `null`). The relation appears in the form status bar
+ * as `K=Label` (e.g. `M=Mods`) and in the `navigation.form.actions` metadata
+ * sent to the client, so the client can bind the key.
+ *
+ * ## Requirements on the child config
+ *
+ * - It must be registered in `server/src/configs/index.ts`.
+ * - Its `services.list.params(ctx)` must read scoping from `ctx.input` using
+ *   the same keys produced by `mapInput`.
+ * - Its create/update/delete service `params` should echo the scoping keys back
+ *   into the mutation so orphaned rows can't be created (see `modsConfig.ts`).
+ * - Typically use `listHeader(ctx)` to show the parent label on the child list,
+ *   reading a `*Label` key produced by `mapInput` (e.g. `motorcycleLabel`).
+ *
+ * ## Example
+ *
+ * ```ts
+ * // In motorcyclesConfig:
+ * relations: [
+ *   {
+ *     label: 'Mods',
+ *     actionKey: 'M',
+ *     targetConfigId: 'mods',
+ *     mapInput: (rec) => ({
+ *       motorcycleId: rec.id,
+ *       motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+ *     }),
+ *   },
+ * ]
+ *
+ * // In modsConfig:
+ * services: {
+ *   list: {
+ *     service: modsService,
+ *     method: 'listMods',
+ *     params: (ctx) => ({ motorcycleId: ctx.input.motorcycleId as number }),
+ *   },
+ *   // create/update/delete also echo motorcycleId from ctx.input
+ * }
+ * ```
+ *
+ * See `server/src/configs/motorcyclesConfig.ts` (parent with two relations) and
+ * `server/src/configs/modsConfig.ts` + `servicesPerformedConfig.ts` (scoped
+ * children) for the canonical example.
+ */
 export interface RelationConfig {
-  label: string;        // Shown in form status bar  e.g. 'Mods'
-  actionKey: string;    // Single key the user presses  e.g. 'M'
-  targetConfigId: string; // CRUDTableConfig.id of the child  e.g. 'mods'
+  /** Label rendered in the parent form's status bar, e.g. `'Mods'`. */
+  label: string;
+
+  /**
+   * Single-character hotkey pressed on the parent form to open the child list.
+   * Compared case-insensitively against `request.key`. Conventionally uppercase
+   * (`'M'`, `'S'`). Must not collide with a form field's key handling or with
+   * `F3`/`F12`/`Esc` (reserved for Back) or `Enter` (reserved for Submit).
+   */
+  actionKey: string;
+
+  /**
+   * `id` of the child `CRUDTableConfig` (lowercase-snake, e.g. `'mods'`). The
+   * runtime resolves this via `getConfig(targetConfigId)` at keypress time; an
+   * unknown id silently no-ops.
+   */
+  targetConfigId: string;
+
+  /**
+   * Project the parent `editRecord` into the input context that will be seeded
+   * on the child as `ctx.input`. The returned object is stored verbatim at
+   * `session.context['crud_' + targetConfigId + '_input']`. At minimum include
+   * the foreign-key needed by the child's list/create/update/delete params; a
+   * human-readable label (e.g. `motorcycleLabel`) is conventional so the child
+   * `listHeader` can show it.
+   */
   mapInput: (editRecord: Record<string, unknown>) => Record<string, unknown>;
-  // Returns the input context for the child list  e.g. rec => ({ motorcycleId: rec.id, motorcycleLabel: `${rec.brand} ...` })
 }
 
 // Main CRUDTable config
@@ -146,6 +237,15 @@ export interface CRUDTableConfig {
     shortcuts?: Array<{ key: string; option: string | number; label: string }>;
   };
 
-  // Relations: child CRUDTable screens accessible from the edit form via hotkeys
+  /**
+   * Parent→child navigations exposed as hotkeys on the **edit form** (never on
+   * the create form). Each entry binds one key (e.g. `'M'`) to jump to another
+   * registered CRUDTable's list, scoped via `mapInput(editRecord)` → `ctx.input`.
+   *
+   * The runtime pushes the current form screen onto `session.screenStack`
+   * before navigating, so Esc returns to the parent form in place. See
+   * {@link RelationConfig} for the full contract and
+   * `server/src/configs/motorcyclesConfig.ts` for the canonical example.
+   */
   relations?: RelationConfig[];
 }
