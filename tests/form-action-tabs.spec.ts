@@ -1,4 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
+import {
+  setupFormActionTabsTestData,
+  teardownFormActionTabsTestData,
+  FORM_ACTION_TABS_MOTORCYCLE_BRAND,
+} from './testSetup.js';
 
 /**
  * Tests for form action tab stops (status bar buttons).
@@ -7,63 +12,76 @@ import { test, expect, Page } from '@playwright/test';
  * Enter-activatable, so users do not need to type a key that could land
  * in a form field.
  *
- * Prerequisite: FREDRIC user exists and has at least one motorcycle (seeded).
- * The mods and services_performed tables must exist (migration 0003).
+ * Uses KALLE and a single motorcycle row created in DB by setupFormActionTabsTestData
+ * (sentinel brand) and removed by teardownFormActionTabsTestData.
  */
 
-// Reusable login helper
-async function loginAsFredric(page: Page) {
+async function loginAsKalle(page: Page) {
   await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
   await page.locator('text=● Connected').waitFor({ state: 'visible', timeout: 10000 });
 
   const usernameInput = page.locator('input[type="text"]').first();
   await usernameInput.waitFor({ state: 'visible', timeout: 10000 });
-  await usernameInput.fill('FREDRIC');
+  await usernameInput.fill('KALLE');
   await usernameInput.press('Tab');
 
   const passwordInput = page.locator('input[type="password"]');
   await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
-  await passwordInput.fill('fredric');
+  await passwordInput.fill('password');
   await passwordInput.press('Enter');
 
   await page.locator('text=MAIN MENU').waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(500);
 }
 
-// Navigate from MAIN MENU → My Garage → Motorcycles → edit first row
+/** MAIN MENU → My Garage → Motorcycles list → focus seeded row → Enter → edit form */
 async function openMotorcycleEditForm(page: Page) {
   const container = page.locator('.terminal-container');
 
-  // My Garage is option 2 in the main menu — ArrowDown once then Enter
+  // My Garage is option 2 — ArrowDown once then Enter
   await container.focus();
   await page.keyboard.press('ArrowDown');
   await page.waitForTimeout(200);
   await page.keyboard.press('Enter');
 
-  // We should now be on the My Garage sub-menu
   await page.locator('text=MY GARAGE').waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(400);
 
-  // Motorcycles is option 1 — already focused, press Enter
   await container.focus();
   await page.keyboard.press('Enter');
 
-  // Wait for motorcycles list
   await page.locator('text=MY MOTORCYCLES').waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(400);
 
-  // First row is focused — press Enter to open edit form
   await container.focus();
+  // Select the row for our seeded motorcycle (may not be first if KALLE has other bikes)
+  for (let i = 0; i < 40; i++) {
+    const row = page.locator('.terminal-row--focused');
+    const text = await row.textContent();
+    if (text?.includes(FORM_ACTION_TABS_MOTORCYCLE_BRAND)) {
+      break;
+    }
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(80);
+  }
+
   await page.keyboard.press('Enter');
 
-  // Wait for the edit form
   await page.locator('text=EDIT MY MOTORCYCLES').waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(400);
 }
 
 test.describe('Form action tab stops', () => {
+  test.beforeAll(async () => {
+    await setupFormActionTabsTestData();
+  });
+
+  test.afterAll(async () => {
+    await teardownFormActionTabsTestData();
+  });
+
   test.beforeEach(async ({ page }) => {
-    await loginAsFredric(page);
+    await loginAsKalle(page);
     await openMotorcycleEditForm(page);
   });
 
@@ -86,13 +104,11 @@ test.describe('Form action tab stops', () => {
 
   // ─────────────────────────────────────────────────────────────────────────
   test('Shift+Tab from first field focuses last action (S=Services)', async ({ page }) => {
-    // brand is the first field; focus it
     const brandInput = page.locator('input[data-field="brand"]');
     await brandInput.waitFor({ state: 'visible', timeout: 5000 });
     await brandInput.focus();
     await page.waitForTimeout(100);
 
-    // Shift+Tab should jump to the last action
     await page.keyboard.press('Shift+Tab');
     await page.waitForTimeout(200);
 
@@ -103,18 +119,14 @@ test.describe('Form action tab stops', () => {
 
   // ─────────────────────────────────────────────────────────────────────────
   test('Tab from last field focuses first action (Esc=Back)', async ({ page }) => {
-    // Tab through all fields until we reach 'notes' (last field in formBuilder)
     const firstInput = page.locator('input[data-field="brand"]');
     await firstInput.waitFor({ state: 'visible', timeout: 5000 });
     await firstInput.focus();
 
-    // motorcycle formBuilder has 11 fields: brand, model, year, nickname, color,
-    // engine_cc, odometer_km, purchase_date, sell_date, cost, notes
     for (let i = 0; i < 10; i++) {
       await page.keyboard.press('Tab');
       await page.waitForTimeout(60);
     }
-    // Now on notes — one more Tab should focus first action
     await page.keyboard.press('Tab');
     await page.waitForTimeout(200);
 
@@ -129,31 +141,25 @@ test.describe('Form action tab stops', () => {
     await brandInput.waitFor({ state: 'visible', timeout: 5000 });
     await brandInput.focus();
 
-    // Get to last field then Tab to first action
     for (let i = 0; i < 11; i++) {
       await page.keyboard.press('Tab');
       await page.waitForTimeout(60);
     }
 
-    // Should be on Esc=Back now
     await expect(page.locator('.form-action-btn--focused')).toHaveText('Esc=Back');
 
-    // Tab → M=Mods
     await page.keyboard.press('Tab');
     await page.waitForTimeout(100);
     await expect(page.locator('.form-action-btn--focused')).toHaveText('M=Mods');
 
-    // Tab → S=Services
     await page.keyboard.press('Tab');
     await page.waitForTimeout(100);
     await expect(page.locator('.form-action-btn--focused')).toHaveText('S=Services');
 
-    // Tab → wraps back to first input field, no action focused
     await page.keyboard.press('Tab');
     await page.waitForTimeout(200);
     await expect(page.locator('.form-action-btn--focused')).toHaveCount(0);
 
-    // brand input should now be focused
     await expect(brandInput).toBeFocused();
   });
 
@@ -163,14 +169,12 @@ test.describe('Form action tab stops', () => {
     await brandInput.waitFor({ state: 'visible', timeout: 5000 });
     await brandInput.focus();
 
-    // Tab to last field then to Esc=Back
     for (let i = 0; i < 11; i++) {
       await page.keyboard.press('Tab');
       await page.waitForTimeout(60);
     }
     await expect(page.locator('.form-action-btn--focused')).toHaveText('Esc=Back');
 
-    // Enter should trigger Esc=Back (F3) → goes back to list
     await page.keyboard.press('Enter');
     await page.locator('text=MY MOTORCYCLES').waitFor({ state: 'visible', timeout: 10000 });
   });
@@ -181,23 +185,19 @@ test.describe('Form action tab stops', () => {
     await brandInput.waitFor({ state: 'visible', timeout: 5000 });
     await brandInput.focus();
 
-    // Tab to last field then two Tabs into M=Mods
     for (let i = 0; i < 12; i++) {
       await page.keyboard.press('Tab');
       await page.waitForTimeout(60);
     }
     await expect(page.locator('.form-action-btn--focused')).toHaveText('M=Mods');
 
-    // Enter → open mods list
     await page.keyboard.press('Enter');
     await page.locator('text=MOTORCYCLE MODS').waitFor({ state: 'visible', timeout: 10000 });
 
-    // The mods list header should reference the motorcycle name
     const statusArea = page.locator('.terminal-screen');
     const screenText = await statusArea.textContent();
     expect(screenText).toContain('Mods:');
 
-    // Esc from mods returns to the motorcycle edit form
     await page.keyboard.press('Escape');
     await page.locator('text=EDIT MY MOTORCYCLES').waitFor({ state: 'visible', timeout: 10000 });
   });
