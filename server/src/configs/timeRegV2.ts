@@ -38,13 +38,18 @@ export const timeRegV2Config: CRUDTableConfig = {
       service: timeRegCrud,
       method: 'createEntry',
       requirePermission: 'time_reg:write',
-      params: (ctx) => ({
-        dayId: ctx.input.dayId as number,
-        start_hour: ctx.values.start_hour,
-        end_hour: ctx.values.end_hour,
-        jiratask: ctx.values.jiratask || null,
-        description: ctx.values.description || null,
-      }),
+      params: async (ctx) => {
+        const dayId =
+          (ctx.input.dayId as number | undefined) ??
+          (await timeRegCrud.getOrCreateDay(ctx.input.userId as number, ctx.input.date as string)).id;
+        return {
+          dayId,
+          start_hour: ctx.values.start_hour,
+          end_hour: ctx.values.end_hour,
+          jiratask: ctx.values.jiratask || null,
+          description: ctx.values.description || null,
+        };
+      },
     },
 
     update: {

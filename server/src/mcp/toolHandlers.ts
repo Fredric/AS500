@@ -42,7 +42,7 @@ async function invokeServiceCall(
       `Service method "${sc.method}" is not a function.`
     );
   }
-  const args = sc.params ? sc.params(ctx) : undefined;
+  const args = sc.params ? await sc.params(ctx) : undefined;
   // `params` is expected to return a single object (or primitive for delete);
   // we pass it positionally — again matching the runtime's convention.
   return args === undefined ? await fn() : await fn(args);

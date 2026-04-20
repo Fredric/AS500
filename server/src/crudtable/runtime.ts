@@ -749,7 +749,7 @@ export async function handleForm(
             ...base,
           };
         }
-        const createParams = config.services.create.params?.(crudCtx) ?? values;
+        const createParams = (await config.services.create.params?.(crudCtx)) ?? values;
         await callService(config.services.create.service, config.services.create.method, createParams);
       } else if (!isCreate && config.services.update) {
         if (!checkServicePermission(session, config.services.update)) {

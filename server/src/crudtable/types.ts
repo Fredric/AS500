@@ -28,7 +28,7 @@ export interface CRUDContext {
 export interface ServiceCall {
   service: Record<string, Function>;
   method: string;
-  params?: (context: CRUDContext) => unknown;
+  params?: (context: CRUDContext) => unknown | Promise<unknown>;
   requirePermission?: string; // Optional permission key required to execute this operation
 }
 
