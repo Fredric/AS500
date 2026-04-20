@@ -19,7 +19,20 @@ import { initializeDatabase, closeDatabase } from './db/index.js';
 import { registerCRUDConfigs } from './configs/index.js';
 import { handleCRUDScreen, buildCRUDScreenForResume } from './crudtable/router.js';
 
+// Remote MCP server (separate Express app on its own port). Phase 2: boots
+// unauthenticated; see `server/src/mcp/index.ts`.
+import { startMcpServer, DEFAULT_MCP_PORT } from './mcp/index.js';
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+const MCP_PORT = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT) : DEFAULT_MCP_PORT;
+const MCP_ENABLED = process.env.MCP_ENABLED !== 'false'; // default on
+const MCP_DEBUG = process.env.NODE_ENV !== 'production';
+// Public-facing origin that OAuth discovery should advertise. In prod Caddy
+// terminates TLS on this host and reverse-proxies to :3002, so discovery
+// must return `https://adv.entence.se/...` — not `http://localhost:3002/...`.
+const MCP_PUBLIC_URL = process.env.MCP_PUBLIC_URL
+  ? new URL(process.env.MCP_PUBLIC_URL)
+  : undefined;
 
 // Lazily load permissions into session after resume from disk (permissions are not persisted)
 async function ensurePermissionsLoaded(session: Session): Promise<void> {
@@ -142,6 +155,24 @@ async function startServer() {
       console.log(`Serving static files from ${CLIENT_DIST}`);
     }
   });
+
+  // Boot the MCP server on its own port. Kept in-process so it shares the db
+  // pool and the config registry; kept on a separate port so Caddy can route
+  // `/mcp/*` to it independently without touching the WebSocket proxy.
+  let mcpHttpServer: ReturnType<typeof startMcpServer> | null = null;
+  if (MCP_ENABLED) {
+    try {
+      mcpHttpServer = startMcpServer({
+        port: MCP_PORT,
+        debug: MCP_DEBUG,
+        issuerUrl: MCP_PUBLIC_URL,
+      });
+    } catch (err) {
+      console.error('Failed to start MCP server:', err);
+    }
+  } else {
+    console.log('MCP server disabled via MCP_ENABLED=false');
+  }
 
   // Ping/pong keepalive for Heroku (55s idle timeout)
   const pingInterval = setInterval(() => {
@@ -441,6 +472,9 @@ async function startServer() {
   const shutdown = async () => {
     console.log('\nShutting down...');
     clearInterval(pingInterval);
+    if (mcpHttpServer) {
+      mcpHttpServer.close();
+    }
     wss.close(async () => {
       httpServer.close(async () => {
         await closeDatabase();

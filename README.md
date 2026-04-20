@@ -15,6 +15,7 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 - **Keyboard row navigation** — Arrow keys move between rows; Enter edits; `d` deletes; no F-keys needed
 - **Mouse row selection** — Click to select a row, double-click to open
 - **Modern token-based authentication** — OAuth 2.0-inspired access/refresh token pattern
+- **Remote MCP server** — every CRUDTable config can be opened up to AI agents as [Model Context Protocol](https://modelcontextprotocol.io) tools, gated by OAuth 2.1 + DCR and the same RBAC as the UI
 - **Secure session management** — 30-day auto-login with 1-hour token rotation
 - **Role-based access control** — Roles (`user`, `superuser`, `aiagent`, `admin`), user groups, and named permission keys with per-operation CRUDTable enforcement
 - **Device tracking** — Multi-device session management with device fingerprinting
@@ -98,11 +99,17 @@ Open http://localhost:5173 and login with:
 │  • Device   │                    │             │
 └─────────────┘                    └──────┬──────┘
                                           │
+┌─────────────┐     Streamable HTTP       │
+│  AI agent   │◄──────────────────────────┤  :3002 /mcp
+│ (MCP client)│   OAuth 2.1 + DCR         │  (tools = CRUDTable ops)
+└─────────────┘                           │
                                    ┌──────▼──────┐
                                    │ PostgreSQL  │
                                    │  • Users    │
                                    │  • Tokens   │
                                    │  • Sessions │
+                                   │  • OAuth    │
+                                   │  • Audit    │
                                    └─────────────┘
 ```
 
@@ -133,6 +140,13 @@ AS500/
 │       │   ├── runtime.ts    # Core engine (list + form screens)
 │       │   └── router.ts     # Router integration
 │       ├── configs/          # CRUDTable config definitions
+│       ├── menus/            # Menu tree + generic menu runtime
+│       ├── mcp/              # Remote MCP server (OAuth 2.1 + tools)
+│       │   ├── index.ts      # Express app (auth router + /mcp)
+│       │   ├── transport.ts  # McpServer factory + tool registration
+│       │   ├── toolHandlers.ts  # Per-operation handlers (RBAC enforced)
+│       │   ├── audit.ts      # mcp_audit_log writer
+│       │   └── oauth/        # Provider, tokens, consent, clients store
 │       ├── screens/          # Hand-written screens (login, menu, help)
 │       ├── services/         # Business logic
 │       ├── session/          # Session management
@@ -170,6 +184,176 @@ export const myItemsConfig: CRUDTableConfig = {
 The runtime auto-generates: paginated list screen, create/edit form, option handling (2=Edit, 4=Delete), F-key navigation, validation, and error handling.
 
 See [CLAUDE.md](CLAUDE.md) for the full CRUDTable reference.
+
+## Remote MCP Server
+
+AS500 ships a [Model Context Protocol](https://modelcontextprotocol.io) server that makes every CRUDTable config available to remote AI agents as structured tools — **without writing a second handler**. The same config that powers the green-screen UI powers the MCP surface.
+
+### What the agent gets
+
+For every CRUDTable config with an `mcp` block, the server auto-generates five tools:
+
+| Tool | Purpose |
+|---|---|
+| `<id>.list`   | Paginated list with `limit` / `offset` |
+| `<id>.read`   | Fetch one record by id |
+| `<id>.create` | Create, runs the same validators as the form |
+| `<id>.update` | Partial update by id |
+| `<id>.delete` | Delete by id, uses `read` to fetch the target first |
+
+Each tool's input schema is **derived from the same field configs** as the form — field types, `required`, validators, and `form.formValue` all apply identically. Any operation can be individually disabled or gated behind its own permission.
+
+### Transport & endpoints
+
+Runs on its own port (default `3002`) with the MCP **Streamable HTTP** transport and a full OAuth 2.1 + Dynamic Client Registration (DCR) layer:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /mcp`                                                | MCP endpoint — Bearer-authed, rate-limited, per-call audit row |
+| `GET  /mcp/health`                                         | Unauthenticated liveness probe |
+| `GET  /.well-known/oauth-authorization-server`             | RFC 8414 AS metadata |
+| `GET  /.well-known/oauth-protected-resource/mcp`           | RFC 9728 resource metadata (advertised via `WWW-Authenticate` on 401s) |
+| `POST /register`                                           | RFC 7591 Dynamic Client Registration |
+| `GET  /authorize` → `POST /authorize/consent`              | Green-on-black consent page, dedicated `mcpLogin` (separate from AS500 session auth) |
+| `POST /token`                                              | Authorization-code and refresh-token grants, PKCE-enforced |
+| `POST /revoke`                                             | RFC 7009 token revocation |
+
+### Auth posture
+
+- **Access tokens**: short-lived (1 h) HS256 JWTs signed with `AS500_MCP_JWT_SECRET` (≥32 chars). Revocable per-token via the `auth_tokens` table keyed by `jti`.
+- **Refresh tokens**: opaque 256-bit strings (30 d), rotated on every refresh grant — old refresh + its paired access row are both revoked.
+- **Authorization codes**: opaque 256-bit strings (60 s), single-use, PKCE S256 required.
+- **RBAC**: every tool call enforces `config.requirePermission`, `ServiceCall.requirePermission`, and optional per-op `mcp.operations[op].requirePermission`. Admins bypass (matching the UI).
+- **Rate limiting**: 120 requests / minute per registered client in production (600 / min in dev), keyed by `clientId` with IP fallback; 429 + `Retry-After: 60` on excess.
+- **Audit log**: every call writes one row to `mcp_audit_log` with `(client_id, user_id, tool_name, config_id, action, ok, error_code, duration_ms, params_hash)`. Parameter values are never persisted — only a sha256 of the JSON input.
+
+### Adding a CRUDTable to the MCP surface
+
+Add an `mcp` block on the existing `CRUDTableConfig`. That's it — no new routes, no new handler, no code duplication:
+
+```typescript
+export const thingsConfig: CRUDTableConfig = {
+  id: 'things',
+  // …columns / fields / services as usual…
+  mcp: {
+    name: 'things',
+    description: 'Things managed by the AS500 Thing registry.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: { requirePermission: PERMISSIONS.THINGS_DELETE },
+    },
+    // Any caller-supplied context the services need
+    scope: [
+      { name: 'ownerId', type: 'number', required: true, description: 'Owner user id' },
+    ],
+  },
+};
+```
+
+See `server/src/configs/timeRegV2.ts` for a working reference and `.claude/skills/crudtable/SKILL.md` § *Step 5 (optional) — Expose the config over MCP* for the full recipe.
+
+### Configuration
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `AS500_MCP_JWT_SECRET` | HS256 signing key for access tokens (≥32 chars). **Required in production.** `docker-compose.yml` already pins a dev value so tokens survive `docker-compose restart`. | random (plain `npm run dev`) |
+| `MCP_PORT`             | Port the MCP Express app binds. Published as `3002:3002` by `docker-compose.yml`. | `3002` |
+| `MCP_ENABLED`          | Set to `false` to skip booting the MCP server alongside the WebSocket server. | `true` |
+
+### Smoke test
+
+Walks the full DCR → consent → token → `tools/list` → `tools/call` → refresh path and spot-checks the audit log:
+
+```bash
+cd server
+npx tsc && node scripts/smoke-mcp.mjs
+```
+
+Expects Postgres up (`docker-compose up -d postgres`) and the seed already run (`KALLE` / `password` is the test account).
+
+### Connecting from Claude Code
+
+Claude Code (2026+) speaks MCP natively and drives the full OAuth 2.1 + DCR dance for you — you never paste a token by hand.
+
+**1. Start the server.** `docker-compose up` boots Postgres, the WebSocket server **and** the MCP server in one shot — the `server` service publishes both `3001` (WebSocket) and `3002` (MCP). No extra step. Confirm it's up:
+
+```bash
+curl http://localhost:3002/mcp/health
+# => {"ok":true,"auth":"oauth2.1","phase":3}
+```
+
+(Using `npm run dev` in `server/` directly also works — MCP still boots in-process unless `MCP_ENABLED=false`.)
+
+**2. Register the server with Claude Code.** From the project root:
+
+```bash
+# Local dev
+claude mcp add --transport http as500 http://localhost:3002/mcp
+
+# Production deployment
+claude mcp add --transport http as500 https://adv.entence.se/mcp
+```
+
+The first time you invoke an `as500` tool (or run `/mcp` in Claude Code), Claude Code will:
+
+1. Hit `/.well-known/oauth-protected-resource/mcp` to discover the authorization server.
+2. Dynamically register itself as an OAuth client via `POST /register` (RFC 7591).
+3. Open `http://localhost:3002/authorize?...` in your browser — the green-on-black AS500 consent page.
+4. Prompt you for your AS500 username + password and click **Approve**.
+5. Exchange the resulting code for an access + refresh token pair (stored in Claude Code's OS keychain).
+6. Auto-refresh access tokens every hour; you won't see a login prompt again for 30 days unless you revoke.
+
+**3. Verify.** In a Claude Code session:
+
+```
+> /mcp
+# Lists connected servers. You should see `as500 — connected (N tools)`.
+
+> Use the as500 tools to list my time entries for today.
+# Claude picks `timereg_v2.list`, passes { userId: <your id>, date: <today> },
+# and shows the rows in its reply.
+```
+
+**4. Per-project scoping (optional).** If you only want `as500` available inside this repo, commit a project-level `.mcp.json` at the repo root instead:
+
+```json
+{
+  "mcpServers": {
+    "as500": {
+      "type": "http",
+      "url": "http://localhost:3002/mcp"
+    }
+  }
+}
+```
+
+Claude Code picks it up automatically when you open the project and prompts for approval once.
+
+**5. Managing the connection:**
+
+```bash
+claude mcp list                       # All registered servers
+claude mcp get as500                   # Details + auth status
+claude mcp remove as500                # Disconnect + revoke local tokens
+```
+
+To revoke **server-side** (e.g. a laptop is lost), an admin can nuke the client + its tokens in Postgres:
+
+```sql
+-- Revoke a single client's access + refresh tokens
+UPDATE auth_tokens SET revoked_at = NOW()
+  WHERE client_id = 'CLIENT_ID_FROM_oauth_clients' AND revoked_at IS NULL;
+
+-- Or delete the client entirely (cascades consents)
+DELETE FROM oauth_clients WHERE id = 'CLIENT_ID';
+```
+
+**What the agent can do** is governed entirely by your existing RBAC. The agent inherits the AS500 user's permissions at consent time — no extra grant dialog per tool, no privilege widening. Every call it makes lands in `mcp_audit_log` with the client id + user id + tool + outcome.
+
+> **Security note:** in production, set `AS500_MCP_JWT_SECRET` to a fixed ≥32-char value and put `/mcp` behind your TLS termination. The dev default regenerates the JWT secret on each server restart, which would invalidate every agent's access token.
 
 ## Authentication & Security
 
@@ -331,5 +515,11 @@ See [BACKUP.md](BACKUP.md) for backup system documentation including:
 - Manual backup creation
 - Restoring from backups
 - Backup management
+
+See [CLAUDE.md § Remote MCP Server](CLAUDE.md#remote-mcp-server) for MCP server internals:
+- OAuth 2.1 + DCR wire-up and the `oauth/` module layout
+- `auth_tokens` column reuse for MCP-kind tokens
+- `mcp_audit_log` schema and retention considerations
+- How to expose a new CRUDTable config as MCP tools
 
 

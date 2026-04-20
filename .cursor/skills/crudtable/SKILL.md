@@ -188,6 +188,52 @@ If the list needs caller-supplied filtering or defaults, put that logic in `init
 - Dynamic header text via `listHeader(ctx)`, custom F-keys via `listKeys`
 - Cross-config navigation via `openUI.mapContext`
 
+## Step 5 (optional) — Expose the config over MCP
+
+Every CRUDTable config can be opened up to remote AI agents as a set of MCP tools with **no extra handler code**. Add an `mcp` block to the config; the runtime at `server/src/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs, and enforces the same AS500 RBAC that gates the terminal UI.
+
+```ts
+// Inside your CRUDTableConfig
+mcp: {
+  name: 'things',                 // prefix for the tool names (e.g. things.list)
+  description: 'Things managed by the AS500 Thing registry.',
+  operations: {
+    list: true,                   // enable individually; omit/false to disable
+    read: true,
+    create: true,
+    update: true,
+    delete: { requirePermission: PERMISSIONS.THINGS_DELETE },
+  },
+  // Declare any caller-supplied context (analog of `session.context.crud_*_input`).
+  // The runtime surfaces these as required params on every tool, then threads
+  // them into the synthesized `CRUDContext` before calling your services.
+  scope: [
+    { name: 'ownerId', type: 'number', required: true, description: 'Owner user id' },
+  ],
+}
+```
+
+What the MCP runtime gives you for free:
+
+- JSON-schema/zod input validation derived from each field's `form.type` + `required`
+- Per-tool permission enforcement: `config.requirePermission`, per-`ServiceCall.requirePermission`, and per-op override via `mcp.operations[op].requirePermission` (admins bypass all three, same as the UI)
+- OAuth 2.1 + Dynamic Client Registration on `/mcp` with per-token rate limiting and an append-only row in `mcp_audit_log` for every call (ok/error, client_id, user_id, config_id, op, duration, sha256 params hash — values are never logged)
+- Identical validators and services to the terminal UI: no duplication, no drift
+
+Things you still own:
+- Make sure `services.read` is implemented — `update` and `delete` use it to fetch the current row before running validators. If a CRUDTable config previously only had `list/create/update/delete`, add `read` before turning on MCP updates or deletes.
+- If an operation should be visible in the UI but not to agents, mark it `false` in `mcp.operations`.
+- If the UI gates a config behind a permission, grant that same permission to any agent role that needs MCP access. Don't widen for agents.
+
+Quickest end-to-end smoke of your new MCP surface:
+
+```bash
+cd server
+npx tsc && node scripts/smoke-mcp.mjs   # walks DCR → consent → token → tools/list → tools/call
+```
+
+Reference: `server/src/configs/timeRegV2.ts` has a working `mcp` block with scope params. The `MCPConfig` and `MCPOperationOverride` types in `server/src/crudtable/types.ts` are the authoritative shape; `server/src/mcp/schemaBuilder.ts` shows how each field is translated into zod.
+
 ## Patterns to reach for
 
 | Need | Use |

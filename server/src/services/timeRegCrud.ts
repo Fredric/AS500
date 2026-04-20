@@ -3,6 +3,7 @@
 
 import {
   getOrCreateDay,
+  getDayItem,
   getDayItems,
   createDayItem,
   updateDayItem,
@@ -122,6 +123,28 @@ export async function listJiraTasks(): Promise<jiraTask[]> {
  */
 export async function deleteEntry(itemId: number): Promise<boolean> {
   return await deleteDayItem(itemId);
+}
+
+/**
+ * Fetch a single time entry by ID. Matches the shape returned by
+ * {@link listEntries} — including the formatted `rowsum` string — so that
+ * consumers (CRUDTable's update/delete flows, MCP `<configId>.read`) see a
+ * consistent record regardless of which call produced it.
+ *
+ * Returns `null` when the entry does not exist; never throws for not-found.
+ */
+export async function readEntry(params: { id: number }): Promise<Record<string, unknown> | null> {
+  const item = await getDayItem(params.id);
+  if (!item) return null;
+  return {
+    id: item.id,
+    day_id: item.day_id,
+    start_hour: item.start_hour,
+    end_hour: item.end_hour,
+    rowsum: formatHours(item.rowsum),
+    jiratask: item.jiratask || '',
+    description: item.description || '',
+  };
 }
 
 // Re-export helpers the config needs

@@ -3,6 +3,7 @@ import {
   pgEnum,
   serial,
   text,
+  varchar,
   boolean,
   integer,
   numeric,
@@ -10,6 +11,7 @@ import {
   date,
   unique,
   index,
+  uniqueIndex,
   primaryKey,
   customType,
 } from 'drizzle-orm/pg-core';
@@ -55,6 +57,25 @@ export const dayItems = pgTable('day_items', {
   sort_order: integer('sort_order').default(0).notNull(),
 });
 
+/**
+ * `auth_tokens` stores both terminal-session tokens (the original AS500 login
+ * flow) and MCP OAuth tokens. The `kind` discriminator tells them apart:
+ *
+ *  - `'as500'`        — classic terminal login tokens (pre-existing rows).
+ *                        `token` is the primary session token; `access_token`
+ *                        / `refresh_token` are the newer JWT-style pair.
+ *  - `'mcp_authcode'` — short-lived one-time OAuth 2.1 authorization codes.
+ *                        Uses `code_challenge` / `code_challenge_method`
+ *                        (PKCE) and `redirect_uri` (must match on `/token`).
+ *  - `'mcp_access'`   — MCP access JWT. `jti` carries the JWT's `jti` claim
+ *                        so per-request revocation is a single indexed lookup.
+ *  - `'mcp_refresh'`  — opaque MCP refresh token. Rotated on each refresh
+ *                        grant by setting `revoked_at` on the old row.
+ *
+ * `client_id` is NULL for `'as500'` rows and FK-shaped (but left unreferenced
+ * in the column itself to avoid coupling terminal login to `oauth_clients`)
+ * for the MCP kinds.
+ */
 export const authTokens = pgTable('auth_tokens', {
   id: serial('id').primaryKey(),
   user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -71,6 +92,12 @@ export const authTokens = pgTable('auth_tokens', {
   ip_address: inet('ip_address'),
   last_used_at: timestamp('last_used_at', { withTimezone: true }).defaultNow(),
   revoked_at: timestamp('revoked_at', { withTimezone: true }),
+  kind: varchar('kind', { length: 20 }).default('as500').notNull(),
+  client_id: varchar('client_id', { length: 64 }),
+  jti: varchar('jti', { length: 64 }),
+  code_challenge: varchar('code_challenge', { length: 128 }),
+  code_challenge_method: varchar('code_challenge_method', { length: 8 }),
+  redirect_uri: text('redirect_uri'),
 }, (table) => [
   index('idx_auth_tokens_token').on(table.token),
   index('idx_auth_tokens_access_token').on(table.access_token).where(sql`${table.revoked_at} IS NULL`),
@@ -78,6 +105,10 @@ export const authTokens = pgTable('auth_tokens', {
   index('idx_auth_tokens_user_id').on(table.user_id),
   index('idx_auth_tokens_expires_at').on(table.expires_at),
   index('idx_auth_tokens_user_device').on(table.user_id, table.device_id).where(sql`${table.revoked_at} IS NULL`),
+  // Per-request MCP revocation check: look up by (kind, jti) and ensure
+  // revoked_at is NULL. Partial unique index keeps the hot path to one row.
+  uniqueIndex('idx_auth_tokens_kind_jti').on(table.kind, table.jti).where(sql`${table.jti} IS NOT NULL`),
+  index('idx_auth_tokens_client_id').on(table.client_id).where(sql`${table.client_id} IS NOT NULL`),
 ]);
 
 // ============================================
@@ -170,4 +201,72 @@ export const userPermissions = pgTable('user_permissions', {
   granted: boolean('granted').default(true).notNull(),
 }, (t) => [
   primaryKey({ columns: [t.user_id, t.permission_key] }),
+]);
+
+// ============================================
+// MCP / OAuth 2.1 — Remote MCP server tables
+// ============================================
+//
+// These tables back the `POST /mcp` endpoint and its OAuth 2.1 authorization
+// flow. See `DOCS/MCP/` (once published) for the full protocol shape.
+//
+// - `oauth_clients`     Dynamically registered (RFC 7591) MCP client apps.
+// - `oauth_consents`    Per-(user, client) remember-me consents so returning
+//                       agents skip the consent checkbox.
+// - `mcp_audit_log`     Append-only record of every tool call. Parameter
+//                       values are NOT persisted (hash only) — avoids leaking
+//                       PII/secrets on diagnostic reads.
+//
+// MCP-kind tokens live in `auth_tokens` via the `kind` discriminator. See the
+// comment on `authTokens` above.
+
+export const oauthClients = pgTable('oauth_clients', {
+  // Random id issued at `/register` time. Not a serial: clients embed it in
+  // subsequent requests, so a short stable string is friendlier.
+  id: varchar('id', { length: 64 }).primaryKey(),
+  // bcrypt hash. NULL for public clients (PKCE-only, no client auth).
+  client_secret_hash: varchar('client_secret_hash', { length: 128 }),
+  client_name: varchar('client_name', { length: 255 }).notNull(),
+  // JSON-encoded string[] of allowed redirect URIs.
+  redirect_uris: text('redirect_uris').notNull(),
+  token_endpoint_auth_method: varchar('token_endpoint_auth_method', { length: 32 }).notNull(),
+  registered_at: timestamp('registered_at', { withTimezone: true }).defaultNow().notNull(),
+  // Verbatim RFC 7591 registration payload for audit / debugging.
+  metadata: text('metadata'),
+});
+
+export const oauthConsents = pgTable('oauth_consents', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  client_id: varchar('client_id', { length: 64 }).notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  scope: varchar('scope', { length: 255 }).notNull(),
+  granted_at: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+  revoked_at: timestamp('revoked_at', { withTimezone: true }),
+}, (t) => [
+  // Fast "has this user already consented to this client+scope?" lookup on the
+  // authorize path. Revoked consents still match — callers filter on revoked_at.
+  index('idx_oauth_consents_user_client').on(t.user_id, t.client_id),
+]);
+
+export const mcpAuditLog = pgTable('mcp_audit_log', {
+  id: serial('id').primaryKey(),
+  // Not FK-referenced: audit rows must survive client/user deletion.
+  client_id: varchar('client_id', { length: 64 }),
+  user_id: integer('user_id'),
+  tool_name: varchar('tool_name', { length: 128 }).notNull(),
+  config_id: varchar('config_id', { length: 64 }).notNull(),
+  // list | read | create | update | delete
+  action: varchar('action', { length: 16 }).notNull(),
+  // sha256 hex of the JSON-serialized params; lets us group identical calls
+  // without persisting potentially-sensitive inputs.
+  params_hash: varchar('params_hash', { length: 64 }).notNull(),
+  ok: boolean('ok').notNull(),
+  error_code: varchar('error_code', { length: 64 }),
+  duration_ms: integer('duration_ms').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_mcp_audit_log_created_at').on(t.created_at),
+  index('idx_mcp_audit_log_client_id').on(t.client_id),
+  index('idx_mcp_audit_log_user_id').on(t.user_id),
+  index('idx_mcp_audit_log_config_id').on(t.config_id),
 ]);
