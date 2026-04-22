@@ -275,9 +275,9 @@ const server = app.listen(0, '127.0.0.1', async () => {
     else fail('tools/list returned no tools');
 
     // -------- 11. tools/call (a read-only list) --------
-    // Use `timereg_v2.list` — its MCP scope requires `userId` and `date`.
+    // Use `timereg_v2_list` — its MCP scope requires `userId` and `date`.
     // KALLE's id is 3 (from the seed) and today is fine as the workday.
-    const listTool = toolNames.find((n) => n.endsWith('.list'));
+    const listTool = toolNames.find((n) => n.endsWith('_list'));
     if (listTool) {
       div(`POST /mcp tools/call ${listTool}`);
       const today = new Date().toISOString().split('T')[0];
@@ -301,7 +301,7 @@ const server = app.listen(0, '127.0.0.1', async () => {
       // the full loop works end-to-end.
       ok(`tools/call completed (isError=${isError})`);
     } else {
-      console.log('  (no .list tool registered; skipping tools/call)');
+      console.log('  (no _list tool registered; skipping tools/call)');
     }
 
     // -------- 12. refresh --------

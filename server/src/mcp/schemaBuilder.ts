@@ -221,7 +221,7 @@ export function buildInputShape(
 // ============================================
 
 export function toolName(configId: string, op: McpOp): string {
-  return `${configId}.${op}`;
+  return `${configId}_${op}`;
 }
 
 export function toolDescription(
