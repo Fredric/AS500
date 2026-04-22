@@ -23,11 +23,18 @@ services:
     command: sh -c "touch .env.local && npm ci && npm run dev"
     ports:
       - "3001:3001"
+      # Remote MCP server (OAuth 2.1 + /mcp). Booted in-process by src/index.ts
+      # when MCP_ENABLED is not 'false'. Published on the same port on the host
+      # so Claude Code / other MCP clients can connect to http://localhost:3002/mcp.
+      - "3002:3002"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://as500:as500@postgres:5432/as500
+      # Stable JWT secret so MCP access tokens survive `docker-compose restart`.
+      # In dev this is fine committed; override in prod via env / secret manager.
+      AS500_MCP_JWT_SECRET: dev-secret-do-not-use-in-prod-at-least-32-chars
 
   client:
     image: node:20-bullseye

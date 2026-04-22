@@ -28,7 +28,7 @@ export interface CRUDContext {
 export interface ServiceCall {
   service: Record<string, Function>;
   method: string;
-  params?: (context: CRUDContext) => unknown;
+  params?: (context: CRUDContext) => unknown | Promise<unknown>;
   requirePermission?: string; // Optional permission key required to execute this operation
 }
 
@@ -69,6 +69,22 @@ export interface FieldConfig {
       record: Record<string, unknown>,
       datasource?: Record<string, unknown>[]
     ) => string;
+  };
+
+  /**
+   * MCP (Model Context Protocol) tuning for this field when the parent config
+   * exposes operations to external agents. Ignored entirely when the parent
+   * has no `mcp` block. See {@link MCPConfig} for the opt-in shape.
+   */
+  mcp?: {
+    /** Agent-facing description; falls back to `label` when absent. */
+    description?: string;
+    /**
+     * Hide this field from every generated MCP tool schema (both input and
+     * output). Use for internal identifiers, audit columns, or derived
+     * display-only fields that should not be set or surfaced to agents.
+     */
+    exclude?: boolean;
   };
 }
 
@@ -200,6 +216,101 @@ export interface RelationConfig {
   mapInput: (editRecord: Record<string, unknown>) => Record<string, unknown>;
 }
 
+/**
+ * Per-operation override inside {@link MCPConfig.operations}. When a bare
+ * `true` is not enough (e.g. you want to tighten the permission or reword the
+ * description for agents), pass this object instead.
+ */
+export interface MCPOperationOverride {
+  /** Per-op description override. Falls back to {@link MCPConfig.description}. */
+  description?: string;
+  /**
+   * Additional permission required to invoke this operation over MCP, **on
+   * top of** any permission on `CRUDTableConfig.requirePermission` and
+   * `ServiceCall.requirePermission`. All three are re-checked on every MCP
+   * tool call.
+   */
+  requirePermission?: string;
+}
+
+/**
+ * A scoping parameter that agents must pass with every tool call for a
+ * parent-scoped config. The runtime copies these values into the synthesized
+ * `CRUDContext.input` before validators and service `params` run — mirroring
+ * the keys a {@link RelationConfig}'s `mapInput` would emit in the in-process
+ * UI flow.
+ *
+ * Example for `modsConfig` (scoped by its parent motorcycle):
+ * ```ts
+ * scope: [{
+ *   name: 'motorcycleId',
+ *   type: 'number',
+ *   required: true,
+ *   description: 'ID of the parent motorcycle whose mods to operate on.',
+ * }]
+ * ```
+ */
+export interface MCPScopeParam {
+  name: string;
+  type: 'string' | 'number' | 'boolean';
+  required: boolean;
+  /** Agent-facing description. Should be specific — agents rely on it. */
+  description: string;
+}
+
+/**
+ * MCP (Model Context Protocol) exposure block for a {@link CRUDTableConfig}.
+ *
+ * **Presence of this block is the opt-in signal.** A config without `mcp` is
+ * never exposed over MCP regardless of any other setting. Within the block,
+ * each entry in `operations` is a second, per-operation opt-in: only explicit
+ * `true` (or an override object) causes a tool to be generated.
+ *
+ * The MCP runtime re-checks AS500 RBAC on every tool call — `requirePermission`
+ * on the config, on each referenced `ServiceCall`, and any override here —
+ * before invoking the underlying service.
+ */
+export interface MCPConfig {
+  /** Agent-facing short name. Defaults to `config.id` when absent. */
+  name?: string;
+
+  /**
+   * **Required** free-form description shown to agents whenever any operation
+   * is exposed. This is the single most important field for tool discovery —
+   * write it for an LLM that has never seen your system.
+   */
+  description: string;
+
+  /**
+   * Per-operation opt-in. A missing key or `false` means "not exposed".
+   * `true` means "exposed with defaults". An {@link MCPOperationOverride}
+   * object means "exposed with these overrides".
+   *
+   * `read` additionally requires `services.read` to be defined on the parent
+   * config; the registry will refuse to load otherwise.
+   */
+  operations: {
+    list?: boolean | MCPOperationOverride;
+    read?: boolean | MCPOperationOverride;
+    create?: boolean | MCPOperationOverride;
+    update?: boolean | MCPOperationOverride;
+    delete?: boolean | MCPOperationOverride;
+  };
+
+  /**
+   * Scoping keys the caller must provide as tool parameters. Injected into
+   * `ctx.input` before validators and service params run. See
+   * {@link MCPScopeParam}.
+   */
+  scope?: MCPScopeParam[];
+
+  /** Optional per-config rate-limit override. Both sides default from env. */
+  rateLimit?: {
+    readsPerMin?: number;
+    writesPerMin?: number;
+  };
+}
+
 // Main CRUDTable config
 export interface CRUDTableConfig {
   id: string;
@@ -211,6 +322,16 @@ export interface CRUDTableConfig {
 
   services: {
     list: ServiceCall;
+    /**
+     * Fetch a single record by primary key. Required for `mcp.operations.read`
+     * and — when present — used by the MCP runtime to resolve `editRecord` for
+     * update and `selection[0]` for delete calls.
+     *
+     * Contract: `params` receives a synthesized `CRUDContext` where
+     * `ctx.input.id` is the primary-key value supplied by the caller. The
+     * method must return the full record object or `null` when not found.
+     */
+    read?: ServiceCall;
     create?: ServiceCall;
     update?: ServiceCall;
     delete?: ServiceCall;
@@ -248,4 +369,14 @@ export interface CRUDTableConfig {
    * `server/src/configs/motorcyclesConfig.ts` for the canonical example.
    */
   relations?: RelationConfig[];
+
+  /**
+   * Opt this config into the remote MCP server, exposing one tool per enabled
+   * operation (`<id>.list`, `<id>.read`, etc.). Absent = not exposed at all.
+   *
+   * See {@link MCPConfig} for the full shape. The registry validates at load
+   * time that any exposed operation has a corresponding `ServiceCall` on
+   * `services` and that `mcp.description` is present.
+   */
+  mcp?: MCPConfig;
 }

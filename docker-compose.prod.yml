@@ -20,12 +20,18 @@ services:
       network: host
     ports:
       - "3001:3001"
+      # Remote MCP server. Bind to 127.0.0.1 only — Caddy terminates TLS on
+      # the host and reverse-proxies /mcp/* to this port.
+      - "127.0.0.1:3002:3002"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
       NODE_ENV: production
+      # REQUIRED: persistent HS256 secret for MCP access tokens. Must be
+      # >=32 chars. If unset, every restart invalidates every agent's token.
+      AS500_MCP_JWT_SECRET: ${AS500_MCP_JWT_SECRET}
     restart: unless-stopped
 
 volumes:

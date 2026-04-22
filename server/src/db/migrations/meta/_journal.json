@@ -29,6 +29,13 @@
       "when": 1776423115105,
       "tag": "0003_faithful_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776687139425,
+      "tag": "0004_true_jetstream",
+      "breakpoints": true
     }
   ]
 }

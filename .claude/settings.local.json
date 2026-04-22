@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__as500__timereg_v2_create",
+      "Bash(npx tsc *)",
+      "Read(//c/Users/fredr/.claude/**)",
+      "Read(//c/Users/fredr/AppData/Roaming/Claude/**)",
+      "Bash(python -m json.tool)",
+      "Bash(docker compose *)",
+      "Bash(curl -s http://localhost:3002/mcp/health)",
+      "mcp__as500__timereg_v2_list",
+      "mcp__as500__timereg_v2_delete"
+    ]
+  }
+}

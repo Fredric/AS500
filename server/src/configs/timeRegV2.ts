@@ -25,17 +25,31 @@ export const timeRegV2Config: CRUDTableConfig = {
       }),
     },
 
+    // Fetch a single entry by primary key. Used by the MCP runtime for
+    // `timereg_v2.read`, and to resolve `editRecord` / `selection[0]` when
+    // agents call update / delete. See `readEntry` in timeRegCrud.ts.
+    read: {
+      service: timeRegCrud,
+      method: 'readEntry',
+      params: (ctx) => ({ id: ctx.input.id as number }),
+    },
+
     create: {
       service: timeRegCrud,
       method: 'createEntry',
       requirePermission: 'time_reg:write',
-      params: (ctx) => ({
-        dayId: ctx.input.dayId as number,
-        start_hour: ctx.values.start_hour,
-        end_hour: ctx.values.end_hour,
-        jiratask: ctx.values.jiratask || null,
-        description: ctx.values.description || null,
-      }),
+      params: async (ctx) => {
+        const dayId =
+          (ctx.input.dayId as number | undefined) ??
+          (await timeRegCrud.getOrCreateDay(ctx.input.userId as number, ctx.input.date as string)).id;
+        return {
+          dayId,
+          start_hour: ctx.values.start_hour,
+          end_hour: ctx.values.end_hour,
+          jiratask: ctx.values.jiratask || null,
+          description: ctx.values.description || null,
+        };
+      },
     },
 
     update: {
@@ -168,6 +182,54 @@ export const timeRegV2Config: CRUDTableConfig = {
         ctx.input.dayId = day.id;
       },
     },
+  },
+
+  // ============================================
+  // MCP (Model Context Protocol) exposure
+  // ============================================
+  //
+  // Canonical reference config for remote MCP. Once the MCP server ships, this
+  // surfaces five tools to authorized external agents:
+  //
+  //   timereg_v2.list     timereg_v2.read
+  //   timereg_v2.create   timereg_v2.update   timereg_v2.delete
+  //
+  // Permission enforcement is inherited from the existing ServiceCall blocks
+  // (`time_reg:read` at config level, `time_reg:write` on mutations) — the
+  // MCP runtime re-checks them per call, bound to the OAuth'd user.
+  //
+  // `scope` carries the per-tool params that replace the in-process context
+  // seeded by `initTimeRegV2Context`. Agents must pass `userId` + `date` so
+  // the service can resolve (or create) the correct `days` row; `dayId` is
+  // derived server-side inside the synthesized context.
+
+  mcp: {
+    name: 'timereg',
+    description:
+      'Time registration entries for a user on a given workday. Each record ' +
+      'is a single time slot (start_hour, end_hour) optionally tagged with a ' +
+      'Jira task id and description. Hours are computed server-side.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number',
+        required: true,
+        description: 'ID of the AS500 user whose time entries are affected.',
+      },
+      {
+        name: 'date',
+        type: 'string',
+        required: true,
+        description: 'Workday in YYYY-MM-DD format. A day row is created on demand.',
+      },
+    ],
   },
 };
 

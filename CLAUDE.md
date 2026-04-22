@@ -251,6 +251,28 @@ No changes to `server/src/index.ts` or `server/src/screens/mainMenu.ts` needed. 
 
 ---
 
+## Remote MCP Server
+
+Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by adding an `mcp` block. The runtime at `server/src/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs as the terminal UI, and enforces the same AS500 RBAC.
+
+**Transport**: Streamable HTTP on a dedicated port (default 3002). Endpoints:
+- `POST /mcp` — the MCP endpoint (requires Bearer auth, rate-limited)
+- `GET /mcp/health` — liveness
+- `GET /.well-known/oauth-authorization-server` + `/.well-known/oauth-protected-resource/mcp` — discovery
+- `POST /register` — Dynamic Client Registration (RFC 7591)
+- `GET /authorize` + `POST /authorize/consent` — green-on-black consent page, dedicated `mcpLogin` (separate from AS500 session auth)
+- `POST /token`, `POST /revoke` — OAuth 2.1 token lifecycle
+
+**Auth posture**: OAuth 2.1 + PKCE + DCR. Access tokens are short-lived HS256 JWTs (1 h) with revocation via the `auth_tokens` table (`kind='mcp_access'`, keyed by `jti`). Refresh tokens (30 d) are opaque and rotated on every refresh grant. The JWT secret is `AS500_MCP_JWT_SECRET` (>=32 chars; dev auto-generates a warning-logged random secret).
+
+**Audit**: every tool call — success, validation failure, permission_denied, internal error — writes one row to `mcp_audit_log` with `(client_id, user_id, tool_name, config_id, action, ok, error_code, duration_ms, params_hash)`. Parameter values are never logged; only a sha256 of the JSON input.
+
+**Adding a CRUD config to the MCP surface**: add an `mcp: { name, description, operations, scope? }` block on the `CRUDTableConfig`. No code changes anywhere else. See `server/src/configs/timeRegV2.ts` for a working example and `.claude/skills/crudtable/SKILL.md` § "Step 5 (optional) — Expose the config over MCP" for the full recipe.
+
+**Smoke test**: `cd server && npx tsc && node scripts/smoke-mcp.mjs` walks DCR → consent → token → tools/list → tools/call → refresh and spot-checks the audit log.
+
+---
+
 ## Key Files
 
 | Purpose | Path |
@@ -268,6 +290,10 @@ No changes to `server/src/index.ts` or `server/src/screens/mainMenu.ts` needed. 
 | DB pool + Drizzle instance | `server/src/db/index.ts` |
 | Drizzle table definitions (schema) | `server/src/db/schema.ts` |
 | Rate limiter utility | `server/src/utils/rateLimiter.ts` |
+| **MCP Express app (OAuth + /mcp)** | `server/src/mcp/index.ts` |
+| **MCP tool handlers (per-op)** | `server/src/mcp/toolHandlers.ts` |
+| **MCP OAuth provider** | `server/src/mcp/oauth/provider.ts` |
+| **MCP audit log writer** | `server/src/mcp/audit.ts` |
 | Terminal hook (WebSocket) | `client/src/hooks/useTerminal.ts` |
 | Terminal renderer | `client/src/components/Terminal.tsx` |
 | Terminal styles | `client/src/styles/terminal.css` |
