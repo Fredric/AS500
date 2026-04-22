@@ -11,7 +11,7 @@
     "tsc": "npx tsc",
     "typecheck": "npx tsc --noEmit",
     "start": "node dist/index.js",
-    "seed": "tsx src/db/seed.ts",
+    "seed": "npx tsx src/db/seed.ts",
     "export-data": "tsx scripts/export-sqlite.ts",
     "import-data": "tsx scripts/import-postgres.ts",
     "migrate-data": "npm run export-data && npm run import-data",
