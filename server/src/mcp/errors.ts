@@ -66,8 +66,12 @@ export function toolResultOk(
   summary: string,
   structured?: Record<string, unknown>
 ): McpCallToolResult {
+  const text =
+    structured !== undefined
+      ? `${summary}\n\n${JSON.stringify(structured, null, 2)}`
+      : summary;
   return {
-    content: [{ type: 'text', text: summary }],
+    content: [{ type: 'text', text }],
     ...(structured !== undefined ? { structuredContent: structured } : {}),
   };
 }
