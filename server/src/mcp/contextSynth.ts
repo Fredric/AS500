@@ -182,6 +182,17 @@ export function synthesizeContext({
 
     case 'update':
       if (body.id !== undefined) ctxInput.id = body.id;
+      // Seed values from the existing record first so fields omitted from the
+      // agent's input carry forward their current values. Without this, service
+      // params functions that call normalizeTime / .trim() on missing fields
+      // throw "Cannot read properties of undefined (reading 'trim')".
+      if (editRecord) {
+        for (const [k, v] of Object.entries(editRecord)) {
+          if (k === 'id') continue;
+          values[k] = valueToString(v);
+        }
+      }
+      // Overlay with the agent-supplied fields (only keys present in the input).
       for (const [k, v] of Object.entries(body)) {
         if (k === 'id') continue;
         values[k] = valueToString(v);
