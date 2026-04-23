@@ -90,3 +90,14 @@ export const tokenRefreshRateLimiter = new RateLimiter(10, 60 * 60 * 1000); // 1
 // 120 req/min in prod, 600 in dev — a single registered client id is the key
 // when a bearer token is present; otherwise falls back to the client IP.
 export const mcpCallRateLimiter = new RateLimiter(isProduction ? 120 : 600, 60 * 1000);
+
+// Per-token limiter for the REST API `/api/*` endpoints. More permissive than
+// MCP since REST clients tend to make individual resource requests.
+// 300 req/min in prod, 600 in dev.
+export const apiCallRateLimiter = new RateLimiter(isProduction ? 300 : 600, 60 * 1000);
+
+// Per-IP limiter for the first-party `POST /api/auth/token` endpoint.
+// Slightly more generous than the WebSocket login limiter (10 vs 5) since
+// server-side apps legitimately need occasional automated logins on startup.
+// 10 attempts/min in prod, 100 in dev.
+export const directLoginRateLimiter = new RateLimiter(isProduction ? 10 : 100, 60 * 1000);

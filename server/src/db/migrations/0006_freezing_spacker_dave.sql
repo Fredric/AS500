@@ -1,0 +1,1 @@
+ALTER TABLE "mcp_audit_log" ADD COLUMN "source" varchar(8) DEFAULT 'mcp' NOT NULL;

@@ -95,15 +95,23 @@ export const mcpAuditConfig: CRUDTableConfig = {
         cellRenderer: (r) => String(r.error_code ?? ''),
       },
     },
+    source: {
+      field: 'source',
+      label: 'Src',
+      length: 4,
+      column: {
+        width: 4,
+        cellRenderer: (r) => String(r.source ?? 'mcp'),
+      },
+    },
   },
 
   columnBuilder: [
     'created_at',
     'username',
-   
     'tool_name',
     'action',
-    'client_id',
+    'source',
     'ok',
     'duration_ms',
     'error_code',

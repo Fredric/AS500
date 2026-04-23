@@ -245,6 +245,91 @@ npx tsc && node scripts/smoke-mcp.mjs   # walks DCR → consent → token → to
 
 Reference: `server/src/configs/timeRegV2.ts` has a working `mcp` block with scope params. The `MCPConfig` and `MCPOperationOverride` types in `server/src/crudtable/types.ts` are the authoritative shape; `server/src/mcp/schemaBuilder.ts` shows how each field is translated into zod.
 
+## Step 6 (optional) — Expose the config over the REST API
+
+Every CRUDTable config can also be served as a conventional HTTP REST API with **no extra handler code**. Add an `api` block to the config; the runtime at `server/src/api/` mounts routes on `GET/POST/PUT/DELETE /api/<id>[/<id>]` (port 3002) and enforces the same AS500 RBAC that gates the terminal UI and the MCP surface.
+
+```ts
+// Inside your CRUDTableConfig
+api: {
+  name: 'things',          // display name shown by GET /api discovery endpoint
+  description: 'Things managed by the AS500 Thing registry.',
+  operations: {
+    list:   true,          // enable individually; omit/false to disable
+    read:   true,          // requires services.read
+    create: true,
+    update: true,
+    delete: { requirePermission: PERMISSIONS.THINGS_DELETE },
+  },
+  // Scope params: injected into ctx.input before services run.
+  // SECURITY — use injectFromAuth: 'userId' for user-scoped configs; the
+  // runtime injects the token's userId and strips it from the URL so callers
+  // can never pass a different id.
+  scope: [
+    {
+      name: 'userId',
+      type: 'number',
+      required: true,
+      description: 'Injected from the Bearer token.',
+      injectFromAuth: 'userId',   // ← never accepted from the caller
+    },
+    {
+      name: 'date',
+      type: 'string',
+      required: true,
+      description: 'Workday in YYYY-MM-DD format — pass as ?date=…',
+    },
+  ],
+}
+```
+
+HTTP shape for a config with `id = 'things'`:
+
+| Method | URL | Purpose |
+|---|---|---|
+| `GET`    | `/api/things`    | List (paginated: `?offset=&limit=`, max 100) |
+| `GET`    | `/api/things/:id` | Read one record |
+| `POST`   | `/api/things`    | Create (body = writable fields only) |
+| `PUT`    | `/api/things/:id` | Update (body = writable fields only) |
+| `DELETE` | `/api/things/:id` | Delete (returns 204) |
+
+Non-`injectFromAuth` scope params go in the **query string** for all methods. The body contains only the resource's own writable fields.
+
+**Getting a Bearer token for the REST API:**
+
+Option A — First-party app (you own the client):
+```bash
+# Login once
+curl -X POST http://localhost:3002/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{ "username": "FREDRIC", "password": "fredric" }'
+# → { "access_token": "...", "refresh_token": "...", "expires_in": 3600 }
+
+# Use on every REST call
+curl http://localhost:3002/api/things?date=2026-04-23 \
+  -H "Authorization: Bearer <access_token>"
+
+# Refresh after 1 hour (old pair revoked, new pair returned)
+curl -X POST http://localhost:3002/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{ "refresh_token": "<token>" }'
+```
+
+Option B — Third-party / AI agent: use the full OAuth 2.1 + DCR flow (same as MCP). See `CLAUDE.md § REST API` and `server/scripts/smoke-mcp.mjs`.
+
+**What you get for free:**
+- RBAC enforcement: `config.requirePermission`, `ServiceCall.requirePermission`, per-op `api.operations[op].requirePermission` — admins bypass all three
+- Rate limiting: 300 req/min per client in production (600 in dev)
+- Audit row in `mcp_audit_log` with `source='api'` for every call
+- `services.read` required for `read`, `update`, and `delete` operations (same as MCP)
+
+**Things you still own:**
+- `services.read` must be implemented if any of `read/update/delete` are enabled
+- Scope param names must match the keys your service functions read from `ctx.input`
+- Error format is `{ "error": { "code": "…", "message": "…", "fields": […] } }` — HTTP 400/401/403/404/405/429/500
+
+Reference: `server/src/configs/timeRegV2.ts` has a working `api` block. The `APIConfig` and `APIOperationConfig` types in `server/src/crudtable/types.ts` are the authoritative shape. Full reference in `CLAUDE.md § REST API`.
+
 ## Patterns to reach for
 
 | Need | Use |
@@ -334,7 +419,7 @@ Canonical example: `server/src/configs/motorcyclesConfig.ts` (parent with two re
 
 | File | What it demonstrates |
 |---|---|
-| `server/src/configs/timeRegV2.ts` | `listHeader` + `listKeys` (F7/F8 day nav) + `input`-driven filtering + init helper |
+| `server/src/configs/timeRegV2.ts` | `listHeader` + `listKeys` (F7/F8 day nav) + `input`-driven filtering + init helper + **`mcp` block** + **`api` block** (canonical reference for both remote surfaces) |
 | `server/src/configs/userMgmtConfig.ts` | `staticOptions` select, context-sensitive `required`/`disabled`, password+confirm with validator, `formValue` for booleans |
 | `server/src/configs/roleDefaultsConfig.ts` | Composite primary key, `SYS_ADMIN` gate, validators using a seeded registry |
 | `server/src/configs/motorcyclesConfig.ts` | **`relations`** — two edit-form hotkeys (`M=Mods`, `S=Services`) jumping to scoped child lists via `mapInput` |
@@ -356,6 +441,18 @@ After implementing a new CRUD screen:
 - [ ] Permissions exist in `server/src/services/access.ts` (add them if new) and are seeded for the relevant roles
 - [ ] A `CrudNode` for the config is added to `server/src/menus/menuTree.ts` with the right parent menu, `requirePermission`, and `configId` matching the config's `id`
 - [ ] If the list needs caller context, it is seeded inside `initContext(session)` on the menu node — not from a screen handler and not in the config body
+
+**If adding an `api` block (Step 6):**
+- [ ] `services.read` is implemented (required by `read`, `update`, and `delete`)
+- [ ] `injectFromAuth: 'userId'` is used on any scope param that comes from the logged-in user — never accept userId from the caller
+- [ ] Each non-injected scope param is documented with a `description` (shown in `GET /api` discovery)
+- [ ] Only operations that should be public-facing are enabled in `api.operations`
+- [ ] Smoke-tested with `curl -X POST http://localhost:3002/api/auth/token` + a call to `GET /api/<configId>`
+
+**If adding an `mcp` block (Step 5):**
+- [ ] `services.read` is implemented (required by `update` and `delete`)
+- [ ] `mcp.description` is set (required)
+- [ ] `injectFromAuth: 'userId'` is used for user-scoped scope params
 
 ## When to go beyond the fast path
 

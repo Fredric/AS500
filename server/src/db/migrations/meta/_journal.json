@@ -43,6 +43,13 @@
       "when": 1776937861176,
       "tag": "0005_wandering_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776960045880,
+      "tag": "0006_freezing_spacker_dave",
+      "breakpoints": true
     }
   ]
 }

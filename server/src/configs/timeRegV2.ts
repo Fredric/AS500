@@ -204,6 +204,45 @@ export const timeRegV2Config: CRUDTableConfig = {
   // their own time entries. `dayId` is derived server-side inside the
   // synthesized context.
 
+  // ============================================
+  // REST API exposure
+  // ============================================
+  //
+  // Exposes the same five operations as MCP at /api/timereg_v2. Auth uses the
+  // same OAuth 2.1 Bearer tokens. `userId` is injected from the token; `date`
+  // must be supplied as a query param (e.g. ?date=2026-04-23).
+  //
+  // List / create:  GET|POST /api/timereg_v2?date=YYYY-MM-DD
+  // Read/update/delete: GET|PUT|DELETE /api/timereg_v2/:id
+
+  api: {
+    name: 'timereg',
+    description:
+      'Time registration entries for the authenticated user on a given workday.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number',
+        required: true,
+        description: 'Injected from the Bearer token — never a request param.',
+        injectFromAuth: 'userId',
+      },
+      {
+        name: 'date',
+        type: 'string',
+        required: true,
+        description: 'Workday in YYYY-MM-DD format. Pass as a query param.',
+      },
+    ],
+  },
+
   mcp: {
     name: 'timereg',
     description:

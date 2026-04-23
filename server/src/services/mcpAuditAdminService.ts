@@ -17,6 +17,7 @@ export interface McpAuditRow {
   ok: boolean;
   error_code: string | null;
   duration_ms: number;
+  source: string;
 }
 
 const MAX_ROWS = 500;
@@ -35,6 +36,7 @@ export async function listMcpAudit(_params?: Record<string, unknown>): Promise<M
       ok: mcpAuditLog.ok,
       error_code: mcpAuditLog.error_code,
       duration_ms: mcpAuditLog.duration_ms,
+      source: mcpAuditLog.source,
     })
     .from(mcpAuditLog)
     .leftJoin(users, eq(users.id, mcpAuditLog.user_id))

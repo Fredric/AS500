@@ -262,6 +262,8 @@ export const mcpAuditLog = pgTable('mcp_audit_log', {
   ok: boolean('ok').notNull(),
   error_code: varchar('error_code', { length: 64 }),
   duration_ms: integer('duration_ms').notNull(),
+  // 'mcp' = MCP tool call, 'api' = REST API call
+  source: varchar('source', { length: 8 }).default('mcp').notNull(),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('idx_mcp_audit_log_created_at').on(t.created_at),

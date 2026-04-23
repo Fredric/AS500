@@ -24,6 +24,8 @@ For deep reference, read:
 - **List + create/edit/delete on some entity?** → CRUDTable config in `server/src/configs/`, then expose it via a node in `server/src/menus/menuTree.ts`.
 - **Main menu, submenu, any grouped navigation?** → Add a `MenuNode` to `server/src/menus/menuTree.ts`. Never hand-roll a menu screen; `server/src/menus/menuRuntime.ts` renders every menu generically.
 - **Login, help, dashboard, wizard?** → Manual DSL screen in `server/src/screens/`.
+- **Expose data to a remote app via REST?** → Add an `api` block to the `CRUDTableConfig` (Step 6 in the SKILL). The runtime mounts `/api/<configId>` on port 3002 automatically. Use `POST /api/auth/token` for first-party Bearer token login.
+- **Expose data to an AI agent via MCP?** → Add an `mcp` block to the `CRUDTableConfig` (Step 5 in the SKILL).
 
 ## Authoring shape (must follow)
 
@@ -44,7 +46,7 @@ Screen IDs are always `CRUD_{config.id.toUpperCase()}` (CRUD screens) or `MENU_{
 
 ## Working examples to pattern-match against
 
-- `server/src/configs/timeRegV2.ts` — dynamic `listHeader`, F7/F8 `listKeys`, `input`-driven list params
+- `server/src/configs/timeRegV2.ts` — dynamic `listHeader`, F7/F8 `listKeys`, `input`-driven list params, **`mcp` block**, **`api` block** (canonical reference for both remote surfaces)
 - `server/src/configs/userMgmtConfig.ts` — `staticOptions` select, context-sensitive `required`/`disabled`, password + confirm validator, `formValue` mapping
 - `server/src/configs/roleDefaultsConfig.ts` — composite primary key, `SYS_ADMIN` gate
 
@@ -59,3 +61,12 @@ Open one of these before writing a config from scratch.
 - [ ] Permissions used are declared in `access.ts` and seeded for the roles that need them
 - [ ] A `CrudNode` is added to `server/src/menus/menuTree.ts` under the correct parent, with matching `configId` and the correct `requirePermission` guard
 - [ ] Per-user list filtering, if any, lives in `initContext` on the menu node — not in a screen handler
+
+**If adding an `api` block:**
+- [ ] `services.read` is implemented
+- [ ] User-scoped params use `injectFromAuth: 'userId'` — never accept `userId` from callers
+- [ ] Smoke-tested: `POST /api/auth/token` → `GET /api/<configId>`
+
+**If adding an `mcp` block:**
+- [ ] `services.read` is implemented; `mcp.description` is set
+- [ ] User-scoped params use `injectFromAuth: 'userId'`
