@@ -121,6 +121,27 @@ export const appMenuTree: MenuNode = {
           requirePermission: PERMISSIONS.SYS_ADMIN,
           configId: 'role_defaults',
         },
+        {
+          type: 'crudtable',
+          key: 'auth_tokens',
+          name: 'Auth Tokens',
+          requirePermission: PERMISSIONS.SYS_ADMIN,
+          configId: 'auth_tokens',
+        },
+        {
+          type: 'crudtable',
+          key: 'oauth_clients',
+          name: 'OAuth Clients',
+          requirePermission: PERMISSIONS.SYS_ADMIN,
+          configId: 'oauth_clients',
+        },
+        {
+          type: 'crudtable',
+          key: 'mcp_audit',
+          name: 'MCP Audit Log',
+          requirePermission: PERMISSIONS.SYS_ADMIN,
+          configId: 'mcp_audit',
+        },
       ],
     },
     {

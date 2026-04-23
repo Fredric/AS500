@@ -8,6 +8,9 @@ import { roleDefaultsConfig } from './roleDefaultsConfig.js';
 import { motorcyclesConfig } from './motorcyclesConfig.js';
 import { modsConfig } from './modsConfig.js';
 import { servicesPerformedConfig } from './servicesPerformedConfig.js';
+import { authTokensConfig } from './authTokensConfig.js';
+import { oauthClientsConfig } from './oauthClientsConfig.js';
+import { mcpAuditConfig } from './mcpAuditConfig.js';
 
 export function registerCRUDConfigs(): void {
   registerConfig(timeRegV2Config);
@@ -16,4 +19,7 @@ export function registerCRUDConfigs(): void {
   registerConfig(motorcyclesConfig);
   registerConfig(modsConfig);
   registerConfig(servicesPerformedConfig);
+  registerConfig(authTokensConfig);
+  registerConfig(oauthClientsConfig);
+  registerConfig(mcpAuditConfig);
 }
