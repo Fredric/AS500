@@ -251,6 +251,36 @@ No changes to `server/src/index.ts` or `server/src/screens/mainMenu.ts` needed. 
 
 ---
 
+## Local HTTPS for MCP (Claude Code Desktop)
+
+Claude Code Desktop requires HTTPS when consuming a remote MCP server. In local dev the MCP runs on plain HTTP (`http://localhost:3002`), so a Caddy sidecar terminates TLS at `https://localhost:3443` and proxies through.
+
+**One-time setup (Windows host):**
+
+```powershell
+# 1. Install mkcert (skip if already installed)
+winget install FiloSottile.mkcert
+
+# 2. Install the local CA into the Windows trust store
+mkcert -install
+
+# 3. Generate certs (from the repo root)
+mkcert -cert-file certs/local.pem -key-file certs/local-key.pem localhost 127.0.0.1
+```
+
+**Then start normally:**
+
+```bash
+docker-compose up
+```
+
+The `caddy-dev` service starts automatically and exposes `https://localhost:3443`.  
+Configure Claude Code Desktop's MCP server URL as `https://localhost:3443/mcp`.
+
+The cert files (`certs/*.pem`) are gitignored. The `certs/` directory is tracked via `.gitkeep`.
+
+---
+
 ## Remote MCP Server
 
 Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by adding an `mcp` block. The runtime at `server/src/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs as the terminal UI, and enforces the same AS500 RBAC.

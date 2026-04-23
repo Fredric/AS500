@@ -35,6 +35,26 @@ services:
       # Stable JWT secret so MCP access tokens survive `docker-compose restart`.
       # In dev this is fine committed; override in prod via env / secret manager.
       AS500_MCP_JWT_SECRET: dev-secret-do-not-use-in-prod-at-least-32-chars
+      # Public URL advertised in OAuth metadata — must match what MCP clients see.
+      # Caddy (caddy-dev service) terminates TLS at https://localhost:3443 and
+      # proxies to this container:3002.  Comment out to use plain http://localhost:3002.
+      MCP_PUBLIC_URL: https://localhost:3443
+
+  # Local HTTPS terminator for the MCP server.  Caddy listens on 3443 (HTTPS)
+  # and reverse-proxies to server:3002 using mkcert-signed certs from ./certs/.
+  # Run `mkcert -cert-file certs/local.pem -key-file certs/local-key.pem localhost 127.0.0.1`
+  # on the host once to generate the certs (and `mkcert -install` to trust the CA).
+  caddy-dev:
+    image: caddy:2-alpine
+    ports:
+      - "3443:3443"
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_dev_data:/data
+      - caddy_dev_config:/config
+    depends_on:
+      - server
 
   client:
     image: node:20-bullseye
@@ -52,3 +72,5 @@ volumes:
   postgres_data:
   client_node_modules:
   server_node_modules:
+  caddy_dev_data:
+  caddy_dev_config:

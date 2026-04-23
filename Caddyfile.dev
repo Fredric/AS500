@@ -1,0 +1,18 @@
+# Local development HTTPS for the MCP server (port 3443 -> server:3002).
+#
+# Prerequisites (run once on the host):
+#   winget install FiloSottile.mkcert
+#   mkcert -install
+#   mkcert -cert-file certs/local.pem -key-file certs/local-key.pem localhost 127.0.0.1
+#
+# Then: docker-compose up
+# MCP endpoint: https://localhost:3443/mcp
+
+{
+	auto_https off
+}
+
+:3443 {
+	tls /etc/caddy/certs/local.pem /etc/caddy/certs/local-key.pem
+	reverse_proxy server:3002
+}
