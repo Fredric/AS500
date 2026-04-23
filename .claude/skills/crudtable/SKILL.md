@@ -205,10 +205,21 @@ mcp: {
     delete: { requirePermission: PERMISSIONS.THINGS_DELETE },
   },
   // Declare any caller-supplied context (analog of `session.context.crud_*_input`).
-  // The runtime surfaces these as required params on every tool, then threads
-  // them into the synthesized `CRUDContext` before calling your services.
+  // The runtime surfaces agent-supplied params as required inputs on every tool,
+  // then threads them into the synthesized `CRUDContext` before calling your services.
+  //
+  // SECURITY — user-scoped configs: use `injectFromAuth: 'userId'` instead of
+  // exposing userId as a tool input. The runtime injects McpCallUser.userId
+  // (= auth_tokens.user_id for the active OAuth session) and strips the param
+  // from the Zod schema so agents can never pass a different id.
   scope: [
-    { name: 'ownerId', type: 'number', required: true, description: 'Owner user id' },
+    {
+      name: 'userId',
+      type: 'number',
+      required: true,
+      description: 'Injected from the OAuth token — not a tool input.',
+      injectFromAuth: 'userId',   // ← never appears in the tool schema
+    },
   ],
 }
 ```

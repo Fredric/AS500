@@ -59,13 +59,19 @@ function valueToString(v: unknown): string {
  *
  * Scope is destined for `ctx.input`, the rest for wherever the handler wants
  * it (form body → `ctx.values`, primary key → `ctx.input.id`).
+ *
+ * Note: params marked `injectFromAuth` are NOT in the Zod schema so they will
+ * never appear in `input`. Their values are injected separately inside
+ * `synthesizeContext` using `McpCallUser`.
  */
 export function splitScope(
   config: CRUDTableConfig,
   input: Record<string, unknown>
 ): { scope: Record<string, unknown>; body: Record<string, unknown> } {
   const scopeParams = config.mcp?.scope ?? [];
-  const scopeKeys = new Set(scopeParams.map((p: MCPScopeParam) => p.name));
+  const scopeKeys = new Set(
+    scopeParams.filter((p: MCPScopeParam) => !p.injectFromAuth).map((p: MCPScopeParam) => p.name)
+  );
   const scope: Record<string, unknown> = {};
   const body: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
@@ -73,6 +79,31 @@ export function splitScope(
     else body[k] = v;
   }
   return { scope, body };
+}
+
+/**
+ * Build the server-injected portion of the scope: values for every
+ * `MCPScopeParam` whose `injectFromAuth` is set. These are sourced exclusively
+ * from the authenticated `McpCallUser` — agents cannot supply or override them.
+ *
+ * Currently only `injectFromAuth: 'userId'` is supported, mapping to
+ * `McpCallUser.userId` (the integer id that corresponds to
+ * `auth_tokens.user_id` for the active OAuth session).
+ */
+export function buildInjectedScope(
+  config: CRUDTableConfig,
+  user: McpCallUser
+): Record<string, unknown> {
+  const injected: Record<string, unknown> = {};
+  for (const p of config.mcp?.scope ?? []) {
+    if (!p.injectFromAuth) continue;
+    switch (p.injectFromAuth) {
+      case 'userId':
+        injected[p.name] = user.userId;
+        break;
+    }
+  }
+  return injected;
 }
 
 export interface SynthContextArgs {
@@ -119,7 +150,11 @@ export function synthesizeContext({
 }: SynthContextArgs): CRUDContext {
   const { scope, body } = splitScope(_config, input);
 
-  const ctxInput: Record<string, unknown> = { ...scope };
+  // Merge agent-supplied scope first, then overwrite with server-injected
+  // values so agents can never smuggle in their own userId (or any other
+  // injectFromAuth param) even if they somehow include the key.
+  const injected = buildInjectedScope(_config, user);
+  const ctxInput: Record<string, unknown> = { ...scope, ...injected };
   const values: Record<string, string> = {};
 
   // Per-op wiring.

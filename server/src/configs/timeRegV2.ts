@@ -199,16 +199,17 @@ export const timeRegV2Config: CRUDTableConfig = {
   // MCP runtime re-checks them per call, bound to the OAuth'd user.
   //
   // `scope` carries the per-tool params that replace the in-process context
-  // seeded by `initTimeRegV2Context`. Agents must pass `userId` + `date` so
-  // the service can resolve (or create) the correct `days` row; `dayId` is
-  // derived server-side inside the synthesized context.
+  // seeded by `initTimeRegV2Context`. Agents must pass `date`; `userId` is
+  // automatically injected from the OAuth token so agents can only ever access
+  // their own time entries. `dayId` is derived server-side inside the
+  // synthesized context.
 
   mcp: {
     name: 'timereg',
     description:
-      'Time registration entries for a user on a given workday. Each record ' +
-      'is a single time slot (start_hour, end_hour) optionally tagged with a ' +
-      'Jira task id and description. Hours are computed server-side.',
+      'Time registration entries for the authenticated user on a given workday. ' +
+      'Each record is a single time slot (start_hour, end_hour) optionally tagged ' +
+      'with a Jira task id and description. Hours are computed server-side.',
     operations: {
       list: true,
       read: true,
@@ -221,7 +222,10 @@ export const timeRegV2Config: CRUDTableConfig = {
         name: 'userId',
         type: 'number',
         required: true,
-        description: 'ID of the AS500 user whose time entries are affected.',
+        description:
+          'Automatically injected from the OAuth token — not a tool input. ' +
+          'Always resolves to the authenticated user\'s own id.',
+        injectFromAuth: 'userId',
       },
       {
         name: 'date',

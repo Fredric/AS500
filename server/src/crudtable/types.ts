@@ -249,6 +249,28 @@ export interface MCPOperationOverride {
  *   description: 'ID of the parent motorcycle whose mods to operate on.',
  * }]
  * ```
+ *
+ * ## Server-injected params (`injectFromAuth`)
+ *
+ * When `injectFromAuth` is set, the param is **never exposed in the tool
+ * schema** — agents cannot supply it. Instead the MCP runtime injects the
+ * value from the authenticated caller (`McpCallUser`) before
+ * `synthesizeContext` runs, so `ctx.input[name]` is always the authenticated
+ * user's own value. This is the correct pattern for `userId` on any config
+ * that must be scoped to the calling user:
+ *
+ * ```ts
+ * scope: [{
+ *   name: 'userId',
+ *   type: 'number',
+ *   required: true,
+ *   description: 'Injected from the OAuth token — not a tool input.',
+ *   injectFromAuth: 'userId',
+ * }]
+ * ```
+ *
+ * The service `params` function continues to read `ctx.input.userId as number`
+ * unchanged; the only difference is where the value originates.
  */
 export interface MCPScopeParam {
   name: string;
@@ -256,6 +278,15 @@ export interface MCPScopeParam {
   required: boolean;
   /** Agent-facing description. Should be specific — agents rely on it. */
   description: string;
+  /**
+   * When present, this param is **omitted from the generated tool schema** and
+   * its value is automatically injected from the authenticated caller. Only
+   * `'userId'` is supported today; the union can be widened as needed.
+   *
+   * - `'userId'` → injected from `McpCallUser.userId` (the integer id that
+   *   corresponds to `auth_tokens.user_id` for the active OAuth session).
+   */
+  injectFromAuth?: 'userId';
 }
 
 /**

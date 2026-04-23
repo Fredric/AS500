@@ -58,6 +58,10 @@ function zodForScopeParam(p: MCPScopeParam): ZodType {
 function scopeShape(config: CRUDTableConfig): ZodRawShape {
   const shape: ZodRawShape = {};
   for (const p of config.mcp?.scope ?? []) {
+    // Server-injected params are never exposed in the tool schema — agents
+    // cannot supply them. The value is populated from McpCallUser in
+    // contextSynth.ts before service params run.
+    if (p.injectFromAuth) continue;
     shape[p.name] = zodForScopeParam(p);
   }
   return shape;
