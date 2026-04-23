@@ -203,8 +203,8 @@ export function renderConsentPage(v: ConsentTemplateVars): string {
     </div>
 
     <div class="actions">
-      <button type="submit" name="decision" value="deny" class="deny">Deny</button>
       <button type="submit" name="decision" value="approve">Approve</button>
+      <button type="submit" name="decision" value="deny" class="deny">Deny</button>
     </div>
   </form>
 

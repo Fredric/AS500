@@ -32,6 +32,7 @@ services:
       # REQUIRED: persistent HS256 secret for MCP access tokens. Must be
       # >=32 chars. If unset, every restart invalidates every agent's token.
       AS500_MCP_JWT_SECRET: ${AS500_MCP_JWT_SECRET}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL}
     restart: unless-stopped
 
 volumes:

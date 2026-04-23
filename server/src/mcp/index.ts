@@ -64,6 +64,9 @@ export interface McpAppOptions {
 
 export function buildMcpApp(opts: McpAppOptions = {}): Express {
   const app = express();
+  // Caddy terminates TLS and sets X-Forwarded-For; trust the first proxy so
+  // express-rate-limit (used by mcpAuthRouter) can read the real client IP.
+  app.set('trust proxy', 1);
   const issuerUrl =
     opts.issuerUrl ??
     new URL(`http://localhost:${process.env.MCP_PORT ?? DEFAULT_MCP_PORT}`);

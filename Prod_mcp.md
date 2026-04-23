@@ -116,7 +116,7 @@ adv.entence.se {
     path /token
     path /revoke
   }
-  reverse_proxy @mcp [::1]:3002
+  reverse_proxy @mcp 127.0.0.1:3002
 
   # Everything else → green-screen app (WebSocket + SPA).
   reverse_proxy [::1]:3001
