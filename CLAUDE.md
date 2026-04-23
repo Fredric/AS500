@@ -185,7 +185,7 @@ All menus (main menu, admin submenus, any future grouped navigation) are driven 
   - `ActionNode` — a built-in action (currently only `action: 'log_off'`)
 - `menuRuntime.ts` handles **every** menu screen generically: permission-filters items, renders a numbered list, pushes onto `session.screenStack`, and navigates on Enter. F3/F12/Esc always pop back to the parent.
 - Screen IDs: the root menu is `MAIN_MENU`; every nested menu is `MENU_{KEY_UPPERCASE}` (derived via `menuScreenId(key)` from `menuTree.ts`).
-- Access control: `requirePermission` or `requireAdmin` on any node hides it for users who lack access — enforced before render, so invisible items are never selectable.
+- Access control: `requirePermission` on any node hides it for users who lack the permission — enforced before render, so invisible items are never selectable.
 - CRUDTable context seeding: if a `CrudNode` declares `initContext(session)`, the runtime calls it **before** handing control to the CRUD runtime. This replaces the old pattern of seeding context from a screen handler.
 
 ### Shape of a menu node
@@ -210,7 +210,7 @@ export const appMenuTree: MenuNode = {
       type: 'menu',
       key: 'admin',
       name: 'Administration',
-      requireAdmin: true,
+      requirePermission: PERMISSIONS.SYS_ADMIN,
       items: [ /* nested nodes — renders screen MENU_ADMIN */ ],
     },
     { type: 'action', key: 'log_off', name: 'Log Off', action: 'log_off' },

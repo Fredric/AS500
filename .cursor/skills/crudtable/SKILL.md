@@ -166,7 +166,7 @@ import { thingsConfig } from '../configs/thingsConfig.js';
 
 **No other files need to change.** No edits to `server/src/index.ts`, `server/src/screens/mainMenu.ts`, or any manual screen handler. The menu runtime:
 
-1. Hides the item if the user lacks `requirePermission` / `requireAdmin`.
+1. Hides the item if the user lacks `requirePermission`.
 2. Pushes the parent menu onto `session.screenStack` on selection.
 3. Awaits `initContext(session)` if provided.
 4. Sets `session.currentScreen = 'CRUD_THINGS'` (derived as `'CRUD_' + config.id.toUpperCase()`) and returns the list screen.
@@ -328,7 +328,7 @@ Canonical example: `server/src/configs/motorcyclesConfig.ts` (parent with two re
 - **Do not use a different screen-ID convention.** It must be exactly `CRUD_{config.id.toUpperCase()}` — anything else won't route.
 - **Do not forget `length`.** It's required on every `FieldConfig`; it drives form width and is the column-width fallback.
 - **Do not mix config `id` casing.** Use lowercase-snake in `id` (`user_mgmt`, `timereg_v2`) — derived IDs will uppercase it.
-- **Do not bypass `requirePermission`.** If a CRUD operation is sensitive, gate it per-service, not by commenting it out in the UI. Set `requirePermission` / `requireAdmin` on the menu node too, so the entry is hidden for users without access.
+- **Do not bypass `requirePermission`.** If a CRUD operation is sensitive, gate it per-service, not by commenting it out in the UI. Set `requirePermission` on the menu node too, so the entry is hidden for users without access.
 
 ## Working examples in the repo
 
@@ -354,7 +354,7 @@ After implementing a new CRUD screen:
 - [ ] Every `fieldConfigs[*]` has `length`
 - [ ] `columnBuilder` and `formBuilder` reference only existing `fieldConfigs` keys
 - [ ] Permissions exist in `server/src/services/access.ts` (add them if new) and are seeded for the relevant roles
-- [ ] A `CrudNode` for the config is added to `server/src/menus/menuTree.ts` with the right parent menu, `requirePermission` / `requireAdmin`, and `configId` matching the config's `id`
+- [ ] A `CrudNode` for the config is added to `server/src/menus/menuTree.ts` with the right parent menu, `requirePermission`, and `configId` matching the config's `id`
 - [ ] If the list needs caller context, it is seeded inside `initContext(session)` on the menu node — not from a screen handler and not in the config body
 
 ## When to go beyond the fast path

@@ -37,7 +37,7 @@ const MCP_PUBLIC_URL = process.env.MCP_PUBLIC_URL
 // Lazily load permissions into session after resume from disk (permissions are not persisted)
 async function ensurePermissionsLoaded(session: Session): Promise<void> {
   if (session.authenticated && session.viserId && !session.permissions) {
-    session.permissions = await loadUserPermissions(session.viserId, session.isAdmin);
+    session.permissions = await loadUserPermissions(session.viserId);
   }
 }
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -232,8 +232,8 @@ async function startServer() {
               session.viserId = user.id;
               session.username = user.username;
               session.userRole = user.role;
-              session.isAdmin = user.role === 'admin' || user.is_admin;
-              session.permissions = await loadUserPermissions(user.id, session.isAdmin);
+              session.isAdmin = user.role === 'admin';
+              session.permissions = await loadUserPermissions(user.id);
               if (session.currentScreen === 'LOGIN') {
                 session.currentScreen = 'MAIN_MENU';
                 session.screenStack = ['LOGIN'];
@@ -286,8 +286,8 @@ async function startServer() {
                 session.viserId = refreshedUser.id;
                 session.username = refreshedUser.username;
                 session.userRole = refreshedUser.role;
-                session.isAdmin = refreshedUser.role === 'admin' || refreshedUser.is_admin;
-                session.permissions = await loadUserPermissions(refreshedUser.id, session.isAdmin);
+                session.isAdmin = refreshedUser.role === 'admin';
+                session.permissions = await loadUserPermissions(refreshedUser.id);
                 if (session.currentScreen === 'LOGIN') {
                   session.currentScreen = 'MAIN_MENU';
                   session.screenStack = ['LOGIN'];

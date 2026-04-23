@@ -82,7 +82,6 @@ export async function mcpLogin(
       password_hash: users.password_hash,
       full_name: users.full_name,
       active: users.active,
-      is_admin: users.is_admin,
       role: users.role,
     })
     .from(users)
@@ -109,7 +108,7 @@ export async function mcpLogin(
       id: row.id,
       username: row.username,
       fullName: row.full_name,
-      isAdmin: row.is_admin,
+      isAdmin: row.role === 'admin',
       role: row.role,
     },
   };

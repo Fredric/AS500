@@ -95,17 +95,12 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
 
 /**
  * Load effective permissions for a user into a Set.
- * Admin users get all permissions without querying the DB.
+ * Admin users (role === 'admin') get all permissions without further DB queries.
  * Resolution order: role defaults + group grants, then user overrides (grant/deny).
  */
 export async function loadUserPermissions(
   userId: number,
-  isAdmin: boolean,
 ): Promise<Set<PermissionKey>> {
-  if (isAdmin) {
-    return new Set(Object.values(PERMISSIONS) as PermissionKey[]);
-  }
-
   // Fetch user's role
   const [userRow] = await db
     .select({ role: users.role })
@@ -113,6 +108,10 @@ export async function loadUserPermissions(
     .where(eq(users.id, userId));
 
   const role = userRow?.role ?? 'user';
+
+  if (role === 'admin') {
+    return new Set(Object.values(PERMISSIONS) as PermissionKey[]);
+  }
 
   // Fetch role default permissions
   const rolePerms = await db

@@ -62,8 +62,8 @@ test.describe('Dropdown Field', () => {
     pool = new Pool({ connectionString });
     // Ensure FREDRIC is admin
     await pool.query(
-      'UPDATE users SET role = $2, is_admin = TRUE WHERE username = $1',
-      ['FREDRIC', 'admin']
+      "UPDATE users SET role = 'admin' WHERE username = $1",
+      ['FREDRIC']
     );
   });
 

@@ -348,7 +348,6 @@ export interface CRUDTableConfig {
   title: string;
 
   requireAuth?: boolean;
-  requireAdmin?: boolean;
   requirePermission?: string; // Permission key required to access this screen at all
 
   services: {

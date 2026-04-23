@@ -141,7 +141,6 @@ export async function refreshAuthTokens(
     password_hash: row.password_hash,
     full_name: row.full_name,
     active: row.active,
-    is_admin: row.is_admin,
     role: row.role,
     created_at: row.created_at,
   };

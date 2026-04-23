@@ -27,14 +27,6 @@ export async function handleCRUDScreen(
     };
   }
 
-  if (config.requireAdmin && !session.isAdmin) {
-    session.currentScreen = 'LOGIN';
-    return {
-      ...buildLoginScreen('Access denied. Admin privileges required.', 'error'),
-      ...base,
-    };
-  }
-
   if (config.requirePermission && !hasPermission(session, config.requirePermission)) {
     session.currentScreen = 'MAIN_MENU';
     return {
@@ -67,11 +59,6 @@ export async function buildCRUDScreenForResume(
   if (config.requireAuth !== false && !session.authenticated) {
     session.currentScreen = 'LOGIN';
     return buildLoginScreen();
-  }
-
-  if (config.requireAdmin && !session.isAdmin) {
-    session.currentScreen = 'LOGIN';
-    return buildLoginScreen('Access denied. Admin privileges required.', 'error');
   }
 
   if (config.requirePermission && !hasPermission(session, config.requirePermission)) {

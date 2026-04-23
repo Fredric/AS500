@@ -16,7 +16,6 @@ const ITEM_ROW_BASE = 8;
 // ============================================
 
 function isVisible(node: AppNode, session: Session): boolean {
-  if (node.requireAdmin && !session.isAdmin) return false;
   if (node.requirePermission && !hasPermission(session, node.requirePermission)) return false;
   return true;
 }

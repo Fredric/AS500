@@ -121,7 +121,7 @@ export async function setupTestData() {
 /**
  * Temporarily promote a user to admin so tests can access admin-only menus
  * (e.g. Administration → Role Defaults). Returns a function that restores
- * the user's previous is_admin flag.
+ * the user's previous role on teardown.
  */
 /**
  * Inserts one motorcycle row for KALLE (Playwright form-action-tabs tests).
@@ -188,23 +188,23 @@ export async function promoteToAdmin(username: string): Promise<() => Promise<vo
   const pool = new Pool({ connectionString });
 
   try {
-    const res = await pool.query<{ is_admin: boolean }>(
-      'SELECT is_admin FROM users WHERE username = $1',
+    const res = await pool.query<{ role: string }>(
+      'SELECT role FROM users WHERE username = $1',
       [username]
     );
     if (res.rows.length === 0) {
       throw new Error(`User ${username} not found. Run seed first.`);
     }
-    const previous = res.rows[0].is_admin;
+    const previousRole = res.rows[0].role;
 
-    await pool.query('UPDATE users SET is_admin = TRUE WHERE username = $1', [username]);
+    await pool.query("UPDATE users SET role = 'admin' WHERE username = $1", [username]);
     // Invalidate any cached sessions so the next login re-resolves permissions
     await pool.query('DELETE FROM auth_tokens WHERE user_id = (SELECT id FROM users WHERE username = $1)', [username]);
 
     return async () => {
       const restorePool = new Pool({ connectionString });
       try {
-        await restorePool.query('UPDATE users SET is_admin = $1 WHERE username = $2', [previous, username]);
+        await restorePool.query('UPDATE users SET role = $1 WHERE username = $2', [previousRole, username]);
       } finally {
         await restorePool.end();
       }

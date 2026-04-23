@@ -100,7 +100,6 @@ export interface User {
   password_hash: string;
   full_name: string | null;
   active: boolean;
-  is_admin: boolean;
   role: 'user' | 'superuser' | 'aiagent' | 'admin';
   created_at: Date;
 }

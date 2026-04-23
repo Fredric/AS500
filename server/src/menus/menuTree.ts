@@ -15,7 +15,6 @@ interface BaseNode {
   key: string;
   name: string;
   requirePermission?: string;
-  requireAdmin?: boolean;
 }
 
 export interface MenuNode extends BaseNode {
@@ -105,7 +104,7 @@ export const appMenuTree: MenuNode = {
       type: 'menu',
       key: 'admin',
       name: 'Administration',
-      requireAdmin: true,
+      requirePermission: PERMISSIONS.USER_MGMT_ADMIN,
       items: [
         {
           type: 'crudtable',
@@ -119,7 +118,7 @@ export const appMenuTree: MenuNode = {
           type: 'crudtable',
           key: 'role_defaults',
           name: 'Role Defaults',
-          requireAdmin: true,
+          requirePermission: PERMISSIONS.SYS_ADMIN,
           configId: 'role_defaults',
         },
       ],

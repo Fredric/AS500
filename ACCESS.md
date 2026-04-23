@@ -17,8 +17,6 @@ Four roles are defined as a PostgreSQL enum (`user_role`):
 
 Each user has exactly one role. Set via the `role` column on the `users` table (default: `user`).
 
-The `admin` role also derives `is_admin = true` at login: `session.isAdmin = user.role === 'admin' || user.is_admin`.
-
 ---
 
 ## Groups
@@ -86,7 +84,7 @@ Effective permissions are computed in `loadUserPermissions()`:
 3. Apply user-level overrides (from `user_permissions`):
    - `granted = true` → explicitly add
    - `granted = false` → explicitly remove (deny overrides group/role)
-4. **Admin shortcut:** if `isAdmin`, return all permissions without any DB queries
+4. **Admin shortcut:** if the user's `role` is `'admin'`, return all permissions without any further DB queries
 
 The result is a `Set<string>` cached on `session.permissions` at login. O(1) checks for every subsequent keypress.
 
@@ -106,7 +104,7 @@ INSERT INTO user_permissions (user_id, permission_key, granted) VALUES (5, 'time
 After login (or token resume), the session has:
 
 ```typescript
-session.isAdmin      // boolean — true for admin role (fast path)
+session.isAdmin      // boolean — true when role === 'admin' (fast path for permission checks)
 session.userRole     // 'user' | 'superuser' | 'aiagent' | 'admin' | null
 session.permissions  // Set<string> | null — null until loaded from DB
 ```
@@ -150,7 +148,7 @@ Useful inside screen handlers for early rejection before any service call.
 export const myConfig: CRUDTableConfig = {
   id: 'my_screen',
   requireAuth: true,
-  requirePermission: 'user_mgmt:read',   // ← blocks entire screen
+  requirePermission: 'user_mgmt:read',  // ← blocks entire screen
   // ...
 };
 ```

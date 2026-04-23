@@ -10,7 +10,6 @@ export const userMgmtConfig: CRUDTableConfig = {
   id: 'user_mgmt',
   title: 'User Management',
   requireAuth: true,
-  requireAdmin: true,
   requirePermission: 'user_mgmt:read',
 
   services: {

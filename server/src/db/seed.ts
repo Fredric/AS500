@@ -23,16 +23,17 @@ async function seed() {
 
     // Insert the user
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO users (username, password_hash, full_name, active, is_admin)
+      `INSERT INTO users (username, password_hash, full_name, active, role)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      ['FREDRIC', passwordHash, 'Fredric User', true, false]
+      ['FREDRIC', passwordHash, 'Fredric User', true, 'admin']
     );
 
     userId = result.rows[0].id;
     console.log('Created user: FREDRIC (password: fredric)');
   } else {
     userId = existingUser.rows[0].id;
-    console.log('User FREDRIC already exists.');
+    await pool.query("UPDATE users SET role = 'admin' WHERE username = 'FREDRIC'");
+    console.log('User FREDRIC already exists — ensured role = admin.');
   }
 
   // Create test user KALLE (for Playwright tests)
@@ -44,9 +45,9 @@ async function seed() {
   if (existingKalle.rows.length === 0) {
     const kallePasswordHash = await bcrypt.hash('password', SALT_ROUNDS);
     await pool.query(
-      `INSERT INTO users (username, password_hash, full_name, active, is_admin)
-       VALUES ($1, $2, $3, $4, $5)`,
-      ['KALLE', kallePasswordHash, 'Kalle User', true, false]
+      `INSERT INTO users (username, password_hash, full_name, active)
+       VALUES ($1, $2, $3, $4)`,
+      ['KALLE', kallePasswordHash, 'Kalle User', true]
     );
     console.log('Created user: KALLE (password: password)');
   } else {
@@ -67,9 +68,9 @@ async function seed() {
       const adminPasswordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
 
       await pool.query(
-        `INSERT INTO users (username, password_hash, full_name, active, is_admin)
+        `INSERT INTO users (username, password_hash, full_name, active, role)
          VALUES ($1, $2, $3, $4, $5)`,
-        ['ADMIN', adminPasswordHash, 'System Administrator', true, true]
+        ['ADMIN', adminPasswordHash, 'System Administrator', true, 'admin']
       );
 
       console.log('Created admin user: ADMIN');
@@ -78,7 +79,7 @@ async function seed() {
       const adminPasswordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
 
       await pool.query(
-        `UPDATE users SET password_hash = $2, is_admin = TRUE WHERE username = $1`,
+        `UPDATE users SET password_hash = $2, role = 'admin' WHERE username = $1`,
         ['ADMIN', adminPasswordHash]
       );
 

@@ -120,8 +120,8 @@ export async function handleLogin(
   session.viserId = user.id;
   session.username = user.username;
   session.userRole = user.role;
-  session.isAdmin = user.role === 'admin' || user.is_admin;
-  session.permissions = await loadUserPermissions(user.id, session.isAdmin);
+  session.isAdmin = user.role === 'admin';
+  session.permissions = await loadUserPermissions(user.id);
   session.currentScreen = 'MAIN_MENU';
   session.screenStack = ['LOGIN'];
   

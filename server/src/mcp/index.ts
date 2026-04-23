@@ -258,11 +258,11 @@ export function buildMcpApp(opts: McpAppOptions = {}): Express {
 
     let user: McpCallUser;
     try {
-      // We don't know isAdmin from the JWT — fetch it from users table.
-      // This keeps admin status fresh even if it changes after token issue.
+      // Fetch admin status and permissions fresh from the DB on every call
+      // so they stay accurate even if the user's role changes after token issue.
       const { isAdminForUser } = await import('./oauth/userFacts.js');
       const isAdmin = await isAdminForUser(userId);
-      const permissions = await loadUserPermissions(userId, isAdmin);
+      const permissions = await loadUserPermissions(userId);
       user = {
         userId,
         username,

@@ -30,7 +30,7 @@ For deep reference, read:
 1. **Service** in `server/src/services/<entity>Service.ts`. Each function takes a **single argument** (usually an object). Use Drizzle via `db` from `../db/index.js`; never `pool.query`. Add new tables to `server/src/db/schema.ts` and generate a migration with `npm --prefix server run db:generate`.
 2. **Config** in `server/src/configs/<entity>Config.ts` implementing `CRUDTableConfig` from `../crudtable/types.js`.
 3. **Register** with `registerConfig(<entity>Config)` in `server/src/configs/index.ts`.
-4. **Expose in the menu tree** — add a `CrudNode` to `server/src/menus/menuTree.ts` under the appropriate parent (top-level for user-facing, under `admin` for admin-only). Set `configId` to the config's `id`, set `requirePermission` / `requireAdmin`, and use `initContext(session)` when the list needs caller context seeded into `session.context.crud_<id>_input` before navigation.
+4. **Expose in the menu tree** — add a `CrudNode` to `server/src/menus/menuTree.ts` under the appropriate parent (top-level for user-facing, under `admin` for admin-only). Set `configId` to the config's `id`, set `requirePermission`, and use `initContext(session)` when the list needs caller context seeded into `session.context.crud_<id>_input` before navigation.
 
 Screen IDs are always `CRUD_{config.id.toUpperCase()}` (CRUD screens) or `MENU_{KEY_UPPERCASE}` / `MAIN_MENU` (menu screens). No edits to `server/src/index.ts` or `server/src/screens/mainMenu.ts` are needed — the router dispatches all `CRUD_*` and `MENU_*` IDs to the appropriate runtime.
 
@@ -57,5 +57,5 @@ Open one of these before writing a config from scratch.
 - [ ] Every `fieldConfigs[*]` has `length`
 - [ ] `requireAuth` / `requirePermission` are set as appropriate on the config
 - [ ] Permissions used are declared in `access.ts` and seeded for the roles that need them
-- [ ] A `CrudNode` is added to `server/src/menus/menuTree.ts` under the correct parent, with matching `configId` and the same `requirePermission` / `requireAdmin` guard
+- [ ] A `CrudNode` is added to `server/src/menus/menuTree.ts` under the correct parent, with matching `configId` and the correct `requirePermission` guard
 - [ ] Per-user list filtering, if any, lives in `initContext` on the menu node — not in a screen handler
