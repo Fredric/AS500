@@ -25,5 +25,14 @@ export default defineConfig({
   server: {
     host: '0.0.0.0', // Allow access from outside the container
     port: 5173,
+    watch: {
+      // Docker volumes on Windows don't propagate native FS events into the
+      // container, so Vite must poll for changes instead.
+      usePolling: true,
+      interval: 300,
+    },
+    hmr: {
+      host: 'localhost',
+    },
   },
 });

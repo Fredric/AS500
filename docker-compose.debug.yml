@@ -1,0 +1,5 @@
+services:
+  server:
+    command: sh -c "touch .env.local && npm ci && node --inspect=0.0.0.0:9229 --enable-source-maps --watch --import=tsx/esm --env-file=.env.local src/index.ts"
+    ports:
+      - "9229:9229"

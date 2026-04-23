@@ -39,3 +39,9 @@ Thumbs.db
 # SQL client session files
 *.session.sql
 .aider*
+
+#PLAYWRIGHT
+playwright-report/
+test-results/
+test-results/.last-run.json
+playwright-report/index.html
