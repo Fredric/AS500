@@ -1,0 +1,288 @@
+/* ============================================================
+   AS500 DESIGN SYSTEM — Colors & Typography Tokens
+   Terminal-first OS for ADV riders
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+
+/* ------------------------------------------------------------
+   BASE COLOR TOKENS
+   ------------------------------------------------------------ */
+:root {
+  /* Backgrounds */
+  --color-bg-base:        #050607;   /* app surround — near-black */
+  --color-bg-terminal:    #000000;   /* terminal canvas — pure black */
+  --color-bg-panel:       #0a0f0c;   /* floating panels */
+  --color-bg-panel-title: #0d1710;   /* panel title bar */
+  --color-bg-selection:   #00FF88;   /* selected row fill */
+
+  /* Primary — Phosphor Green */
+  --color-green-primary:  #00FF88;
+  --color-green-soft:     #00cc6a;
+  --color-green-dim:      #00883d;
+  --color-green-ghost:    #00883d;
+  --color-green-border:   #0f2a1f;
+  --color-green-border-2: #1a3329;
+
+  /* Semantic */
+  --color-amber:          #ffb300;
+  --color-amber-dim:      #a07200;
+  --color-red:            #ff3b3b;
+  --color-red-dim:        #991f1f;
+  --color-blue:           #4da3ff;
+  --color-blue-dim:       #2a5c99;
+
+  /* Neutrals */
+  --color-gray-muted:     #6b7280;
+  --color-gray-dark:      #374151;
+  --color-gray-darker:    #1f2937;
+
+  /* Text */
+  --color-text-primary:   #00FF88;   /* main terminal text */
+  --color-text-secondary: #00cc6a;   /* secondary / dimmer */
+  --color-text-inactive:  #6b7280;   /* inactive / ghost */
+  --color-text-selection: #000000;   /* text on green selection */
+  --color-text-amber:     #ffb300;
+  --color-text-red:       #ff3b3b;
+  --color-text-blue:      #4da3ff;
+  --color-text-white:     #e8f0ec;   /* panel prose — off-white */
+  --color-text-silver:    #dff2e8;   /* highlight / silver — bright near-white, phosphor-tinted */
+}
+
+/* ------------------------------------------------------------
+   SEMANTIC COLOR ALIASES
+   ------------------------------------------------------------ */
+:root {
+  --fg:              var(--color-text-primary);
+  --fg2:             var(--color-text-secondary);
+  --fg-inactive:     var(--color-text-inactive);
+  --fg-warn:         var(--color-text-amber);
+  --fg-error:        var(--color-text-red);
+  --fg-info:         var(--color-text-blue);
+  --fg-selected:     var(--color-text-selection);
+  --fg-prose:        var(--color-text-white);
+  --fg-silver:       var(--color-text-silver);   /* highlight / silver */
+
+  --bg:              var(--color-bg-base);
+  --bg-terminal:     var(--color-bg-terminal);
+  --bg-panel:        var(--color-bg-panel);
+  --bg-selected:     var(--color-bg-selection);
+
+  --border:          var(--color-green-border);
+  --border-2:        var(--color-green-border-2);
+}
+
+/* ------------------------------------------------------------
+   TYPOGRAPHY TOKENS
+   ------------------------------------------------------------ */
+:root {
+  /* Font stack */
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', 'Recursive', 'Courier New', monospace;
+
+  /* Sizes */
+  --text-xs:   11px;   /* dense metadata, status bar */
+  --text-sm:   12px;   /* compact data grids */
+  --text-base: 14px;   /* default terminal text */
+  --text-md:   16px;   /* emphasis / headings within terminal */
+  --text-lg:   20px;   /* panel titles */
+  --text-xl:   28px;   /* large display */
+
+  /* Weights */
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-bold:    700;
+
+  /* Line heights — strict rhythm */
+  --lh-tight:   1.2;
+  --lh-base:    1.5;   /* = 21px at 14px base */
+  --lh-relaxed: 1.7;
+
+  /* Letter spacing */
+  --ls-tight:   -0.02em;
+  --ls-normal:   0em;
+  --ls-wide:     0.08em;
+  --ls-widest:   0.15em;  /* ALL CAPS labels */
+
+  /* Character cell (80×25 terminal grid) */
+  --char-w: 1ch;
+  --char-h: 1.5em;      /* at --text-base */
+}
+
+/* ------------------------------------------------------------
+   SEMANTIC TYPE STYLES (apply via class or element)
+   ------------------------------------------------------------ */
+
+/* Base reset for all AS500 elements */
+.as500, .as500 * {
+  font-family:    var(--font-mono);
+  font-size:      var(--text-base);
+  line-height:    var(--lh-base);
+  color:          var(--fg);
+  background:     transparent;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  text-rendering: optimizeSpeed;
+  box-sizing: border-box;
+}
+
+/* Headings */
+.as500-h1 {
+  font-size:      var(--text-lg);
+  font-weight:    var(--weight-bold);
+  letter-spacing: var(--ls-widest);
+  text-transform: uppercase;
+  color:          var(--fg);
+}
+
+.as500-h2 {
+  font-size:      var(--text-md);
+  font-weight:    var(--weight-medium);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+  color:          var(--fg);
+}
+
+/* Labels */
+.as500-label {
+  font-size:      var(--text-sm);
+  font-weight:    var(--weight-regular);
+  letter-spacing: var(--ls-widest);
+  text-transform: uppercase;
+  color:          var(--fg-inactive);
+}
+
+/* Body / prose (inside panels) */
+.as500-prose {
+  font-size:    var(--text-base);
+  line-height:  var(--lh-relaxed);
+  color:        var(--fg-prose);
+}
+
+/* Code / command */
+.as500-cmd {
+  color:          var(--fg);
+  font-weight:    var(--weight-medium);
+}
+
+/* Prompt */
+.as500-prompt::before {
+  content: '> ';
+  color:   var(--fg2);
+}
+
+/* Status variants */
+.as500-ok     { color: var(--fg); }
+.as500-warn   { color: var(--fg-warn); }
+.as500-error  { color: var(--fg-error); }
+.as500-info   { color: var(--fg-info); }
+.as500-muted  { color: var(--fg-inactive); }
+.as500-silver {
+  color:       var(--fg-silver);
+  text-shadow: 0 0 12px rgba(220,255,238,0.5), 0 1px 0 rgba(255,255,255,0.15);
+  letter-spacing: 0.04em;
+}
+
+/* Selection row */
+.as500-selected {
+  background: var(--bg-selected);
+  color:      var(--fg-selected);
+}
+
+/* ------------------------------------------------------------
+   SPACING TOKENS
+   ------------------------------------------------------------ */
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  64px;
+}
+
+/* ------------------------------------------------------------
+   BORDER & RADIUS TOKENS
+   ------------------------------------------------------------ */
+:root {
+  --radius-none:   0px;
+  --radius-panel:  2px;    /* max allowed; panels only */
+
+  --border-width:  1px;
+  --border-style:  solid;
+  --border-dim:    1px solid var(--border);
+  --border-mid:    1px solid var(--border-2);
+}
+
+/* ------------------------------------------------------------
+   SHADOW TOKENS
+   ------------------------------------------------------------ */
+:root {
+  /* Only for panels — not terminal elements */
+  --shadow-panel:  0 4px 24px rgba(0, 0, 0, 0.85);
+  --shadow-panel-sm: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+
+/* ------------------------------------------------------------
+   GLOW — active elements only
+   ------------------------------------------------------------ */
+:root {
+  --glow-cursor:    0 0 8px rgba(0, 255, 136, 0.45);
+  --glow-text:      0 0 6px rgba(0, 255, 136, 0.3);
+}
+
+/* ------------------------------------------------------------
+   ANIMATION TOKENS
+   ------------------------------------------------------------ */
+:root {
+  --duration-instant:  0ms;
+  --duration-fast:     80ms;
+  --duration-base:     120ms;
+  --duration-panel:    200ms;
+
+  --ease-terminal:     steps(1);      /* instant state flip */
+  --ease-panel:        ease-out;      /* panel slide/fade */
+
+  --cursor-blink:      800ms;         /* on / off period */
+}
+
+/* ------------------------------------------------------------
+   SCANLINE TEXTURE (terminal only)
+   ------------------------------------------------------------ */
+.as500-scanlines {
+  position: relative;
+}
+
+.as500-scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 1px,
+    rgba(0, 0, 0, 0.04) 1px,
+    rgba(0, 0, 0, 0.04) 2px
+  );
+  z-index: 10;
+}
+
+/* ------------------------------------------------------------
+   CURSOR
+   ------------------------------------------------------------ */
+.as500-cursor {
+  display:          inline-block;
+  width:            1ch;
+  height:           1em;
+  background:       var(--color-green-primary);
+  box-shadow:       var(--glow-cursor);
+  animation:        as500-blink var(--cursor-blink) step-end infinite;
+  vertical-align:   text-bottom;
+}
+
+@keyframes as500-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}

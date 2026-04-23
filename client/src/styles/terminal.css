@@ -1,15 +1,15 @@
 /* AS500 Terminal Styles - Green Screen Aesthetic */
 
 :root {
-  --bg-color: #0a0a0a;
-  --text-color: #33ff33;
-  --text-bright: #00ff00;
-  --text-dim: #1a8c1a;
-  --field-bg: #0f1f0f;
-  --field-border: #33ff33;
-  --error-color: #ff3333;
-  --warning-color: #ffff33;
-  --info-color: #33ffff;
+  --bg-color:       var(--color-bg-base);
+  --text-color:     var(--color-green-primary);
+  --text-bright:    var(--color-green-primary);
+  --text-dim:       var(--color-green-dim);
+  --field-bg:       var(--color-bg-panel);
+  --field-border:   var(--color-green-primary);
+  --error-color:    var(--color-red);
+  --warning-color:  var(--color-amber);
+  --info-color:     var(--color-blue);
   --scanline-opacity: 0.03;
 }
 
@@ -26,8 +26,8 @@ html, body, #root {
 }
 
 body {
-  background-color: #000;
-  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  background-color: var(--color-bg-terminal);
+  font-family: var(--font-mono);
 }
 
 .app {
@@ -36,21 +36,21 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(ellipse at center, #0d1a0d 0%, #000 100%);
+  background: radial-gradient(ellipse at center, var(--color-bg-panel-title) 0%, var(--color-bg-terminal) 100%);
 }
 
 /* Terminal Container */
 .terminal-container {
   background-color: var(--bg-color);
-  border: 0.1875em solid #1a3a1a;
-  border-radius: 12px;
+  border: 0.1875em solid var(--color-green-border-2);
+  border-radius: var(--radius-panel);
   padding: 1.25em;
   box-shadow:
-    0 0 20px rgba(51, 255, 51, 0.1),
+    0 0 20px rgba(0, 255, 136, 0.1),
     inset 0 0 60px rgba(0, 0, 0, 0.5);
   position: relative;
   overflow: hidden;
-  font-size: 16px;
+  font-size: var(--text-md);
 }
 
 /* CRT screen effect */
@@ -91,10 +91,10 @@ body {
 /* Connection Status */
 .connection-status {
   position: absolute;
-  top: 8px;
-  right: 12px;
-  font-size: 10px;
-  letter-spacing: 1px;
+  top: var(--space-2);
+  right: var(--space-3);
+  font-size: var(--text-xs);
+  letter-spacing: var(--ls-wide);
   z-index: 20;
 }
 
@@ -110,11 +110,11 @@ body {
 /* Version Info */
 .version-info {
   position: absolute;
-  bottom: 8px;
-  right: 12px;
-  font-size: 9px;
+  bottom: var(--space-2);
+  right: var(--space-3);
+  font-size: var(--text-xs);
   color: var(--text-dim);
-  letter-spacing: 0.5px;
+  letter-spacing: var(--ls-normal);
   opacity: 0.6;
   z-index: 20;
 }
@@ -127,17 +127,18 @@ body {
 /* Terminal Screen */
 .terminal-screen {
   width: 80ch;
-  min-height: calc(22 * 1.4em);
+  min-height: calc(22 * var(--char-h));
   color: var(--text-color);
   font-size: inherit;
-  line-height: 1.4;
+  line-height: var(--lh-base);
   white-space: pre;
-  text-shadow: 0 0 5px rgba(51, 255, 51, 0.5);
+  text-shadow: var(--glow-text);
+  animation: phosphor 4s ease-in-out infinite;
 }
 
 /* Terminal Row */
 .terminal-row {
-  height: 1.4em;
+  height: var(--char-h);
   display: flex;
   align-items: center;
 }
@@ -158,19 +159,19 @@ body {
   margin: 0;
   outline: none;
   caret-color: var(--text-bright);
-  text-shadow: 0 0 8px rgba(0, 255, 0, 0.7);
+  text-shadow: var(--glow-cursor);
   position: relative;
   z-index: 1;
 }
 
 .terminal-field:focus {
-  background-color: #0f2a0f;
+  background-color: var(--color-green-border);
   border-bottom-color: var(--text-bright);
-  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+  box-shadow: var(--glow-text);
 }
 
 .terminal-field.password {
-  letter-spacing: 2px;
+  letter-spacing: var(--ls-widest);
 }
 
 .terminal-field.readonly {
@@ -187,47 +188,46 @@ body {
 /* Status Line */
 .terminal-status {
   width: 80ch;
-  height: 1.4em;
+  height: var(--char-h);
   color: var(--text-dim);
   font-size: inherit;
-  line-height: 1.4;
+  line-height: var(--lh-base);
   white-space: pre;
   margin-top: 0.25em;
   padding-top: 0.25em;
-  border-top: 1px solid #1a3a1a;
+  border-top: var(--border-mid);
 }
 
 /* Message Line */
 .terminal-message {
   width: 80ch;
-  height: 1.4em;
+  height: var(--char-h);
   font-size: inherit;
-  line-height: 1.4;
+  line-height: var(--lh-base);
   white-space: pre;
   color: var(--text-color);
 }
 
 .terminal-message.error {
   color: var(--error-color);
-  text-shadow: 0 0 8px rgba(255, 51, 51, 0.5);
-  animation: flash 0.1s ease-out;
+  text-shadow: 0 0 8px rgba(255, 59, 59, 0.5);
+  animation: flash var(--duration-base) var(--ease-panel);
 }
 
 .terminal-message.warning {
   color: var(--warning-color);
-  text-shadow: 0 0 8px rgba(255, 255, 51, 0.5);
+  text-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
 }
 
 .terminal-message.info {
   color: var(--info-color);
-  text-shadow: 0 0 8px rgba(51, 255, 255, 0.5);
+  text-shadow: 0 0 8px rgba(77, 163, 255, 0.5);
 }
 
 @keyframes flash {
   0% { opacity: 0; }
   100% { opacity: 1; }
 }
-
 
 /* Form action tab stops (status bar buttons) */
 .form-action-btn {
@@ -249,7 +249,7 @@ body {
 
 /* List row navigation */
 .terminal-row--selectable {
-  transition: background-color 0.05s ease;
+  transition: background-color var(--duration-fast) var(--ease-panel);
 }
 
 .terminal-row--focused {
@@ -281,9 +281,9 @@ body {
 .field-dropdown {
   background-color: var(--bg-color);
   border: 1px solid var(--field-border);
-  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: inherit;
-  box-shadow: 0 0 12px rgba(51, 255, 51, 0.2);
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.2);
 }
 
 .field-dropdown__list {
@@ -294,11 +294,11 @@ body {
 
 .field-dropdown__item {
   padding: 0 0.5ch;
-  line-height: 1.4;
+  line-height: var(--lh-base);
   color: var(--text-color);
   white-space: pre;
   cursor: pointer;
-  text-shadow: 0 0 5px rgba(51, 255, 51, 0.5);
+  text-shadow: var(--glow-text);
 }
 
 .field-dropdown__item--highlighted {
@@ -309,11 +309,7 @@ body {
 
 /* Phosphor glow effect */
 @keyframes phosphor {
-  0% { text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
-  50% { text-shadow: 0 0 8px rgba(51, 255, 51, 0.6); }
-  100% { text-shadow: 0 0 5px rgba(51, 255, 51, 0.5); }
-}
-
-.terminal-screen {
-  animation: phosphor 4s ease-in-out infinite;
+  0%   { text-shadow: var(--glow-text); }
+  50%  { text-shadow: 0 0 8px rgba(0, 255, 136, 0.4); }
+  100% { text-shadow: var(--glow-text); }
 }

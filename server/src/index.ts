@@ -59,6 +59,7 @@ const MIME_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.jsx': 'application/javascript',
 };
 
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {

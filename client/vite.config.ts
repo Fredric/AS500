@@ -21,7 +21,28 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_DATE__: JSON.stringify(buildDate),
   },
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      // Vite's SPA history-fallback intercepts /forum before the public-dir
+      // static server can serve it. This middleware rewrites /forum[/] to the
+      // explicit file path so the public-dir handler picks it up first.
+      name: 'static-subpages',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/forum') {
+            res.writeHead(301, { Location: '/forum/' });
+            res.end();
+            return;
+          }
+          if (req.url === '/forum/') {
+            req.url = '/forum/index.html';
+          }
+          next();
+        });
+      },
+    },
+  ],
   server: {
     host: '0.0.0.0', // Allow access from outside the container
     port: 5173,

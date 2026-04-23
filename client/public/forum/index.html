@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AS500 — FORUM MODULE</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="as500/colors_and_type.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:#050607; overflow:hidden; }
+  body { font-family:'JetBrains Mono',monospace; -webkit-font-smoothing:none; font-smooth:never; }
+  #root { width:100%; height:100%; }
+  textarea, input {
+    font-family:'JetBrains Mono',monospace !important;
+    -webkit-font-smoothing:none;
+    caret-color: #00FF88;
+  }
+  textarea::placeholder, input::placeholder { color: #1a3329; }
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-track { background:#000; }
+  ::-webkit-scrollbar-thumb { background:#0f2a1f; }
+
+  /* ── Animations ── */
+  @keyframes as500-modal-in {
+    from { opacity: 0; transform: scale(0.97) translateY(-6px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
+  }
+  @keyframes as500-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes as500-slide-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes as500-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .as500-modal-enter {
+    animation: as500-modal-in var(--anim-modal, 140ms) ease-out both;
+  }
+  .as500-backdrop-enter {
+    animation: as500-backdrop-in var(--anim-modal, 140ms) ease-out both;
+  }
+  .as500-view-enter {
+    animation: as500-fade-in var(--anim-view, 100ms) ease-out both;
+  }
+  .as500-reply-enter {
+    animation: as500-slide-in var(--anim-reply, 120ms) ease-out both;
+  }
+</style>
+
+<script>
+// ── Tweak defaults ────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "animSpeed": "normal",
+  "modalBackdropBlur": false,
+  "scanlines": true,
+  "replyStagger": true
+}/*EDITMODE-END*/;
+
+// Apply animation speed to CSS vars
+function applyTweaks(t) {
+  const speed = t.animSpeed;
+  const mult = speed === 'off' ? 0 : speed === 'fast' ? 0.5 : 1;
+  document.documentElement.style.setProperty('--anim-modal',  `${Math.round(140 * mult)}ms`);
+  document.documentElement.style.setProperty('--anim-view',   `${Math.round(100 * mult)}ms`);
+  document.documentElement.style.setProperty('--anim-reply',  `${Math.round(120 * mult)}ms`);
+}
+
+applyTweaks(TWEAK_DEFAULTS);
+window.__tweaks = { ...TWEAK_DEFAULTS };
+
+// Edit mode protocol
+window.addEventListener('message', (e) => {
+  if (e.data?.type === '__activate_edit_mode')   { window.__tweakPanelShow && window.__tweakPanelShow(true); }
+  if (e.data?.type === '__deactivate_edit_mode') { window.__tweakPanelShow && window.__tweakPanelShow(false); }
+  if (e.data?.type === '__edit_mode_set_keys') {
+    Object.assign(window.__tweaks, e.data.edits);
+    applyTweaks(window.__tweaks);
+    window.__tweakPanelUpdate && window.__tweakPanelUpdate({ ...window.__tweaks });
+  }
+});
+
+// Signal availability after listener is live
+setTimeout(() => {
+  window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+}, 100);
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="as500/Terminal.jsx"></script>
+<script type="text/babel" src="as500/Panels.jsx"></script>
+<script type="text/babel" src="as500/StatusBar.jsx"></script>
+<script type="text/babel" src="as500/ForumApp.jsx"></script>
+<script type="text/babel" src="as500/TweaksPanel.jsx"></script>
+</body>
+</html>
