@@ -25,6 +25,8 @@ export interface AuditCallArgs {
   input: unknown;
   result: McpCallToolResult;
   startedAtMs: number;
+  /** Identifies the access path for this call. Defaults to 'mcp'. */
+  source?: 'mcp' | 'api';
 }
 
 /**
@@ -41,7 +43,7 @@ function extractErrorCode(result: McpCallToolResult): string | null {
 }
 
 export async function writeAuditRow(args: AuditCallArgs): Promise<void> {
-  const { configId, toolName, op, user, input, result, startedAtMs } = args;
+  const { configId, toolName, op, user, input, result, startedAtMs, source } = args;
   const durationMs = Math.max(0, Date.now() - startedAtMs);
   const errorCode = extractErrorCode(result);
   try {
@@ -55,6 +57,7 @@ export async function writeAuditRow(args: AuditCallArgs): Promise<void> {
       ok: !result.isError,
       error_code: errorCode,
       duration_ms: durationMs,
+      source: source ?? 'mcp',
     });
   } catch (err) {
     console.error('[mcp-audit] failed to write audit row:', err);

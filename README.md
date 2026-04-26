@@ -16,6 +16,7 @@ A modern client-server solution that emulates an AS400 mainframe terminal. The b
 - **Mouse row selection** — Click to select a row, double-click to open
 - **Modern token-based authentication** — OAuth 2.0-inspired access/refresh token pattern
 - **Remote MCP server** — every CRUDTable config can be opened up to AI agents as [Model Context Protocol](https://modelcontextprotocol.io) tools, gated by OAuth 2.1 + DCR and the same RBAC as the UI
+- **REST API** — same CRUDTable configs also served as a conventional REST API (`GET/POST/PUT/DELETE /api/:configId`) with first-party Bearer token login (`POST /api/auth/token`) and token rotation
 - **Secure session management** — 30-day auto-login with 1-hour token rotation
 - **Role-based access control** — Roles (`user`, `superuser`, `aiagent`, `admin`), user groups, and named permission keys with per-operation CRUDTable enforcement
 - **Device tracking** — Multi-device session management with device fingerprinting
@@ -102,6 +103,12 @@ Open http://localhost:5173 and login with:
 ┌─────────────┐     Streamable HTTP       │
 │  AI agent   │◄──────────────────────────┤  :3002 /mcp
 │ (MCP client)│   OAuth 2.1 + DCR         │  (tools = CRUDTable ops)
+└─────────────┘                           │
+                                          │
+┌─────────────┐     REST HTTP             │
+│  Remote app │◄──────────────────────────┤  :3002 /api
+│  (1st party)│   Bearer token            │  (CRUD resources)
+│             │   POST /api/auth/token    │
 └─────────────┘                           │
                                    ┌──────▼──────┐
                                    │ PostgreSQL  │
@@ -217,6 +224,10 @@ Runs on its own port (default `3002`) with the MCP **Streamable HTTP** transport
 | `GET  /authorize` → `POST /authorize/consent`              | Green-on-black consent page, dedicated `mcpLogin` (separate from AS500 session auth) |
 | `POST /token`                                              | Authorization-code and refresh-token grants, PKCE-enforced |
 | `POST /revoke`                                             | RFC 7009 token revocation |
+| `GET/POST/PUT/DELETE /api/:configId[/:id]`                 | REST API — Bearer-authed, same RBAC + audit as MCP (see [REST API](#rest-api)) |
+| `POST /api/auth/token`                                     | First-party login: username + password → Bearer tokens |
+| `POST /api/auth/refresh`                                   | Rotate refresh token → new access + refresh pair |
+| `POST /api/auth/revoke`                                    | Revoke a token (logout) |
 
 ### Auth posture
 
@@ -354,6 +365,90 @@ DELETE FROM oauth_clients WHERE id = 'CLIENT_ID';
 **What the agent can do** is governed entirely by your existing RBAC. The agent inherits the AS500 user's permissions at consent time — no extra grant dialog per tool, no privilege widening. Every call it makes lands in `mcp_audit_log` with the client id + user id + tool + outcome.
 
 > **Security note:** in production, set `AS500_MCP_JWT_SECRET` to a fixed ≥32-char value and put `/mcp` behind your TLS termination. The dev default regenerates the JWT secret on each server restart, which would invalidate every agent's access token.
+
+## REST API
+
+Any CRUDTable config with an `api` block is also available as a conventional REST API on port 3002. Same Bearer tokens, same RBAC, same audit log as MCP — just plain HTTP instead of JSON-RPC.
+
+### Endpoints
+
+| Method | URL | Purpose |
+|--------|-----|---------|
+| `GET`    | `/api`                    | Discovery — list all exposed resources |
+| `GET`    | `/api/:configId`          | List records (`?offset=&limit=`, max 100) |
+| `GET`    | `/api/:configId/:id`      | Read one record |
+| `POST`   | `/api/:configId`          | Create |
+| `PUT`    | `/api/:configId/:id`      | Update |
+| `DELETE` | `/api/:configId/:id`      | Delete (204, no body) |
+
+Scope params with `injectFromAuth: 'userId'` are injected server-side from the token — callers never send them. All other scope params go in the **query string**; the body contains only the resource's own fields.
+
+### Getting a Bearer token — first-party login
+
+If you own both the client app and the AS500 backend, skip the OAuth redirect dance. Use the credential-exchange endpoints:
+
+**1. Login — exchange credentials for tokens**
+```bash
+curl -X POST http://localhost:3002/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{ "username": "FREDRIC", "password": "fredric" }'
+```
+```json
+{
+  "access_token": "<JWT>",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "<opaque-30d>"
+}
+```
+
+**2. Call the API**
+```bash
+curl http://localhost:3002/api/timereg_v2?date=2026-04-23 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**3. Refresh after 1 hour (tokens rotate — old pair is revoked)**
+```bash
+curl -X POST http://localhost:3002/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{ "refresh_token": "<opaque>" }'
+```
+
+**4. Logout**
+```bash
+curl -X POST http://localhost:3002/api/auth/revoke \
+  -H "Content-Type: application/json" \
+  -d '{ "token": "<refresh_token>", "token_type_hint": "refresh_token" }'
+```
+
+> **Third-party / AI agent?** Use the full OAuth 2.1 + DCR flow described in the Remote MCP Server section above. Both flows produce identical JWTs accepted on every `/api/*` call.
+
+### Error format
+
+```json
+{ "error": { "code": "validation_failed", "message": "…", "fields": [{ "name": "f", "message": "…" }] } }
+```
+
+HTTP status codes: 400 validation, 401 unauthenticated, 403 permission denied, 404 not found, 405 operation not enabled, 429 rate limited, 500 internal.
+
+### Exposing a CRUDTable config on the REST API
+
+Add an `api` block to the `CRUDTableConfig` — no other changes needed:
+
+```typescript
+api: {
+  name: 'timereg',
+  description: 'Time registration entries.',
+  operations: { list: true, read: true, create: true, update: true, delete: true },
+  scope: [
+    { name: 'userId', type: 'number', required: true, injectFromAuth: 'userId' },
+    { name: 'date',   type: 'string', required: true, description: 'YYYY-MM-DD' },
+  ],
+}
+```
+
+See `server/src/configs/timeRegV2.ts` for a working example.
 
 ## Authentication & Security
 
@@ -521,5 +616,11 @@ See [CLAUDE.md § Remote MCP Server](CLAUDE.md#remote-mcp-server) for MCP server
 - `auth_tokens` column reuse for MCP-kind tokens
 - `mcp_audit_log` schema and retention considerations
 - How to expose a new CRUDTable config as MCP tools
+
+See [CLAUDE.md § REST API](CLAUDE.md#rest-api) for the REST API reference:
+- Endpoint table and error format
+- First-party login flow (`POST /api/auth/token`)
+- How to expose a CRUDTable config on the REST surface (`api` block)
+- Scope params and `injectFromAuth`
 
 

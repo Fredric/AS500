@@ -54,7 +54,7 @@ function valueToString(v: unknown): string {
 
 /**
  * Split the validated tool input into `(scope, body)`:
- *   - `scope` = values for keys declared on `mcp.scope`
+ *   - `scope` = values for keys declared on scope params
  *   - `body`  = everything else (form fields, `id`, `limit`, etc.)
  *
  * Scope is destined for `ctx.input`, the rest for wherever the handler wants
@@ -63,12 +63,16 @@ function valueToString(v: unknown): string {
  * Note: params marked `injectFromAuth` are NOT in the Zod schema so they will
  * never appear in `input`. Their values are injected separately inside
  * `synthesizeContext` using `McpCallUser`.
+ *
+ * @param scopeParamsOverride - When provided, use this instead of `config.mcp?.scope`.
+ *   REST API handlers pass `config.api?.scope` here.
  */
 export function splitScope(
   config: CRUDTableConfig,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  scopeParamsOverride?: MCPScopeParam[]
 ): { scope: Record<string, unknown>; body: Record<string, unknown> } {
-  const scopeParams = config.mcp?.scope ?? [];
+  const scopeParams = scopeParamsOverride ?? config.mcp?.scope ?? [];
   const scopeKeys = new Set(
     scopeParams.filter((p: MCPScopeParam) => !p.injectFromAuth).map((p: MCPScopeParam) => p.name)
   );
@@ -89,13 +93,17 @@ export function splitScope(
  * Currently only `injectFromAuth: 'userId'` is supported, mapping to
  * `McpCallUser.userId` (the integer id that corresponds to
  * `auth_tokens.user_id` for the active OAuth session).
+ *
+ * @param scopeParamsOverride - When provided, use this instead of `config.mcp?.scope`.
+ *   REST API handlers pass `config.api?.scope` here.
  */
 export function buildInjectedScope(
   config: CRUDTableConfig,
-  user: McpCallUser
+  user: McpCallUser,
+  scopeParamsOverride?: MCPScopeParam[]
 ): Record<string, unknown> {
   const injected: Record<string, unknown> = {};
-  for (const p of config.mcp?.scope ?? []) {
+  for (const p of scopeParamsOverride ?? config.mcp?.scope ?? []) {
     if (!p.injectFromAuth) continue;
     switch (p.injectFromAuth) {
       case 'userId':
@@ -115,6 +123,12 @@ export interface SynthContextArgs {
   /** For `delete`: the pre-fetched record being deleted. */
   deleteRecord?: Record<string, unknown> | null;
   user: McpCallUser;
+  /**
+   * Override the scope params used to split input into (scope, body) and to
+   * inject server-side values. MCP callers omit this (defaults to
+   * `config.mcp?.scope`). REST API callers pass `config.api?.scope`.
+   */
+  scopeParams?: MCPScopeParam[];
 }
 
 /**
@@ -147,13 +161,14 @@ export function synthesizeContext({
   editRecord,
   deleteRecord,
   user,
+  scopeParams,
 }: SynthContextArgs): CRUDContext {
-  const { scope, body } = splitScope(_config, input);
+  const { scope, body } = splitScope(_config, input, scopeParams);
 
   // Merge agent-supplied scope first, then overwrite with server-injected
   // values so agents can never smuggle in their own userId (or any other
   // injectFromAuth param) even if they somehow include the key.
-  const injected = buildInjectedScope(_config, user);
+  const injected = buildInjectedScope(_config, user, scopeParams);
   const ctxInput: Record<string, unknown> = { ...scope, ...injected };
   const values: Record<string, string> = {};
 

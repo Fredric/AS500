@@ -16,6 +16,10 @@
 //                                                      MCP Streamable HTTP
 //                                                      transport)
 //   GET  /mcp/health                                  (no auth — liveness)
+//   POST /api/auth/token                              (first-party login —
+//                                                      username+password → tokens)
+//   POST /api/auth/refresh                            (rotate refresh token)
+//   POST /api/auth/revoke                             (logout / revoke token)
 //
 // Auth posture:
 //   `/mcp` is now protected by `requireBearerAuth`. Unauthenticated calls
@@ -32,6 +36,8 @@ import {
 } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { buildMcpServer } from './transport.js';
+import { buildApiRouter } from '../api/index.js';
+import { buildAuthRouter } from '../api/auth.js';
 import { buildAs500OAuthProvider, issueAuthorizationCodeAfterConsent } from './oauth/provider.js';
 import { initJwtSecret } from './oauth/tokens.js';
 import { hasLiveConsent, recordConsent } from './oauth/store.js';
@@ -314,6 +320,13 @@ export function buildMcpApp(opts: McpAppOptions = {}): Express {
   };
 
   app.post('/mcp', bearerAuth, rateLimit, handleMcp);
+
+  // -------- First-party auth (no bearer — credential exchange) --------
+  // Must be mounted BEFORE the general /api router so /api/auth/* is matched here.
+  app.use('/api/auth', buildAuthRouter());
+
+  // -------- REST API (mounted at /api) --------
+  app.use('/api', buildApiRouter({ bearerAuth, debug: opts.debug }));
 
   const methodNotAllowed = (_req: Request, res: Response): void => {
     res.status(405).json({

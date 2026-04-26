@@ -342,6 +342,50 @@ export interface MCPConfig {
   };
 }
 
+/**
+ * Per-operation override inside {@link APIConfig.operations}. Mirrors
+ * {@link MCPOperationOverride} for the REST API layer.
+ */
+export interface APIOperationConfig {
+  description?: string;
+  requirePermission?: string;
+}
+
+/**
+ * REST API exposure block for a {@link CRUDTableConfig}.
+ *
+ * Presence of this block is the opt-in signal. A config without `api` is never
+ * exposed via REST. Routes are mounted at `/api/{name ?? id}[/{id}]` on the
+ * MCP Express app (port 3002). Auth uses the same OAuth 2.1 Bearer tokens as MCP.
+ *
+ * RBAC is enforced identically to MCP: config.requirePermission →
+ * services[op].requirePermission → api.operations[op].requirePermission.
+ *
+ * Scope params with `injectFromAuth` are server-injected from the Bearer token
+ * and never accepted from the request — same pattern as {@link MCPScopeParam}.
+ */
+export interface APIConfig {
+  /**
+   * URL path segment for this resource. Defaults to `config.id` when absent.
+   * Must be URL-safe (lowercase-snake recommended).
+   */
+  name?: string;
+
+  description?: string;
+
+  operations?: {
+    list?:   boolean | APIOperationConfig;
+    read?:   boolean | APIOperationConfig;
+    create?: boolean | APIOperationConfig;
+    update?: boolean | APIOperationConfig;
+    delete?: boolean | APIOperationConfig;
+  };
+
+  /** Scope params injected into `ctx.input` for every request. Params with
+   * `injectFromAuth` are server-injected — never accepted from callers. */
+  scope?: MCPScopeParam[];
+}
+
 // Main CRUDTable config
 export interface CRUDTableConfig {
   id: string;
@@ -409,4 +453,14 @@ export interface CRUDTableConfig {
    * `services` and that `mcp.description` is present.
    */
   mcp?: MCPConfig;
+
+  /**
+   * Opt this config into the REST API layer, exposing CRUD endpoints at
+   * `/api/{api.name ?? id}[/{id}]`. Absent = not exposed at all.
+   *
+   * See {@link APIConfig} for the full shape. The registry validates at load
+   * time that any enabled operation has a corresponding `ServiceCall` on
+   * `services`.
+   */
+  api?: APIConfig;
 }

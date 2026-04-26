@@ -28,10 +28,10 @@ import {
 /**
  * Invoke `ServiceCall.service[method](ServiceCall.params(ctx))`. Mirrors the
  * same pattern CRUDTable's runtime uses (`server/src/crudtable/runtime.ts`)
- * so behaviour is identical whether the call originates from the terminal UI
- * or from an MCP agent.
+ * so behaviour is identical whether the call originates from the terminal UI,
+ * an MCP agent, or the REST API.
  */
-async function invokeServiceCall(
+export async function invokeServiceCall(
   sc: ServiceCall,
   ctx: CRUDContext
 ): Promise<unknown> {
@@ -54,15 +54,14 @@ async function invokeServiceCall(
 
 /**
  * Run every form validator declared on the config's field configs. Returns
- * all validation errors at once (never throws) so agents can fix the whole
- * input in a single round-trip rather than discovering errors one field at a
- * time.
+ * all validation errors at once (never throws) so callers can report the whole
+ * set in a single response rather than discovering errors one field at a time.
  *
  * Mirrors `server/src/crudtable/runtime.ts`'s validation pass — CRUDTable's
  * `validators` are `(ctx) => string | null`, so we run them against the
  * synthesized context.
  */
-function runValidators(
+export function runValidators(
   config: CRUDTableConfig,
   ctx: CRUDContext
 ): { name: string; message: string }[] {
@@ -87,7 +86,7 @@ function runValidators(
 // Helpers
 // ============================================
 
-function assertService(sc: ServiceCall | undefined, op: McpOp): asserts sc is ServiceCall {
+export function assertService(sc: ServiceCall | undefined, op: McpOp): asserts sc is ServiceCall {
   if (!sc) {
     throw new McpToolError(
       'unsupported_operation',

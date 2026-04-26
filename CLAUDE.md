@@ -303,6 +303,114 @@ Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by
 
 ---
 
+## REST API
+
+Any CRUDTable config can be exposed as standard REST endpoints by adding an `api` block alongside (or instead of) the `mcp` block. The runtime at `server/src/api/` mounts routes on the MCP Express app at `/api/{config.id}[/{id}]` (port 3002).
+
+**Two ways to get a Bearer token:**
+
+| Scenario | Endpoint | Notes |
+|---|---|---|
+| **First-party app** (you own the client) | `POST /api/auth/token` | Submit username + password directly — no browser redirect needed |
+| **Third-party / AI agent** (OAuth 2.1 flow) | `POST /register` → `GET /authorize` → `POST /token` | Full DCR + PKCE consent flow — user approves in the browser |
+
+Both paths produce identical HS256 JWTs accepted by `Authorization: Bearer` on every `/api/*` call.
+
+**Transport**: Routes mounted at `/api/…` on the MCP Express app (port 3002).
+
+| Method | URL | Operation |
+|--------|-----|-----------|
+| `GET`  | `/api` | Discovery — list all exposed configs + enabled ops |
+| `GET`  | `/api/:configId` | List (paginated via `?offset=&limit=`, max 100) |
+| `GET`  | `/api/:configId/:id` | Read single record |
+| `POST` | `/api/:configId` | Create |
+| `PUT`  | `/api/:configId/:id` | Update |
+| `DELETE` | `/api/:configId/:id` | Delete (204 no body) |
+
+**Auth**: Same OAuth 2.1 Bearer token flow as MCP. Pass `Authorization: Bearer <token>` on every request.
+
+**Scope params**: Configured on `api.scope`. Params with `injectFromAuth: 'userId'` are NEVER accepted from callers — injected server-side from the token. Other scope params are resolved from the **query string** for all HTTP methods (not the body). The body contains only the resource's own writable fields.
+
+**Error response format**:
+```json
+{ "error": { "code": "validation_failed", "message": "…", "fields": [{ "name": "f", "message": "…" }] } }
+```
+HTTP status codes: 400 validation, 401 unauthenticated, 403 permission denied, 404 not found, 405 op not enabled, 429 rate limited, 500 internal.
+
+**Adding a CRUDTable config to the REST API surface**: add an `api` block on the `CRUDTableConfig`:
+
+```typescript
+api: {
+  name: 'timereg',         // display name (discovery only); URL path is always config.id
+  description: '...',
+  operations: { list: true, read: true, create: true, update: true, delete: true },
+  scope: [
+    {
+      name: 'userId', type: 'number', required: true,
+      description: 'Injected from token.', injectFromAuth: 'userId',
+    },
+    {
+      name: 'date', type: 'string', required: true,
+      description: 'Workday YYYY-MM-DD — pass as ?date=…',
+    },
+  ],
+}
+```
+
+No code changes anywhere else. The registry validates the block at startup. See `server/src/configs/timeRegV2.ts` for the canonical example.
+
+**Audit**: every API call writes a row to `mcp_audit_log` with `source='api'` (same table as MCP, distinguishable by the `source` column). The audit admin screen shows both MCP and REST calls.
+
+**Key files**:
+| Purpose | Path |
+|---------|------|
+| REST router (Express, mounted at `/api`) | `server/src/api/index.ts` |
+| Per-op REST handlers | `server/src/api/handlers.ts` |
+| First-party auth router | `server/src/api/auth.ts` |
+
+### First-party login (for apps you own and control)
+
+If you own both the client app and the AS500 backend, skip the OAuth redirect dance entirely. Use the credential-exchange endpoints at `/api/auth` to get Bearer tokens directly.
+
+**Login:**
+```http
+POST http://localhost:3002/api/auth/token
+Content-Type: application/json
+
+{ "username": "FREDRIC", "password": "fredric" }
+```
+```json
+{ "access_token": "<JWT>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<opaque>" }
+```
+
+**Use the token on every REST call:**
+```http
+GET http://localhost:3002/api/timereg_v2?date=2026-04-23
+Authorization: Bearer <access_token>
+```
+
+**Refresh before/after the 1-hour expiry:**
+```http
+POST http://localhost:3002/api/auth/refresh
+Content-Type: application/json
+
+{ "refresh_token": "<opaque>" }
+```
+Returns a new `access_token` + new `refresh_token`. The old pair is immediately revoked (rotation).
+
+**Logout:**
+```http
+POST http://localhost:3002/api/auth/revoke
+Content-Type: application/json
+
+{ "token": "<refresh_token_or_access_token>", "token_type_hint": "refresh_token" }
+```
+Always returns `{ "ok": true }`. Omit `token_type_hint` to try both types. Pass `"access_token"` or `"refresh_token"` as a hint.
+
+Tokens issued this way carry sentinel `client_id = 'as500-direct'` and are otherwise identical to OAuth-issued tokens — same JWT format, same RBAC enforcement on every REST call, same audit logging.
+
+---
+
 ## Key Files
 
 | Purpose | Path |
@@ -324,6 +432,9 @@ Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by
 | **MCP tool handlers (per-op)** | `server/src/mcp/toolHandlers.ts` |
 | **MCP OAuth provider** | `server/src/mcp/oauth/provider.ts` |
 | **MCP audit log writer** | `server/src/mcp/audit.ts` |
+| **REST API router** | `server/src/api/index.ts` |
+| **REST API handlers** | `server/src/api/handlers.ts` |
+| **First-party auth router** | `server/src/api/auth.ts` |
 | Terminal hook (WebSocket) | `client/src/hooks/useTerminal.ts` |
 | Terminal renderer | `client/src/components/Terminal.tsx` |
 | Terminal styles | `client/src/styles/terminal.css` |
