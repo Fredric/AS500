@@ -53,32 +53,52 @@ export async function invokeServiceCall(
 // ============================================
 
 /**
- * Run every form validator declared on the config's field configs. Returns
- * all validation errors at once (never throws) so callers can report the whole
- * set in a single response rather than discovering errors one field at a time.
+ * Run the full form validation pass for create/update operations. Returns all
+ * validation errors at once (never throws) so callers can report the full set.
  *
- * Mirrors `server/src/crudtable/runtime.ts`'s validation pass — CRUDTable's
- * `validators` are `(ctx) => string | null`, so we run them against the
- * synthesized context.
+ * Mirrors `server/src/crudtable/runtime.ts`'s two-phase validation:
+ *   1. `form.required` — field must be non-empty
+ *   2. `form.validators` — custom (ctx) => string | null functions
+ *
+ * Only iterates `config.formBuilder` fields (same set the terminal renders),
+ * skipping disabled or invisible fields — matching runtime behaviour exactly.
  */
 export function runValidators(
   config: CRUDTableConfig,
   ctx: CRUDContext
 ): { name: string; message: string }[] {
   const errors: { name: string; message: string }[] = [];
-  for (const [name, field] of Object.entries(config.fieldConfigs)) {
-    const validators = field.form?.validators;
-    if (!validators || validators.length === 0) continue;
-    for (const v of validators) {
+
+  for (const fieldKey of config.formBuilder) {
+    const fc = config.fieldConfigs[fieldKey];
+    if (!fc) continue;
+
+    const evalBool = (expr: boolean | ((c: CRUDContext) => boolean) | undefined, def: boolean): boolean => {
+      if (expr === undefined) return def;
+      if (typeof expr === 'boolean') return expr;
+      return expr(ctx);
+    };
+
+    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, true)) continue;
+    if (evalBool(fc.form?.disabled, false)) continue;
+
+    // Phase 1: required check
+    const isRequired = evalBool(fc.form?.required, false);
+    if (isRequired && !ctx.values[fc.field]) {
+      errors.push({ name: fieldKey, message: `${fc.label} is required` });
+      continue; // one error per field
+    }
+
+    // Phase 2: custom validators
+    for (const v of fc.form?.validators ?? []) {
       const msg = v(ctx);
       if (msg) {
-        errors.push({ name, message: msg });
-        // One error per field is enough — the terminal UI shows one at a time
-        // and validator authors typically write them for that mode.
-        break;
+        errors.push({ name: fieldKey, message: msg });
+        break; // one error per field
       }
     }
   }
+
   return errors;
 }
 
