@@ -2,10 +2,10 @@
 
 A modern client-server solution that emulates an AS400 mainframe terminal. The backend sends complete screens (not data), controls navigation, owns validation, and treats the UI as a dumb terminal.
 
-![Terminal Screenshot](https://img.shields.io/badge/style-green%20screen-33ff33?style=flat-square)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?style=flat-square)
-![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square)
-![WebSocket](https://img.shields.io/badge/WebSocket-ws-yellow?style=flat-square)
+Terminal Screenshot
+TypeScript
+React
+WebSocket
 
 ## Features
 
@@ -47,11 +47,13 @@ docker-compose down
 ```
 
 The application will be available at:
-- **Client UI:** http://localhost:5173
+
+- **Client UI:** [http://localhost:5173](http://localhost:5173)
 - **Server WebSocket:** ws://localhost:3001
 - **PostgreSQL:** localhost:5433
 
 **Features:**
+
 - Hot reload for both server and client code changes
 - Session persistence survives server restarts during development
 - Isolated `node_modules` in Docker volumes (no conflicts with host)
@@ -82,7 +84,8 @@ npm run dev     # Runs on http://localhost:5173
 
 ### Login Credentials
 
-Open http://localhost:5173 and login with:
+Open [http://localhost:5173](http://localhost:5173) and login with:
+
 - **Username:** `FREDRIC`
 - **Password:** `fredric`
 
@@ -127,12 +130,14 @@ Open http://localhost:5173 and login with:
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|------------|
-| Server | Node.js, TypeScript, ws, pg (PostgreSQL), bcrypt |
-| Client | React 18, TypeScript, Vite |
-| Database | PostgreSQL (with SQLite support) |
-| Development | Docker Compose, tsx (hot reload) |
+
+| Component   | Technology                                       |
+| ----------- | ------------------------------------------------ |
+| Server      | Node.js, TypeScript, ws, pg (PostgreSQL), bcrypt |
+| Client      | React 18, TypeScript, Vite                       |
+| Database    | PostgreSQL (with SQLite support)                 |
+| Development | Docker Compose, tsx (hot reload)                 |
+
 
 ## Project Structure
 
@@ -200,13 +205,15 @@ AS500 ships a [Model Context Protocol](https://modelcontextprotocol.io) server t
 
 For every CRUDTable config with an `mcp` block, the server auto-generates five tools:
 
-| Tool | Purpose |
-|---|---|
-| `<id>.list`   | Paginated list with `limit` / `offset` |
-| `<id>.read`   | Fetch one record by id |
-| `<id>.create` | Create, runs the same validators as the form |
-| `<id>.update` | Partial update by id |
+
+| Tool          | Purpose                                             |
+| ------------- | --------------------------------------------------- |
+| `<id>.list`   | Paginated list with `limit` / `offset`              |
+| `<id>.read`   | Fetch one record by id                              |
+| `<id>.create` | Create, runs the same validators as the form        |
+| `<id>.update` | Partial update by id                                |
 | `<id>.delete` | Delete by id, uses `read` to fetch the target first |
+
 
 Each tool's input schema is **derived from the same field configs** as the form — field types, `required`, validators, and `form.formValue` all apply identically. Any operation can be individually disabled or gated behind its own permission.
 
@@ -214,20 +221,22 @@ Each tool's input schema is **derived from the same field configs** as the form 
 
 Runs on its own port (default `3002`) with the MCP **Streamable HTTP** transport and a full OAuth 2.1 + Dynamic Client Registration (DCR) layer:
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /mcp`                                                | MCP endpoint — Bearer-authed, rate-limited, per-call audit row |
-| `GET  /mcp/health`                                         | Unauthenticated liveness probe |
-| `GET  /.well-known/oauth-authorization-server`             | RFC 8414 AS metadata |
-| `GET  /.well-known/oauth-protected-resource/mcp`           | RFC 9728 resource metadata (advertised via `WWW-Authenticate` on 401s) |
-| `POST /register`                                           | RFC 7591 Dynamic Client Registration |
-| `GET  /authorize` → `POST /authorize/consent`              | Green-on-black consent page, dedicated `mcpLogin` (separate from AS500 session auth) |
-| `POST /token`                                              | Authorization-code and refresh-token grants, PKCE-enforced |
-| `POST /revoke`                                             | RFC 7009 token revocation |
-| `GET/POST/PUT/DELETE /api/:configId[/:id]`                 | REST API — Bearer-authed, same RBAC + audit as MCP (see [REST API](#rest-api)) |
-| `POST /api/auth/token`                                     | First-party login: username + password → Bearer tokens |
-| `POST /api/auth/refresh`                                   | Rotate refresh token → new access + refresh pair |
-| `POST /api/auth/revoke`                                    | Revoke a token (logout) |
+
+| Endpoint                                        | Purpose                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /mcp`                                     | MCP endpoint — Bearer-authed, rate-limited, per-call audit row                       |
+| `GET /mcp/health`                               | Unauthenticated liveness probe                                                       |
+| `GET /.well-known/oauth-authorization-server`   | RFC 8414 AS metadata                                                                 |
+| `GET /.well-known/oauth-protected-resource/mcp` | RFC 9728 resource metadata (advertised via `WWW-Authenticate` on 401s)               |
+| `POST /register`                                | RFC 7591 Dynamic Client Registration                                                 |
+| `GET /authorize` → `POST /authorize/consent`    | Green-on-black consent page, dedicated `mcpLogin` (separate from AS500 session auth) |
+| `POST /token`                                   | Authorization-code and refresh-token grants, PKCE-enforced                           |
+| `POST /revoke`                                  | RFC 7009 token revocation                                                            |
+| `GET/POST/PUT/DELETE /api/:configId[/:id]`      | REST API — Bearer-authed, same RBAC + audit as MCP (see [REST API](#rest-api))       |
+| `POST /api/auth/token`                          | First-party login: username + password → Bearer tokens                               |
+| `POST /api/auth/refresh`                        | Rotate refresh token → new access + refresh pair                                     |
+| `POST /api/auth/revoke`                         | Revoke a token (logout)                                                              |
+
 
 ### Auth posture
 
@@ -268,11 +277,13 @@ See `server/src/app/configs/timeRegV2.ts` for a working reference and `.claude/s
 
 ### Configuration
 
-| Variable | Purpose | Default |
-|---|---|---|
+
+| Variable               | Purpose                                                                                                                                                                | Default                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | `AS500_MCP_JWT_SECRET` | HS256 signing key for access tokens (≥32 chars). **Required in production.** `docker-compose.yml` already pins a dev value so tokens survive `docker-compose restart`. | random (plain `npm run dev`) |
-| `MCP_PORT`             | Port the MCP Express app binds. Published as `3002:3002` by `docker-compose.yml`. | `3002` |
-| `MCP_ENABLED`          | Set to `false` to skip booting the MCP server alongside the WebSocket server. | `true` |
+| `MCP_PORT`             | Port the MCP Express app binds. Published as `3002:3002` by `docker-compose.yml`.                                                                                      | `3002`                       |
+| `MCP_ENABLED`          | Set to `false` to skip booting the MCP server alongside the WebSocket server.                                                                                          | `true`                       |
+
 
 ### Smoke test
 
@@ -302,7 +313,7 @@ curl http://localhost:3002/mcp/health
 
 ```bash
 # Local dev
-claude mcp add --transport http as500 http://localhost:3002/mcp
+claude mcp add --transport http as500 https://localhost:3443/mcp
 
 # Production deployment
 claude mcp add --transport http as500 https://adv.entence.se/mcp
@@ -372,14 +383,16 @@ Any CRUDTable config with an `api` block is also available as a conventional RES
 
 ### Endpoints
 
-| Method | URL | Purpose |
-|--------|-----|---------|
-| `GET`    | `/api`                    | Discovery — list all exposed resources |
-| `GET`    | `/api/:configId`          | List records (`?offset=&limit=`, max 100) |
-| `GET`    | `/api/:configId/:id`      | Read one record |
-| `POST`   | `/api/:configId`          | Create |
-| `PUT`    | `/api/:configId/:id`      | Update |
-| `DELETE` | `/api/:configId/:id`      | Delete (204, no body) |
+
+| Method   | URL                  | Purpose                                   |
+| -------- | -------------------- | ----------------------------------------- |
+| `GET`    | `/api`               | Discovery — list all exposed resources    |
+| `GET`    | `/api/:configId`     | List records (`?offset=&limit=`, max 100) |
+| `GET`    | `/api/:configId/:id` | Read one record                           |
+| `POST`   | `/api/:configId`     | Create                                    |
+| `PUT`    | `/api/:configId/:id` | Update                                    |
+| `DELETE` | `/api/:configId/:id` | Delete (204, no body)                     |
+
 
 Scope params with `injectFromAuth: 'userId'` are injected server-side from the token — callers never send them. All other scope params go in the **query string**; the body contains only the resource's own fields.
 
@@ -388,11 +401,13 @@ Scope params with `injectFromAuth: 'userId'` are injected server-side from the t
 If you own both the client app and the AS500 backend, skip the OAuth redirect dance. Use the credential-exchange endpoints:
 
 **1. Login — exchange credentials for tokens**
+
 ```bash
 curl -X POST http://localhost:3002/api/auth/token \
   -H "Content-Type: application/json" \
   -d '{ "username": "FREDRIC", "password": "fredric" }'
 ```
+
 ```json
 {
   "access_token": "<JWT>",
@@ -403,12 +418,14 @@ curl -X POST http://localhost:3002/api/auth/token \
 ```
 
 **2. Call the API**
+
 ```bash
 curl http://localhost:3002/api/timereg_v2?date=2026-04-23 \
   -H "Authorization: Bearer <access_token>"
 ```
 
 **3. Refresh after 1 hour (tokens rotate — old pair is revoked)**
+
 ```bash
 curl -X POST http://localhost:3002/api/auth/refresh \
   -H "Content-Type: application/json" \
@@ -416,13 +433,14 @@ curl -X POST http://localhost:3002/api/auth/refresh \
 ```
 
 **4. Logout**
+
 ```bash
 curl -X POST http://localhost:3002/api/auth/revoke \
   -H "Content-Type: application/json" \
   -d '{ "token": "<refresh_token>", "token_type_hint": "refresh_token" }'
 ```
 
-> **Third-party / AI agent?** Use the full OAuth 2.1 + DCR flow described in the Remote MCP Server section above. Both flows produce identical JWTs accepted on every `/api/*` call.
+> **Third-party / AI agent?** Use the full OAuth 2.1 + DCR flow described in the Remote MCP Server section above. Both flows produce identical JWTs accepted on every `/api/`* call.
 
 ### Error format
 
@@ -457,11 +475,13 @@ AS500 implements a modern, secure authentication system aligned with 2026 indust
 ### Token-Based Authentication
 
 **Dual-Token Pattern** (inspired by OAuth 2.0):
+
 - **Access Token** - Short-lived (1 hour), used for active authentication
 - **Refresh Token** - Long-lived (30 days), used to reissue access tokens
 - **Token Rotation** - Both tokens are rotated when refresh token is used (prevents replay attacks)
 
 **User Experience:**
+
 - Login once, stay authenticated for 30 days
 - Access tokens automatically refresh in the background
 - No password re-entry needed unless refresh token expires
@@ -470,6 +490,7 @@ AS500 implements a modern, secure authentication system aligned with 2026 indust
 ### Security Features
 
 **Implemented (Phase 1):**
+
 - ✅ **bcrypt password hashing** - Industry-standard password security
 - ✅ **Token rotation** - Access and refresh tokens both rotate on use
 - ✅ **Device tracking** - Each token pair linked to device fingerprint
@@ -480,6 +501,7 @@ AS500 implements a modern, secure authentication system aligned with 2026 indust
 - ✅ **Auto-cleanup** - Expired and revoked tokens automatically purged
 
 **Database Schema:**
+
 ```sql
 auth_tokens (
   access_token, refresh_token,         -- Dual tokens
@@ -493,11 +515,13 @@ auth_tokens (
 ### Session Management
 
 **Triple-Layer Approach:**
+
 1. **WebSocket Session** (15 min) - Active connection state
 2. **Session Cookie** (7 days) - Session ID persistence
 3. **Auth Tokens** (1h + 30d) - Authentication credentials
 
 **Flow:**
+
 ```
 User logs in
   └─> Server issues: Session ID + Access Token + Refresh Token
@@ -510,6 +534,7 @@ User logs in
 ```
 
 **Benefits:**
+
 - Users stay logged in for 30 days without re-entering password
 - Short access token window (1h) limits exposure if compromised
 - Token rotation detects theft (old tokens invalidated)
@@ -518,6 +543,7 @@ User logs in
 ### Rate Limiting
 
 In-memory rate limiting protects against abuse:
+
 - **Login**: 5 attempts per minute per session
 - **Token Refresh**: 10 per hour per user
 - **General Requests**: 100 per minute per user
@@ -525,21 +551,24 @@ In-memory rate limiting protects against abuse:
 ### Future Enhancements (Roadmap)
 
 **Phase 2 - Scalability:**
-- [ ] Migrate sessions to Redis for horizontal scaling
-- [ ] Add comprehensive audit logging (`auth_events` table)
-- [ ] Build admin security dashboard
+
+- Migrate sessions to Redis for horizontal scaling
+- Add comprehensive audit logging (`auth_events` table)
+- Build admin security dashboard
 
 **Phase 3 - User Experience:**
-- [ ] "Active Sessions" screen - view/revoke devices
-- [ ] Email notifications for new device logins
-- [ ] Geolocation-based security alerts
-- [ ] "Remember this device for 90 days" option
+
+- "Active Sessions" screen - view/revoke devices
+- Email notifications for new device logins
+- Geolocation-based security alerts
+- "Remember this device for 90 days" option
 
 ## Development Features
 
 ### Session & Token Persistence
 
 **Development Mode** (`NODE_ENV !== 'production'`):
+
 - **Sessions** persisted to disk (`server/data/sessions.json`)
 - **Tokens** stored in PostgreSQL with full audit trail
 - Sessions survive server restarts during development
@@ -547,11 +576,13 @@ In-memory rate limiting protects against abuse:
 - 15-minute session timeout still applies
 
 **Production Mode**:
+
 - Sessions remain in-memory only (no file persistence)
 - Tokens stored in PostgreSQL (production-ready)
 - Token-based auto-login keeps users authenticated for 30 days
 
 **Authentication Testing:**
+
 ```bash
 # Login once, then test persistence:
 1. Login with FREDRIC / fredric
@@ -562,6 +593,7 @@ In-memory rate limiting protects against abuse:
 ```
 
 **Check Cookies** (Browser DevTools → Application → Cookies):
+
 - `as500_session` - Session ID (7 days)
 - `as500_access_token` - Short-lived auth (1 hour)
 - `as500_refresh_token` - Long-lived auth (30 days)
@@ -570,6 +602,7 @@ In-memory rate limiting protects against abuse:
 ### Hot Reload
 
 Both server and client support hot reload:
+
 - **Server**: Uses `tsx watch` - automatically restarts on file changes
 - **Client**: Uses Vite HMR - instant updates in the browser
 - **Docker**: Volume mounts ensure code changes are reflected immediately
@@ -594,33 +627,37 @@ UPDATE auth_tokens SET revoked_at = NOW() WHERE user_id = 1;
 ## Documentation
 
 See [CLAUDE.MD](CLAUDE.MD) for detailed documentation including:
+
 - Protocol specification
 - Adding new screens
 - Session management
 - Troubleshooting
 
 See [ACCESS.md](ACCESS.md) for the access control reference including:
+
 - Roles and default permissions
 - Groups and user-level overrides
 - Adding permission keys
 - CRUDTable `requirePermission` integration
 
 See [BACKUP.md](BACKUP.md) for backup system documentation including:
+
 - Automated backup configuration
 - Manual backup creation
 - Restoring from backups
 - Backup management
 
 See [CLAUDE.md § Remote MCP Server](CLAUDE.md#remote-mcp-server) for MCP server internals:
+
 - OAuth 2.1 + DCR wire-up and the `oauth/` module layout
 - `auth_tokens` column reuse for MCP-kind tokens
 - `mcp_audit_log` schema and retention considerations
 - How to expose a new CRUDTable config as MCP tools
 
 See [CLAUDE.md § REST API](CLAUDE.md#rest-api) for the REST API reference:
+
 - Endpoint table and error format
 - First-party login flow (`POST /api/auth/token`)
 - How to expose a CRUDTable config on the REST surface (`api` block)
 - Scope params and `injectFromAuth`
-
 
