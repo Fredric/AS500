@@ -1,8 +1,8 @@
 // Time Registration V2 - CRUDTable Config
 // Equivalent to screens/timeReg.ts + screens/timeEntry.ts using the CRUDTable system
 
-import type { CRUDTableConfig } from '../crudtable/types.js';
-import type { Session } from '../types/index.js';
+import type { CRUDTableConfig } from '../../core/crudtable/types.js';
+import type { Session } from '../../core/types/index.js';
 import * as timeRegCrud from '../services/timeRegCrud.js';
 
 export const timeRegV2Config: CRUDTableConfig = {
@@ -291,3 +291,4 @@ export async function initTimeRegV2Context(session: Session): Promise<void> {
     dayId: day.id,
   };
 }
+

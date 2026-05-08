@@ -8,12 +8,12 @@ export interface jiraTask {
     assignee: string;
   }
 
-const JIRA_BASE_URL = process.env.JIRA_BASE_URL;
-const EMAIL = "fb@stepwise.no";
+const JIRA_BASE_URL = process.env.JIRA_BASE_URL ?? '';
+const EMAIL = process.env.JIRA_USER_EMAIL ?? '';
 const API_TOKEN = process.env.JIRA_API_TOKEN ?? '';
 
 const jira = axios.create({
-    baseURL: 'https://stepwise-as.atlassian.net',
+    baseURL: JIRA_BASE_URL,
     auth: {
       username: EMAIL,
       password: API_TOKEN
@@ -44,3 +44,4 @@ const jira = axios.create({
     
     return data;
   }
+

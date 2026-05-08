@@ -2,7 +2,7 @@
 // CRUD operations for days and time entries
 
 import { eq, and, max, sql } from 'drizzle-orm';
-import { db } from '../db/index.js';
+import { db } from '../../core/db/index.js';
 import { days, dayItems } from '../db/schema.js';
 
 // Types

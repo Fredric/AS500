@@ -109,3 +109,32 @@ export type ScreenHandler = (
   session: Session,
   request: ClientRequest
 ) => ScreenResponse;
+
+// ============================================
+// Menu node types (used by menus/ and crudtable/)
+// ============================================
+
+interface BaseNode {
+  key: string;
+  name: string;
+  requirePermission?: string;
+}
+
+export interface MenuNode extends BaseNode {
+  type: 'menu';
+  title?: string;
+  items: AppNode[];
+}
+
+export interface CrudNode extends BaseNode {
+  type: 'crudtable';
+  configId: string;
+  initContext?: (session: Session) => void | Promise<void>;
+}
+
+export interface ActionNode extends BaseNode {
+  type: 'action';
+  action: 'log_off';
+}
+
+export type AppNode = MenuNode | CrudNode | ActionNode;

@@ -4,24 +4,27 @@ import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
-import { createSession, getSession } from './session/index.js';
-import { buildLoginScreen, handleLogin } from './screens/login.js';
-import { mainMenuScreen, handleMainMenu } from './screens/mainMenu.js';
-import type { ClientRequest, ScreenResponse, Session } from './types/index.js';
-import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './services/auth.js';
-import { loadUserPermissions } from './services/access.js';
-import { tokenRefreshRateLimiter } from './utils/rateLimiter.js';
+import { createSession, getSession } from './core/session/index.js';
+import { buildLoginScreen, handleLogin } from './core/screens/login.js';
+import { mainMenuScreen, handleMainMenu } from './core/screens/mainMenu.js';
+import type { ClientRequest, ScreenResponse, Session } from './core/types/index.js';
+import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './core/services/auth.js';
+import { loadUserPermissions } from './core/services/access.js';
+import { tokenRefreshRateLimiter } from './core/utils/rateLimiter.js';
 
 // Import database initialization
-import { initializeDatabase, closeDatabase } from './db/index.js';
+import { initializeDatabase, closeDatabase } from './core/db/index.js';
+
+// App self-registration: configs + menu items (side effects)
+import './app/index.js';
 
 // CRUDTable system
-import { registerCRUDConfigs } from './configs/index.js';
-import { handleCRUDScreen, buildCRUDScreenForResume } from './crudtable/router.js';
+import { bootstrapCore } from './core/bootstrap.js';
+import { handleCRUDScreen, buildCRUDScreenForResume } from './core/crudtable/router.js';
 
 // Remote MCP server (separate Express app on its own port). Phase 2: boots
-// unauthenticated; see `server/src/mcp/index.ts`.
-import { startMcpServer, DEFAULT_MCP_PORT } from './mcp/index.js';
+// unauthenticated; see `server/src/core/mcp/index.ts`.
+import { startMcpServer, DEFAULT_MCP_PORT } from './core/mcp/index.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 const MCP_PORT = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT) : DEFAULT_MCP_PORT;
@@ -117,7 +120,7 @@ async function getCurrentScreenResponse(session: Session): Promise<Omit<ScreenRe
 
       // Try MENU_* screens
       if (session.currentScreen.startsWith('MENU_') && session.authenticated) {
-        const { getMenuNodeByScreenId, buildMenuScreen: buildMenu } = await import('./menus/menuRuntime.js');
+        const { getMenuNodeByScreenId, buildMenuScreen: buildMenu } = await import('./core/menus/menuRuntime.js');
         const menuNode = getMenuNodeByScreenId(session.currentScreen);
         if (menuNode) return buildMenu(menuNode, session);
       }
@@ -131,8 +134,8 @@ async function startServer() {
   // Initialize database before starting server
   await initializeDatabase();
 
-  // Register CRUDTable configs
-  registerCRUDConfigs();
+  // Register core system configs
+  bootstrapCore();
 
   // Create HTTP server for static file serving in production
   const httpServer = createServer((req, res) => {
@@ -418,7 +421,7 @@ async function startServer() {
 
             // Try MENU_* screens
             if (currentSession.currentScreen.startsWith('MENU_')) {
-              const { getMenuNodeByScreenId, handleMenuScreen } = await import('./menus/menuRuntime.js');
+              const { getMenuNodeByScreenId, handleMenuScreen } = await import('./core/menus/menuRuntime.js');
               const menuNode = getMenuNodeByScreenId(currentSession.currentScreen);
               if (menuNode) {
                 response = await handleMenuScreen(menuNode, currentSession, request);

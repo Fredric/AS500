@@ -1,7 +1,7 @@
 // Services Performed CRUDTable Config
 // Motorcycle service records — scoped to a specific motorcycle via motorcycleId in input
 
-import type { CRUDTableConfig } from '../crudtable/types.js';
+import type { CRUDTableConfig } from '../../core/crudtable/types.js';
 import * as servicesPerformedService from '../services/servicesPerformedService.js';
 
 function toStringOrNull(s: string | undefined): string | null {
@@ -131,3 +131,4 @@ export const servicesPerformedConfig: CRUDTableConfig = {
     ];
   },
 };
+

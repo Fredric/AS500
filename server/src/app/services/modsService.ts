@@ -1,7 +1,7 @@
 // Mods service — CRUD for motorcycle modifications
 
 import { and, eq, asc } from 'drizzle-orm';
-import { db } from '../db/index.js';
+import { db } from '../../core/db/index.js';
 import { mods } from '../db/schema.js';
 
 export interface ListParams {

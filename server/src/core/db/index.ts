@@ -3,7 +3,11 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import * as schema from './schema.js';
+import * as coreSchema from './schema.js';
+// Intentional coupling point: core imports app schema so Drizzle has a single
+// combined schema at the pool level. This is the one place where core knows
+// about app — do not add further cross-boundary imports here.
+import * as appSchema from '../../app/db/schema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -43,7 +47,7 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle PostgreSQL client:', err);
 });
 
-export const db = drizzle(pool, { schema });
+export const db = drizzle(pool, { schema: { ...coreSchema, ...appSchema } });
 
 /**
  * Run all pending Drizzle migrations and verify connectivity.

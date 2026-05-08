@@ -1,7 +1,7 @@
 // Services Performed service — CRUD for motorcycle service records
 
 import { and, eq, desc } from 'drizzle-orm';
-import { db } from '../db/index.js';
+import { db } from '../../core/db/index.js';
 import { servicesPerformed } from '../db/schema.js';
 
 export interface ListParams {

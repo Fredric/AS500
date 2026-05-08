@@ -1,8 +1,8 @@
 // Motorcycles CRUDTable Config
 // User-owned motorcycle garage — each user sees only their own bikes
 
-import type { CRUDTableConfig } from '../crudtable/types.js';
-import type { Session } from '../types/index.js';
+import type { CRUDTableConfig } from '../../core/crudtable/types.js';
+import type { Session } from '../../core/types/index.js';
 import * as motorcycleService from '../services/motorcycleService.js';
 
 const currentYear = new Date().getFullYear();
@@ -259,3 +259,4 @@ export function initMotorcyclesContext(session: Session): void {
     userId: session.viserId,
   };
 }
+

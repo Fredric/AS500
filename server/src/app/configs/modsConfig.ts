@@ -1,7 +1,7 @@
 // Mods CRUDTable Config
 // Motorcycle modifications — scoped to a specific motorcycle via motorcycleId in input
 
-import type { CRUDTableConfig } from '../crudtable/types.js';
+import type { CRUDTableConfig } from '../../core/crudtable/types.js';
 import * as modsService from '../services/modsService.js';
 
 function toStringOrNull(s: string | undefined): string | null {
@@ -107,3 +107,4 @@ export const modsConfig: CRUDTableConfig = {
     ];
   },
 };
+
