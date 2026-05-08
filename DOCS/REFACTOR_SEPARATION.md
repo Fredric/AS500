@@ -17,6 +17,7 @@ The separation is enforced by directory structure. There is no package boundary 
 
 ```
 server/src/
+├── api/              ← REST API layer (handlers, router, first-party auth)
 ├── configs/          ← mixes system configs + app configs
 ├── crudtable/
 ├── db/
@@ -39,6 +40,10 @@ server/src/
 server/src/
 ├── core/                          ← AS500 product (never edited by app developers)
 │   ├── bootstrap.ts               ← NEW: starts core (registers core configs + admin menu)
+│   ├── api/                       ← REST API layer (moved from server/src/api/)
+│   │   ├── auth.ts                ← first-party login/refresh/revoke endpoints
+│   │   ├── handlers.ts            ← per-operation REST handlers
+│   │   └── index.ts               ← Express router factory (buildApiRouter)
 │   ├── configs/                   ← system-only CRUDTable configs
 │   │   ├── authTokensConfig.ts
 │   │   ├── mcpAuditConfig.ts
@@ -108,6 +113,7 @@ Create these empty directories. Do not move any files yet.
 
 ```
 server/src/core/
+server/src/core/api/
 server/src/core/configs/
 server/src/core/db/
 server/src/core/crudtable/
@@ -134,6 +140,7 @@ Move these files verbatim. Only update relative imports *within* these files to 
 
 | Old path | New path |
 |---|---|
+| `server/src/api/` (whole dir) | `server/src/core/api/` |
 | `server/src/crudtable/context.ts` | `server/src/core/crudtable/context.ts` |
 | `server/src/crudtable/registry.ts` | `server/src/core/crudtable/registry.ts` |
 | `server/src/crudtable/router.ts` | `server/src/core/crudtable/router.ts` |
@@ -154,6 +161,8 @@ Move these files verbatim. Only update relative imports *within* these files to 
 | `server/src/utils/rateLimiter.ts` | `server/src/core/utils/rateLimiter.ts` |
 
 **Import depth changes:** Files that were at `server/src/X/foo.ts` and imported `../db/index.js` are now at `server/src/core/X/foo.ts` — if `db` also moved to `core/db/`, the relative path `../db/index.js` is still correct (both are one level under `core/`). Verify case by case.
+
+**`api/` imports:** All three files in `server/src/api/` import from `../crudtable/`, `../services/`, `../mcp/`, `../db/`, and `../utils/`. Every one of those siblings also moves into `core/`, so the relative paths (`../crudtable/registry.js`, `../mcp/audit.js`, etc.) remain valid after the move — **no import changes required for the `api/` files**. The only exception to watch: `api/auth.ts` imports `users` from `../db/schema.js`; after the schema split (Phase 5), `users` lives in `core/db/schema.ts` — still correct.
 
 ---
 
@@ -506,6 +515,7 @@ Files that moved from `server/src/configs/userMgmtConfig.ts` to `server/src/core
 Once all files are moved and imports fixed, delete the now-empty source directories:
 
 ```
+server/src/api/        (after moving all files out)
 server/src/configs/    (after moving all files out)
 server/src/crudtable/  (after moving all files out)
 server/src/db/         (after moving all files out)
@@ -580,3 +590,33 @@ After this refactor, the workflow for a developer building a new app on AS500 is
 6. Run `npm run db:generate` to create a migration
 
 No files outside `server/src/app/` need to be touched.
+
+### Optional: expose the config over MCP or REST
+
+Add an `mcp` block to the `CRUDTableConfig` to expose the config as MCP tools (`<id>.list`, `<id>.read`, etc.) via the AI agent surface (port 3002):
+
+```typescript
+mcp: {
+  name: 'My Thing',
+  description: '...',
+  operations: { list: true, read: true, create: true, update: true, delete: true },
+  scope: [
+    { name: 'userId', type: 'number', required: true, description: 'Injected from token.', injectFromAuth: 'userId' },
+  ],
+}
+```
+
+Add an `api` block to expose the same config as standard REST endpoints (`GET/POST/PUT/DELETE /api/<id>`) via the first-party REST surface (also port 3002):
+
+```typescript
+api: {
+  name: 'My Thing',
+  description: '...',
+  operations: { list: true, read: true, create: true, update: true, delete: true },
+  scope: [
+    { name: 'userId', type: 'number', required: true, description: 'Injected from token.', injectFromAuth: 'userId' },
+  ],
+}
+```
+
+Both blocks are optional and independent — a config can have neither, one, or both. No code changes outside the config file are needed; the `core/api/` and `core/mcp/` runtimes pick up registered configs automatically at request time.

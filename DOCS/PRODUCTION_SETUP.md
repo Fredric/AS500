@@ -7,8 +7,14 @@ Complete reference for deploying a new AS500 server instance from scratch.
 ## Architecture Overview
 
 ```
-Internet → Caddy (HTTPS :443) → Node.js app (:3001, WebSocket + HTTP)
-                              → MCP OAuth server (:3002, HTTP — Caddy proxies /mcp)
+Internet → Caddy (HTTPS :443) → Node.js app (:3001, WebSocket + static SPA)
+                              → MCP/API server (:3002, HTTP)
+                                  /mcp          — MCP Streamable HTTP (OAuth 2.1)
+                                  /api          — REST API (Bearer token)
+                                  /api/auth     — First-party credential exchange
+                                  /authorize    — OAuth consent page
+                                  /token        — OAuth token endpoint
+                                  /.well-known  — OAuth discovery
                               → PostgreSQL (:5432, internal only)
 ```
 
@@ -259,15 +265,17 @@ Create `/etc/caddy/Caddyfile`:
 
 ```caddy
 your-domain.com {
-    # Terminal WebSocket + static SPA
-    reverse_proxy [::1]:3001
-
-    # MCP endpoint — proxied to the OAuth server
+    # MCP Streamable HTTP endpoint
     handle /mcp* {
         reverse_proxy [::1]:3002
     }
 
-    # OAuth well-known + token endpoints
+    # REST API + first-party auth
+    handle /api* {
+        reverse_proxy [::1]:3002
+    }
+
+    # OAuth well-known discovery + consent + token endpoints
     handle /.well-known/* {
         reverse_proxy [::1]:3002
     }
@@ -283,8 +291,13 @@ your-domain.com {
     handle /revoke {
         reverse_proxy [::1]:3002
     }
+
+    # Terminal WebSocket + static SPA (catch-all — must be last)
+    reverse_proxy [::1]:3001
 }
 ```
+
+> **Important:** The `/api*` and `/mcp*` handle blocks must appear **before** the catch-all `reverse_proxy` at the bottom. Caddy matches handle blocks in order; without them, API and MCP requests would be forwarded to port 3001 (the WebSocket server) instead of port 3002.
 
 ```bash
 sudo systemctl reload caddy
@@ -318,12 +331,109 @@ docker compose -f docker-compose.prod.yml ps
 # Tail application logs
 docker compose -f docker-compose.prod.yml logs -f server
 
-# HTTP health check
+# HTTP health check (terminal app)
 curl -I https://your-domain.com
 
 # MCP health check
 curl https://your-domain.com/mcp/health
+
+# REST API — first-party login (returns access + refresh tokens)
+curl -s -X POST https://your-domain.com/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"username":"FREDRIC","password":"<your-admin-password>"}' | jq .
+
+# REST API — discovery (list exposed resources; requires Bearer token from above)
+ACCESS_TOKEN="<access_token from previous command>"
+curl -s https://your-domain.com/api \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq .
 ```
+
+---
+
+## REST API
+
+The REST API is mounted at `/api` on the same port as the MCP server (3002) and proxied through Caddy. No additional environment variables or services are required beyond what is already configured for MCP.
+
+### Authentication
+
+Two flows produce identical Bearer tokens. Choose based on whether you own the client app.
+
+**First-party (you own the client — no browser redirect needed):**
+
+```http
+POST https://your-domain.com/api/auth/token
+Content-Type: application/json
+
+{ "username": "FREDRIC", "password": "<password>" }
+```
+
+Response:
+```json
+{
+  "access_token": "<JWT>",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "<opaque>"
+}
+```
+
+**Third-party / AI agent (OAuth 2.1 + PKCE consent flow):**
+
+Use the same OAuth endpoints as MCP (`/register` → `/authorize` → `/token`). The resulting Bearer tokens are identical in format and accepted by all `/api/*` routes.
+
+### Using the Token
+
+Pass `Authorization: Bearer <access_token>` on every REST request:
+
+```http
+GET https://your-domain.com/api/timereg_v2?date=2026-05-08
+Authorization: Bearer <access_token>
+```
+
+### Token Rotation
+
+Access tokens expire after 1 hour. Rotate with the refresh token before expiry:
+
+```http
+POST https://your-domain.com/api/auth/refresh
+Content-Type: application/json
+
+{ "refresh_token": "<opaque>" }
+```
+
+Returns a new `access_token` + new `refresh_token`. The old pair is immediately revoked.
+
+### Revoke / Logout
+
+```http
+POST https://your-domain.com/api/auth/revoke
+Content-Type: application/json
+
+{ "token": "<refresh_token>", "token_type_hint": "refresh_token" }
+```
+
+Always returns `{ "ok": true }`.
+
+### Available Endpoints
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| `GET` | `/api` | Discovery — lists all exposed resources and their operations |
+| `GET` | `/api/:configId` | List records (supports `?offset=&limit=`, max 100) |
+| `GET` | `/api/:configId/:id` | Read single record |
+| `POST` | `/api/:configId` | Create record |
+| `PUT` | `/api/:configId/:id` | Update record |
+| `DELETE` | `/api/:configId/:id` | Delete record (204 no body) |
+
+Scope parameters (e.g. `?date=…`) are passed as query string on all methods. The body contains only the resource's own writable fields.
+
+### Rate Limits
+
+In production (`NODE_ENV=production`): 60 API calls/minute per client. The `/api/auth/token` endpoint is additionally limited to 10 login attempts/minute per IP.
+
+### Audit Log
+
+Every API call writes a row to the `mcp_audit_log` table with `source='api'`. The built-in audit admin screen in the terminal app shows both MCP and REST calls.
 
 ---
 
@@ -396,6 +506,30 @@ curl -s http://localhost:3001/health || echo "not reachable"
 ```
 And verify the Caddy config has a `reverse_proxy [::1]:3001` line for the root path.
 
+### REST API returns 404 for `/api/*`
+
+The Caddy config is missing the `handle /api*` block (or it appears after the catch-all `reverse_proxy`). Check that `/api*` is proxied to port 3002 and that the block is listed **before** the catch-all at the bottom of the site block.
+
+```bash
+# Confirm the API server is reachable directly on the host
+curl -s http://localhost:3002/api | jq .resources
+```
+
+If that works but `https://your-domain.com/api` returns 404, the Caddy config needs updating.
+
+### `POST /api/auth/token` returns 401 with valid credentials
+
+The user account may be inactive or the password may differ from what was set during seed. Verify in the terminal app (log in via the browser) or check the DB:
+
+```bash
+docker compose -f docker-compose.prod.yml exec postgres \
+  psql -U as500 -c "SELECT username, active FROM users WHERE username = 'FREDRIC';"
+```
+
+### `POST /api/auth/token` returns 429
+
+Rate limit exceeded: 10 login attempts/minute per IP. Wait 60 seconds and retry.
+
 ### OAuth discovery returns wrong URLs
 
 `MCP_PUBLIC_URL` is set incorrectly. It must exactly match the external HTTPS URL of the server — no trailing slash, no `/mcp` suffix.
@@ -419,4 +553,6 @@ And that the domain's DNS A record resolves to the correct server IP before star
 - [ ] `.env` file permissions are `600` (`chmod 600 .env`)
 - [ ] Ports 3001 and 3002 are not exposed to the internet (only Caddy on 80/443 is public)
 - [ ] `NODE_ENV=production` is set
-- [ ] MCP JWT secret rotation plan is documented (invalidates all MCP sessions)
+- [ ] MCP JWT secret rotation plan is documented (invalidates all MCP and REST API sessions)
+- [ ] Caddy config includes `handle /api*` proxied to port 3002 (REST API reachable externally)
+- [ ] REST API access tested end-to-end: `POST /api/auth/token` → `GET /api` returns resource list
