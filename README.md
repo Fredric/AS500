@@ -170,7 +170,7 @@ AS500/
 The recommended way to create CRUD screens. Instead of writing ~300 lines of screen handlers, write a ~60 line config:
 
 ```typescript
-// server/src/configs/myItems.ts
+// server/src/app/configs/myItems.ts
 export const myItemsConfig: CRUDTableConfig = {
   id: 'my_items',
   title: 'My Items',
@@ -264,7 +264,7 @@ export const thingsConfig: CRUDTableConfig = {
 };
 ```
 
-See `server/src/configs/timeRegV2.ts` for a working reference and `.claude/skills/crudtable/SKILL.md` § *Step 5 (optional) — Expose the config over MCP* for the full recipe.
+See `server/src/app/configs/timeRegV2.ts` for a working reference and `.claude/skills/crudtable/SKILL.md` § *Step 5 (optional) — Expose the config over MCP* for the full recipe.
 
 ### Configuration
 
@@ -448,7 +448,7 @@ api: {
 }
 ```
 
-See `server/src/configs/timeRegV2.ts` for a working example.
+See `server/src/app/configs/timeRegV2.ts` for a working example.
 
 ## Authentication & Security
 

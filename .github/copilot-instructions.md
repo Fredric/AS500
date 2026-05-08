@@ -46,31 +46,33 @@ When asked to inspect, navigate, or capture a screen in the running app, prefer 
 AS500 is a server-driven terminal emulator, not a REST-style SPA. The client renders a literal 80x24 screen from WebSocket responses (`rows` plus `fields`) and sends key/input events back to the server. The server owns navigation, validation, business rules, authentication, and screen rendering.
 
 - `server/src/index.ts` is the main WebSocket router and production static-file host.
-- Navigation menus (main menu + every submenu) are driven by a single declarative tree in `server/src/menus/menuTree.ts`, rendered generically by `server/src/menus/menuRuntime.ts`. **Do not hand-roll menu screens.** `server/src/screens/mainMenu.ts` is a thin delegator into the runtime.
-- CRUD-style list/form flows go through the CRUDTable runtime in `server/src/crudtable/*`, with configs registered from `server/src/configs/index.ts` and exposed to users by adding a `CrudNode` to `server/src/menus/menuTree.ts`.
-- Hand-written flows (currently only `login.ts`) live in `server/src/screens/*` and use the DSL in `server/src/dsl/*`. Use a manual screen only for login, help, wizards, and genuinely custom flows.
+- The codebase is split into two layers: **`server/src/core/`** (the AS500 product — never edited by app developers) and **`server/src/app/`** (the application built on top — where all new business features go).
+- Navigation menus (main menu + every submenu) are assembled at runtime from items registered via `registerMenuItems()` in `server/src/app/menus/appMenu.ts`, combined with core admin nodes from `server/src/core/menus/menuTree.ts`, and rendered generically by `server/src/core/menus/menuRuntime.ts`. **Do not hand-roll menu screens.**  `server/src/core/screens/mainMenu.ts` is a thin delegator into the runtime.
+- CRUD-style list/form flows go through the CRUDTable runtime in `server/src/core/crudtable/*`, with app configs registered in `server/src/app/index.ts` and exposed to users by calling `registerMenuItems()` in `server/src/app/menus/appMenu.ts`.
+- Hand-written flows (currently only `login.ts`) live in `server/src/core/screens/*` and use the DSL in `server/src/core/dsl/*`. Use a manual screen only for login, help, wizards, and genuinely custom flows.
 - CRUDTable list screens send `navigation` metadata; the client uses it for row focus, Enter primary action, delete shortcuts, and menu/list keyboard behavior.
 - Sessions live in memory and persist to `server/data/sessions.json` in development. Authentication also uses DB-backed access/refresh tokens; permissions are loaded into the session on login/resume.
-- Database access should go through Drizzle (`server/src/db/index.ts`, `server/src/db/schema.ts`). Migrations live in `server/src/db/migrations/` and are applied on server startup.
+- Database access should go through Drizzle (`server/src/core/db/index.ts`). App tables are defined in `server/src/app/db/schema.ts`; system tables in `server/src/core/db/schema.ts`. Migrations live in `server/src/core/db/migrations/` and are applied on server startup.
 
 ## Key conventions
 
 - Keep validation and business logic on the server. The client should stay a dumb terminal: rendering, keyboard/mouse input, cookies, reconnect, and session resume only.
 - Prefer CRUDTable for new CRUD screens. Use manual screens only for login, help, wizards, and genuinely custom flows — **never for menus**.
-- Expose a new CRUDTable screen by adding a `CrudNode` to `server/src/menus/menuTree.ts`. The menu runtime handles permission filtering, stack push, `initContext(session)` invocation, and dispatch to `CRUD_{ID_UPPERCASE}`. Do not set `session.currentScreen` from a screen handler to reach a CRUD screen when a menu entry will do.
+- **App code belongs in `server/src/app/`**. Never edit files under `server/src/core/` when building application features; core is the AS500 product layer.
+- Expose a new CRUDTable screen by calling `registerMenuItems([...])` in `server/src/app/menus/appMenu.ts`. The menu runtime handles permission filtering, stack push, `initContext(session)` invocation, and dispatch to `CRUD_{ID_UPPERCASE}`. Do not set `session.currentScreen` from a screen handler to reach a CRUD screen when a menu entry will do.
 - Per-user context seeding for a CRUDTable list (e.g. `session.context.crud_<id>_input = {…}`) belongs in the node's `initContext(session)`, not in a screen handler.
 - Navigation is stack-based: push the current screen onto `session.screenStack` before moving forward, and use the stack for cancel/back behavior. The menu runtime does this automatically for menu → submenu and menu → CRUD transitions.
-- Use the Drizzle `db` instance and schema objects in services. Do not add new code that talks to PostgreSQL with raw `pool.query`.
+- Use the Drizzle `db` instance (from `server/src/core/db/index.ts`) and schema objects in services. Do not add new code that talks to PostgreSQL with raw `pool.query`. App table definitions go in `server/src/app/db/schema.ts`.
 - TypeScript uses ES modules with `.js` import extensions even inside `.ts` files.
 - Screen IDs are `UPPER_CASE_SNAKE`; CRUDTable screen IDs are `CRUD_{CONFIG_ID_UPPERCASE}`.
 - Screen files typically keep the DSL definition, `build...Screen()`, and `handle...()` together.
-- RBAC is central to navigation and CRUD actions. Prefer permission keys and CRUDTable `requirePermission` / service-level `requirePermission` instead of scattering role checks. See `ACCESS.md` and `server/src/services/access.ts`.
+- RBAC is central to navigation and CRUD actions. Prefer permission keys and CRUDTable `requirePermission` / service-level `requirePermission` instead of scattering role checks. See `ACCESS.md` and `server/src/core/services/access.ts`.
 
 ## Skills and deeper references
 
 For task-specific guidance, read the matching skill/doc before non-trivial work:
 
-- **CRUDTable (any CRUD screen work)** → `.github/instructions/crudtable.instructions.md` (auto-applies under `server/src/configs/**`, `server/src/menus/**`, etc.), or the full skill at `.cursor/skills/crudtable/SKILL.md` / `.claude/skills/crudtable/SKILL.md`. Background: `DOCS/CRUDTABLE/5. CRUDTable Concept.md` and `DOCS/CRUDTABLE/6. CRUDTable Reference.md`.
-- **Menu system** → `CLAUDE.md` § "Menu System". Ground truth: `server/src/menus/menuTree.ts` (declarations) and `server/src/menus/menuRuntime.ts` (runtime).
+- **CRUDTable (any CRUD screen work)** → `.github/instructions/crudtable.instructions.md` (auto-applies under `server/src/app/configs/**`, `server/src/app/menus/**`, etc.), or the full skill at `.cursor/skills/crudtable/SKILL.md` / `.claude/skills/crudtable/SKILL.md`. Background: `DOCS/CRUDTABLE/5. CRUDTable Concept.md` and `DOCS/CRUDTABLE/6. CRUDTable Reference.md`.
+- **Menu system** → `CLAUDE.md` § "Menu System". Ground truth: `server/src/app/menus/appMenu.ts` (app items), `server/src/core/menus/menuRegistry.ts` (assembly), `server/src/core/menus/menuRuntime.ts` (runtime).
 - **RBAC / permissions** → `ACCESS.md`.
 - **Neutral agent entry point (any AI tool)** → `AGENTS.md` at repo root.

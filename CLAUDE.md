@@ -91,7 +91,7 @@ The client uses `navigation` to drive row selection UI. When present, arrow keys
 
 ### Authentication
 
-Uses JWT-style **access tokens + refresh tokens** stored in the DB (`auth_tokens` table). Access tokens expire in 1 hour; refresh tokens in 30 days. Token refresh is rate-limited (`server/src/utils/rateLimiter.ts`). The server validates `accessToken` on every WebSocket connection.
+Uses JWT-style **access tokens + refresh tokens** stored in the DB (`auth_tokens` table). Access tokens expire in 1 hour; refresh tokens in 30 days. Token refresh is rate-limited (`server/src/core/utils/rateLimiter.ts`). The server validates `accessToken` on every WebSocket connection.
 
 **Access control (RBAC):** Roles (`user`, `superuser`, `aiagent`, `admin`), groups, and named permission keys. Permissions are resolved at login and cached on the session as a `Set<string>`. See **[ACCESS.md](ACCESS.md)** for the full reference.
 
@@ -109,10 +109,10 @@ Sessions are in-memory (Map) and persisted to `server/data/sessions.json` in dev
 Write a config object (~50-80 lines). The runtime auto-generates list and form screens with pagination, F6=Create, keyboard row navigation, F3/F12 navigation.
 
 **2. Menu (for all menu screens — main menu, submenus)**  
-Add a `MenuNode` to the central menu tree in `server/src/menus/menuTree.ts`. The generic runtime in `server/src/menus/menuRuntime.ts` builds every menu screen (numbered list, Esc=back, permission filtering) automatically. **Do not hand-roll menu screens.**
+App menu items are registered via `registerMenuItems()` in `server/src/app/menus/appMenu.ts`. Core admin nodes live in `server/src/core/menus/menuTree.ts`. The generic runtime in `server/src/core/menus/menuRuntime.ts` assembles everything at runtime and builds every menu screen. **Do not hand-roll menu screens.**
 
 **3. Manual Screen (for login, help, wizards, fully custom flows)**  
-Write DSL definition + `buildScreen()` + `handleScreen()`. Only `login.ts` and the menu delegator `mainMenu.ts` live in `server/src/screens/` today.
+Write DSL definition + `buildScreen()` + `handleScreen()`. Only `login.ts` and the menu delegator `mainMenu.ts` live in `server/src/core/screens/` today.
 
 ### Keyboard Navigation (CRUDTable list screens)
 
@@ -166,19 +166,23 @@ For menu → submenu / menu → CRUDTable transitions, the menu runtime handles 
 
 ## Menu System
 
-All menus (main menu, admin submenus, any future grouped navigation) are driven by a single declarative tree plus one generic runtime. **Do not write custom menu screens.**
+All menus (main menu, admin submenus, any future grouped navigation) are driven by a registry + one generic runtime. **Do not write custom menu screens.**
 
 ### Key files
 
 | Purpose | Path |
 |---------|------|
-| Menu tree (source of truth for all navigation) | `server/src/menus/menuTree.ts` |
-| Generic build/handle for all menu screens | `server/src/menus/menuRuntime.ts` |
-| Thin delegator for the main menu entry point | `server/src/screens/mainMenu.ts` |
+| **App menu items** (add items here) | `server/src/app/menus/appMenu.ts` |
+| Menu registry (assembles final tree at runtime) | `server/src/core/menus/menuRegistry.ts` |
+| Core admin + logoff nodes | `server/src/core/menus/menuTree.ts` |
+| Generic build/handle for all menu screens | `server/src/core/menus/menuRuntime.ts` |
+| Thin delegator for the main menu entry point | `server/src/core/screens/mainMenu.ts` |
 
 ### How it works
 
-- `menuTree.ts` exports `appMenuTree: MenuNode`. Every menu screen is a nested `MenuNode` with `items: AppNode[]`.
+- The menu tree is assembled dynamically at request time by `buildMenuTree()` in `menuRegistry.ts`. It combines app-registered items (added via `registerMenuItems()`) with the core admin node and log-off action.
+- `server/src/core/menus/menuTree.ts` exports only `adminMenuNode` (the Administration submenu) and `logOffNode`. App developers never edit this file.
+- App developers call `registerMenuItems([...])` in `server/src/app/menus/appMenu.ts` to add items to the main menu.
 - Each item is one of three node types:
   - `MenuNode` — a nested submenu (renders a new screen, selecting navigates into it)
   - `CrudNode` — links a menu entry directly to a registered `CRUDTableConfig` (by `configId`)
@@ -186,66 +190,66 @@ All menus (main menu, admin submenus, any future grouped navigation) are driven 
 - `menuRuntime.ts` handles **every** menu screen generically: permission-filters items, renders a numbered list, pushes onto `session.screenStack`, and navigates on Enter. F3/F12/Esc always pop back to the parent.
 - Screen IDs: the root menu is `MAIN_MENU`; every nested menu is `MENU_{KEY_UPPERCASE}` (derived via `menuScreenId(key)` from `menuTree.ts`).
 - Access control: `requirePermission` on any node hides it for users who lack the permission — enforced before render, so invisible items are never selectable.
-- CRUDTable context seeding: if a `CrudNode` declares `initContext(session)`, the runtime calls it **before** handing control to the CRUD runtime. This replaces the old pattern of seeding context from a screen handler.
+- CRUDTable context seeding: if a `CrudNode` declares `initContext(session)`, the runtime calls it **before** handing control to the CRUD runtime.
 
-### Shape of a menu node
+### Shape of app menu registration
 
 ```typescript
-// server/src/menus/menuTree.ts
-export const appMenuTree: MenuNode = {
-  type: 'menu',
-  key: 'main',
-  name: 'Main Menu',
-  title: 'MAIN MENU',
-  items: [
-    {
-      type: 'crudtable',
-      key: 'time_reg',
-      name: 'Time Registration',
-      requirePermission: PERMISSIONS.TIME_REG_READ,
-      configId: 'timereg_v2',            // must match a registered CRUDTableConfig.id
-      initContext: initTimeRegV2Context, // optional — seeds session.context before navigation
-    },
-    {
-      type: 'menu',
-      key: 'admin',
-      name: 'Administration',
-      requirePermission: PERMISSIONS.SYS_ADMIN,
-      items: [ /* nested nodes — renders screen MENU_ADMIN */ ],
-    },
-    { type: 'action', key: 'log_off', name: 'Log Off', action: 'log_off' },
-  ],
-};
+// server/src/app/menus/appMenu.ts
+import { registerMenuItems } from '../../core/menus/menuRegistry.js';
+import { PERMISSIONS } from '../../core/services/access.js';
+import { initTimeRegV2Context } from '../configs/timeRegV2.js';
+
+registerMenuItems([
+  {
+    type: 'crudtable',
+    key: 'time_reg',
+    name: 'Time Registration',
+    requirePermission: PERMISSIONS.TIME_REG_READ,
+    configId: 'timereg_v2',            // must match a registered CRUDTableConfig.id
+    initContext: initTimeRegV2Context, // optional — seeds session.context before navigation
+  },
+  {
+    type: 'menu',
+    key: 'my_garage',
+    name: 'My Garage',
+    items: [ /* nested nodes — renders screen MENU_MY_GARAGE */ ],
+  },
+]);
 ```
 
 ### Adding a menu entry
 
-To expose a new CRUD screen or submenu, **add a node to the tree**. No other file changes are needed — `menuRuntime.ts` picks it up automatically and the router in `server/src/index.ts` already dispatches every `MENU_*` screen to the runtime.
+To expose a new CRUD screen or submenu, **call `registerMenuItems([...])` in `server/src/app/menus/appMenu.ts`**. No other file changes are needed — `menuRuntime.ts` picks it up automatically and the router in `server/src/index.ts` already dispatches every `MENU_*` screen to the runtime.
 
 ---
 
 ## Adding a CRUDTable Screen
 
-**Step 1** – Create service: `server/src/services/myService.ts` with `getAll`, `create`, `update`, `delete` functions using the `db` instance from `../db/index.js`. Add any new tables to `server/src/db/schema.ts` first.
+**Step 1** – Create service: `server/src/app/services/myService.ts` with `getAll`, `create`, `update`, `delete` functions using the `db` instance from `../../core/db/index.js`. Add any new app tables to `server/src/app/db/schema.ts` first.
 
-**Step 2** – Create config: `server/src/configs/myConfig.ts` implementing `CRUDTableConfig` (see `timeRegV2.ts` as reference).
+**Step 2** – Create config: `server/src/app/configs/myConfig.ts` implementing `CRUDTableConfig` (see `timeRegV2.ts` as reference).
 
-**Step 3** – Register: add `registerConfig(myConfig)` in `server/src/configs/index.ts`.
+**Step 3** – Register: add `registerConfig(myConfig)` in `server/src/app/index.ts`.
 
-**Step 4** – Expose in the menu tree: add a `CrudNode` to `server/src/menus/menuTree.ts` under the appropriate parent menu. Pass `initContext` if the config needs caller context seeded into `session.context` before the list renders.
+**Step 4** – Expose in the menu: call `registerMenuItems([...])` in `server/src/app/menus/appMenu.ts`. Pass `initContext` if the config needs caller context seeded into `session.context` before the list renders.
 
 ```typescript
-{
-  type: 'crudtable',
-  key: 'my_thing',
-  name: 'My Thing',
-  requirePermission: PERMISSIONS.MY_THING_READ,
-  configId: 'my_thing',              // matches CRUDTableConfig.id
-  initContext: initMyThingContext,   // optional
-}
+// server/src/app/menus/appMenu.ts
+registerMenuItems([
+  // ...existing items...
+  {
+    type: 'crudtable',
+    key: 'my_thing',
+    name: 'My Thing',
+    requirePermission: PERMISSIONS.MY_THING_READ,
+    configId: 'my_thing',              // matches CRUDTableConfig.id
+    initContext: initMyThingContext,   // optional
+  },
+]);
 ```
 
-No changes to `server/src/index.ts` or `server/src/screens/mainMenu.ts` needed. The menu runtime will render the entry, enforce permissions, push the stack, call `initContext`, and dispatch to `CRUD_{ID_UPPERCASE}`.
+No changes to `server/src/index.ts`, `server/src/core/screens/mainMenu.ts`, or any core file needed. The menu runtime will render the entry, enforce permissions, push the stack, call `initContext`, and dispatch to `CRUD_{ID_UPPERCASE}`.
 
 > **Full reference:** See `.claude/skills/crudtable/SKILL.md` for the complete recipe (copy-pastable service + config skeleton, patterns table, anti-patterns, verification checklist). Background docs: `DOCS/CRUDTABLE/5. CRUDTable Concept.md` (mental model) and `DOCS/CRUDTABLE/6. CRUDTable Reference.md` (field-by-field reference).
 
@@ -283,7 +287,7 @@ The cert files (`certs/*.pem`) are gitignored. The `certs/` directory is tracked
 
 ## Remote MCP Server
 
-Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by adding an `mcp` block. The runtime at `server/src/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs as the terminal UI, and enforces the same AS500 RBAC.
+Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by adding an `mcp` block. The runtime at `server/src/core/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs as the terminal UI, and enforces the same AS500 RBAC.
 
 **Transport**: Streamable HTTP on a dedicated port (default 3002). Endpoints:
 - `POST /mcp` — the MCP endpoint (requires Bearer auth, rate-limited)
@@ -297,7 +301,7 @@ Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by
 
 **Audit**: every tool call — success, validation failure, permission_denied, internal error — writes one row to `mcp_audit_log` with `(client_id, user_id, tool_name, config_id, action, ok, error_code, duration_ms, params_hash)`. Parameter values are never logged; only a sha256 of the JSON input.
 
-**Adding a CRUD config to the MCP surface**: add an `mcp: { name, description, operations, scope? }` block on the `CRUDTableConfig`. No code changes anywhere else. See `server/src/configs/timeRegV2.ts` for a working example and `.claude/skills/crudtable/SKILL.md` § "Step 5 (optional) — Expose the config over MCP" for the full recipe.
+**Adding a CRUD config to the MCP surface**: add an `mcp: { name, description, operations, scope? }` block on the `CRUDTableConfig`. No code changes anywhere else. See `server/src/app/configs/timeRegV2.ts` for a working example and `.claude/skills/crudtable/SKILL.md` § "Step 5 (optional) — Expose the config over MCP" for the full recipe.
 
 **Smoke test**: `cd server && npx tsc && node scripts/smoke-mcp.mjs` walks DCR → consent → token → tools/list → tools/call → refresh and spot-checks the audit log.
 
@@ -305,7 +309,7 @@ Any CRUDTable config can be exposed to remote AI agents as a set of MCP tools by
 
 ## REST API
 
-Any CRUDTable config can be exposed as standard REST endpoints by adding an `api` block alongside (or instead of) the `mcp` block. The runtime at `server/src/api/` mounts routes on the MCP Express app at `/api/{config.id}[/{id}]` (port 3002).
+Any CRUDTable config can be exposed as standard REST endpoints by adding an `api` block alongside (or instead of) the `mcp` block. The runtime at `server/src/core/api/` mounts routes on the MCP Express app at `/api/{config.id}[/{id}]` (port 3002).
 
 **Two ways to get a Bearer token:**
 
@@ -357,16 +361,16 @@ api: {
 }
 ```
 
-No code changes anywhere else. The registry validates the block at startup. See `server/src/configs/timeRegV2.ts` for the canonical example.
+No code changes anywhere else. The registry validates the block at startup. See `server/src/app/configs/timeRegV2.ts` for the canonical example.
 
 **Audit**: every API call writes a row to `mcp_audit_log` with `source='api'` (same table as MCP, distinguishable by the `source` column). The audit admin screen shows both MCP and REST calls.
 
 **Key files**:
 | Purpose | Path |
 |---------|------|
-| REST router (Express, mounted at `/api`) | `server/src/api/index.ts` |
-| Per-op REST handlers | `server/src/api/handlers.ts` |
-| First-party auth router | `server/src/api/auth.ts` |
+| REST router (Express, mounted at `/api`) | `server/src/core/api/index.ts` |
+| Per-op REST handlers | `server/src/core/api/handlers.ts` |
+| First-party auth router | `server/src/core/api/auth.ts` |
 
 ### First-party login (for apps you own and control)
 
@@ -413,41 +417,58 @@ Tokens issued this way carry sentinel `client_id = 'as500-direct'` and are other
 
 ## Key Files
 
+### Core infrastructure (`server/src/core/`) — never edited by app developers
+
 | Purpose | Path |
 |---------|------|
 | WebSocket router (entry point) | `server/src/index.ts` |
-| **Menu tree (navigation source of truth)** | `server/src/menus/menuTree.ts` |
-| **Menu runtime (generic build/handle)** | `server/src/menus/menuRuntime.ts` |
-| CRUDTable runtime engine | `server/src/crudtable/runtime.ts` |
-| CRUDTable type definitions | `server/src/crudtable/types.ts` |
-| DSL renderer (80×24 grid) | `server/src/dsl/renderer.ts` |
-| DSL public API | `server/src/dsl/index.ts` |
-| Session management | `server/src/session/index.ts` |
-| Auth service (tokens) | `server/src/services/auth.ts` |
-| **RBAC access service** | `server/src/services/access.ts` — see [ACCESS.md](ACCESS.md) |
-| DB pool + Drizzle instance | `server/src/db/index.ts` |
-| Drizzle table definitions (schema) | `server/src/db/schema.ts` |
-| Rate limiter utility | `server/src/utils/rateLimiter.ts` |
-| **MCP Express app (OAuth + /mcp)** | `server/src/mcp/index.ts` |
-| **MCP tool handlers (per-op)** | `server/src/mcp/toolHandlers.ts` |
-| **MCP OAuth provider** | `server/src/mcp/oauth/provider.ts` |
-| **MCP audit log writer** | `server/src/mcp/audit.ts` |
-| **REST API router** | `server/src/api/index.ts` |
-| **REST API handlers** | `server/src/api/handlers.ts` |
-| **First-party auth router** | `server/src/api/auth.ts` |
+| Core bootstrap (registers system configs) | `server/src/core/bootstrap.ts` |
+| **App menu items** (add items here for app CRUD screens) | `server/src/app/menus/appMenu.ts` |
+| **Menu registry** (assembles full tree at runtime) | `server/src/core/menus/menuRegistry.ts` |
+| **Core menu nodes** (admin subtree + logoff only) | `server/src/core/menus/menuTree.ts` |
+| **Menu runtime (generic build/handle)** | `server/src/core/menus/menuRuntime.ts` |
+| CRUDTable runtime engine | `server/src/core/crudtable/runtime.ts` |
+| CRUDTable type definitions | `server/src/core/crudtable/types.ts` |
+| DSL renderer (80×24 grid) | `server/src/core/dsl/renderer.ts` |
+| DSL public API | `server/src/core/dsl/index.ts` |
+| Session management | `server/src/core/session/index.ts` |
+| Auth service (tokens) | `server/src/core/services/auth.ts` |
+| **RBAC access service** | `server/src/core/services/access.ts` — see [ACCESS.md](ACCESS.md) |
+| DB pool + Drizzle instance | `server/src/core/db/index.ts` |
+| System table definitions (schema) | `server/src/core/db/schema.ts` |
+| Rate limiter utility | `server/src/core/utils/rateLimiter.ts` |
+| **MCP Express app (OAuth + /mcp)** | `server/src/core/mcp/index.ts` |
+| **MCP tool handlers (per-op)** | `server/src/core/mcp/toolHandlers.ts` |
+| **MCP OAuth provider** | `server/src/core/mcp/oauth/provider.ts` |
+| **MCP audit log writer** | `server/src/core/mcp/audit.ts` |
+| **REST API router** | `server/src/core/api/index.ts` |
+| **REST API handlers** | `server/src/core/api/handlers.ts` |
+| **First-party auth router** | `server/src/core/api/auth.ts` |
 | Terminal hook (WebSocket) | `client/src/hooks/useTerminal.ts` |
 | Terminal renderer | `client/src/components/Terminal.tsx` |
 | Terminal styles | `client/src/styles/terminal.css` |
 | Client types | `client/src/types/index.ts` |
 | Test setup utilities | `tests/testSetup.ts` |
 
+### App layer (`server/src/app/`) — where application developers work
+
+| Purpose | Path |
+|---------|------|
+| App self-registration entry point | `server/src/app/index.ts` |
+| **App table definitions** (add app tables here) | `server/src/app/db/schema.ts` |
+| **App menu items** | `server/src/app/menus/appMenu.ts` |
+| App CRUDTable configs | `server/src/app/configs/` (`timeRegV2`, `motorcyclesConfig`, `modsConfig`, `servicesPerformedConfig`) |
+| App services | `server/src/app/services/` (`timeReg`, `timeRegCrud`, `motorcycleService`, `modsService`, etc.) |
+
 ### Screens
 
-`server/src/screens/`: `login`, `mainMenu` (thin delegator to the menu runtime). All other former hand-written screens (time-reg, user management, etc.) are now CRUDTable configs; all menus are nodes in `menuTree.ts`.
+`server/src/core/screens/`: `login`, `mainMenu` (thin delegator to the menu runtime). All other former hand-written screens (time-reg, user management, etc.) are now CRUDTable configs; all app menus are registered via `appMenu.ts`.
 
 ### CRUDTable Configs
 
-`server/src/configs/`: `timeRegV2`, `userMgmtConfig`, `roleDefaultsConfig`, `motorcyclesConfig`, `modsConfig`, `servicesPerformedConfig`. Register new configs in `server/src/configs/index.ts` and expose them via `server/src/menus/menuTree.ts`.
+**Core configs** (`server/src/core/configs/`): `userMgmtConfig`, `roleDefaultsConfig`, `authTokensConfig`, `oauthClientsConfig`, `mcpAuditConfig`. Registered in `server/src/core/bootstrap.ts`.
+
+**App configs** (`server/src/app/configs/`): `timeRegV2`, `motorcyclesConfig`, `modsConfig`, `servicesPerformedConfig`. Register new configs in `server/src/app/index.ts` and expose them via `server/src/app/menus/appMenu.ts`.
 
 ---
 
@@ -457,16 +478,19 @@ The project uses **Drizzle ORM** as a typed query layer on top of a raw `pg` con
 
 ### How it works
 
-- **`server/src/db/schema.ts`** — single source of truth for all table definitions (`users`, `days`, `day_items`, `auth_tokens`). Add new tables here.
-- **`server/src/db/index.ts`** — exports both `pool` (raw pg) and `db` (Drizzle instance). Services should use `db`.
-- **Migrations** — managed by **drizzle-kit**. Migration files live in `server/src/db/migrations/` and are applied automatically at server startup via `migrate()` in `db/index.ts`. Run `npm run db:generate` after editing `schema.ts` to create a new migration file.
+The schema is split into two files by layer:
 
-### Writing a new service
+- **`server/src/core/db/schema.ts`** — system tables (`users`, `auth_tokens`, `groups`, `oauth_clients`, `mcp_audit_log`, etc.). Owned by core; app developers do not edit this.
+- **`server/src/app/db/schema.ts`** — application tables (`days`, `day_items`, `motorcycles`, `mods`, `services_performed`). Add new app tables here.
+- **`server/src/core/db/index.ts`** — merges both schemas into a single Drizzle instance and exports `db` and `pool`. Services should use `db`.
+- **Migrations** — managed by **drizzle-kit**. Migration files live in `server/src/core/db/migrations/` and are applied automatically at server startup via `migrate()` in `core/db/index.ts`. Run `npm run db:generate` after editing either schema file to create a new migration file.
+
+### Writing a new app service
 
 ```typescript
 import { eq } from 'drizzle-orm';
-import { db } from '../db/index.js';
-import { myTable } from '../db/schema.js';
+import { db } from '../../core/db/index.js';  // core db — always this path from app/services/
+import { myTable } from '../db/schema.js';     // app schema
 
 // Select
 const rows = await db.select().from(myTable).where(eq(myTable.id, id));
@@ -481,9 +505,9 @@ await db.update(myTable).set({ field: value }).where(eq(myTable.id, id));
 await db.delete(myTable).where(eq(myTable.id, id));
 ```
 
-### Adding a new table
+### Adding a new app table
 
-1. Define it in `server/src/db/schema.ts` using `pgTable`
+1. Define it in `server/src/app/db/schema.ts` using `pgTable`
 2. Run `npm run db:generate` inside `server/` to generate a migration file
 3. The migration is applied automatically on next server start (or run `npm run db:migrate` explicitly)
 4. Import the table object in your service file

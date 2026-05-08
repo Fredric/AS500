@@ -13,7 +13,7 @@ Skills are mirrored into each tool's native discovery path. The `SKILL.md` files
 
 | Skill | Cursor | Claude Code | GitHub Copilot | Use when |
 |---|---|---|---|---|
-| **crudtable** | `.cursor/skills/crudtable/SKILL.md` | `.claude/skills/crudtable/SKILL.md` | `.github/instructions/crudtable.instructions.md` (auto-applied via `applyTo`) + pointer in `.github/copilot-instructions.md` | Building or modifying any CRUD screen (list + add/edit/delete) on top of the CRUDTable runtime in `server/src/crudtable/`. |
+| **crudtable** | `.cursor/skills/crudtable/SKILL.md` | `.claude/skills/crudtable/SKILL.md` | `.github/instructions/crudtable.instructions.md` (auto-applied via `applyTo`) + pointer in `.github/copilot-instructions.md` | Building or modifying any CRUD screen (list + add/edit/delete) on top of the CRUDTable runtime in `server/src/core/crudtable/`. |
 
 ## Background docs
 
@@ -28,11 +28,11 @@ Skills are mirrored into each tool's native discovery path. The `SKILL.md` files
 
 When a user asks for a new screen or feature, use this quick triage:
 
-- **A list + create/edit/delete on some entity?** → Load the `crudtable` skill and follow its fast-path recipe. Do not hand-roll a DSL screen. Expose the new config via a `CrudNode` in `server/src/menus/menuTree.ts`.
-- **A new main-menu entry, submenu, or grouping of existing screens?** → Add a `MenuNode` / `CrudNode` / `ActionNode` to `server/src/menus/menuTree.ts`. Never hand-roll a menu screen — `server/src/menus/menuRuntime.ts` renders every menu generically (numbered list, permission filtering, Esc/F12 back, stack push). See `CLAUDE.md` § "Menu System".
-- **A login, help, dashboard, or wizard screen?** → Write a manual screen in `server/src/screens/` using the DSL, following the patterns in `CLAUDE.md` § "Screen System".
-- **A new backend capability without UI?** → Write a plain service in `server/src/services/` using Drizzle (`db` from `../db/index.js`), plus a table in `server/src/db/schema.ts` and a migration via `npm run db:generate`.
-- **Access-control change?** → Start from `ACCESS.md`; most CRUD-level gating belongs on the `CRUDTableConfig` (`requirePermission` at screen and per-`ServiceCall` level). Mirror the guard on the `CrudNode` in `menuTree.ts` so the menu entry is hidden for users without access.
+- **A list + create/edit/delete on some entity?** → Load the `crudtable` skill and follow its fast-path recipe. Do not hand-roll a DSL screen. Register the config in `server/src/app/index.ts` and expose it via `registerMenuItems()` in `server/src/app/menus/appMenu.ts`.
+- **A new main-menu entry, submenu, or grouping of existing screens?** → Call `registerMenuItems([...])` in `server/src/app/menus/appMenu.ts`. Never hand-roll a menu screen — `server/src/core/menus/menuRuntime.ts` renders every menu generically (numbered list, permission filtering, Esc/F12 back, stack push). See `CLAUDE.md` § "Menu System".
+- **A login, help, dashboard, or wizard screen?** → Write a manual screen in `server/src/core/screens/` using the DSL, following the patterns in `CLAUDE.md` § "Screen System".
+- **A new backend capability without UI?** → Write a plain service in `server/src/app/services/` using Drizzle (`db` from `../../core/db/index.js`), plus a table in `server/src/app/db/schema.ts` and a migration via `npm run db:generate`.
+- **Access-control change?** → Start from `ACCESS.md`; most CRUD-level gating belongs on the `CRUDTableConfig` (`requirePermission` at screen and per-`ServiceCall` level). Mirror the guard on the item registered in `appMenu.ts` so the menu entry is hidden for users without access.
 
 ## Repo-wide conventions (quick reference)
 
@@ -40,17 +40,21 @@ When a user asks for a new screen or feature, use this quick triage:
 - Services take a **single argument** (usually an object) and return plain JS values.
 - Screen IDs are `UPPER_SNAKE_CASE`. CRUDTable screens are always `CRUD_{config.id.toUpperCase()}`; menu screens are `MAIN_MENU` or `MENU_{KEY_UPPERCASE}`.
 - Don't edit `server/src/index.ts` to add a new CRUD or menu screen — the default case dispatches all `CRUD_*` and `MENU_*` IDs to their runtimes.
-- Don't edit `server/src/screens/mainMenu.ts` to add or remove menu items — it is a thin delegator. Edit `server/src/menus/menuTree.ts` instead.
+- Don't edit `server/src/core/screens/mainMenu.ts` to add or remove menu items — it is a thin delegator. Call `registerMenuItems()` in `server/src/app/menus/appMenu.ts` instead.
+- Don't edit anything under `server/src/core/` unless you are modifying the AS500 product itself (not the app built on top of it).
 - Run `npm run typecheck` from the repo root before handing back a non-trivial change.
 
 ## Ground truth for "what exists today"
 
 If a doc and the code disagree, the code wins. Primary sources:
 
-- `server/src/crudtable/types.ts` — every config + context interface
-- `server/src/crudtable/runtime.ts` — screen build/handle logic
-- `server/src/menus/menuTree.ts` — the full navigation tree (main menu + submenus + CRUD links)
-- `server/src/menus/menuRuntime.ts` — generic menu build/handle + permission filtering
-- `server/src/configs/*.ts` — working CRUDTable examples
+- `server/src/core/crudtable/types.ts` — every config + context interface
+- `server/src/core/crudtable/runtime.ts` — screen build/handle logic
+- `server/src/core/menus/menuRegistry.ts` — menu assembly API (`registerMenuItems`, `buildMenuTree`)
+- `server/src/core/menus/menuTree.ts` — core admin node + logoff node
+- `server/src/app/menus/appMenu.ts` — registered app menu items
+- `server/src/core/menus/menuRuntime.ts` — generic menu build/handle + permission filtering
+- `server/src/core/configs/*.ts` — core (system) CRUDTable examples
+- `server/src/app/configs/*.ts` — app CRUDTable examples
 
 The reference doc (`DOCS/CRUDTABLE/6. CRUDTable Reference.md`) is kept in sync with these files; the older numbered docs (1–4) are historical and may drift.

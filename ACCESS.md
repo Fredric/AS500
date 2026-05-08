@@ -39,7 +39,7 @@ INSERT INTO group_permissions (group_id, permission_key) VALUES (1, 'user_mgmt:r
 
 ## Permission Keys
 
-Named string keys defined in `server/src/services/access.ts`:
+Named string keys defined in `server/src/core/services/access.ts`:
 
 ```typescript
 export const PERMISSIONS = {
@@ -204,10 +204,10 @@ All FK relationships cascade on delete. Removing a user removes their `user_grou
 
 | File | Purpose |
 |------|---------|
-| `server/src/services/access.ts` | `PERMISSIONS`, `loadUserPermissions`, `hasPermission`, `requirePermission`, `seedPermissions` |
-| `server/src/db/schema.ts` | Drizzle table definitions for all RBAC tables |
-| `server/src/crudtable/types.ts` | `requirePermission` fields on `CRUDTableConfig` and `ServiceCall` |
-| `server/src/crudtable/router.ts` | Screen-level permission enforcement |
-| `server/src/crudtable/runtime.ts` | Operation-level enforcement + UI hint hiding |
-| `server/src/screens/login.ts` | Loads permissions into session after credential check |
+| `server/src/core/services/access.ts` | `PERMISSIONS`, `loadUserPermissions`, `hasPermission`, `requirePermission`, `seedPermissions` |
+| `server/src/core/db/schema.ts` | Drizzle table definitions for all RBAC system tables |
+| `server/src/core/crudtable/types.ts` | `requirePermission` fields on `CRUDTableConfig` and `ServiceCall` |
+| `server/src/core/crudtable/router.ts` | Screen-level permission enforcement |
+| `server/src/core/crudtable/runtime.ts` | Operation-level enforcement + UI hint hiding |
+| `server/src/core/screens/login.ts` | Loads permissions into session after credential check |
 | `server/src/index.ts` | `ensurePermissionsLoaded()` — lazy reload after disk-restore |

@@ -25,7 +25,7 @@ Use CRUDTable whenever the task fits this shape:
 - "I need a maintenance screen for {users, customers, products, tasks, …}."
 - "Build an admin UI for this table."
 - "Give each row options 2=Edit, 4=Delete, 9=Open like the other screens."
-- "Refactor the hand-written time-reg screen into a CRUDTable config." (see `server/src/configs/timeRegV2.ts` as the reference)
+- "Refactor the hand-written time-reg screen into a CRUDTable config." (see `server/src/app/configs/timeRegV2.ts` as the reference)
 
 Use a **manual screen** (DSL-only) when the task is:
 
@@ -47,15 +47,15 @@ For a small change (e.g. adding one field to an existing config), skim this SKIL
 
 ## Fast path: add a new CRUD screen in 4 steps
 
-> **Wiring model (important):** CRUD screens are exposed to the user through the central **menu tree** at `server/src/menus/menuTree.ts`, not by navigating to `CRUD_*` from a hand-written screen handler. Adding a `CrudNode` to the tree is the only UI-wiring step. The generic menu runtime (`server/src/menus/menuRuntime.ts`) handles permission filtering, `initContext`, stack push, and dispatch to the CRUD runtime.
+> **Wiring model (important):** CRUD screens are exposed to the user by calling `registerMenuItems([...])` in `server/src/app/menus/appMenu.ts`, not by navigating to `CRUD_*` from a hand-written screen handler. Adding a `CrudNode` via `registerMenuItems` is the only UI-wiring step. The generic menu runtime (`server/src/core/menus/menuRuntime.ts`) handles permission filtering, `initContext`, stack push, and dispatch to the CRUD runtime.
 
 ### Step 1 — Write the service
 
-Create `server/src/services/thingService.ts`. Functions take a **single argument** (usually an object) and return arrays or records. Use Drizzle via `db` from `../db/index.js`; add any new table to `server/src/db/schema.ts` first and run `npm run db:generate` inside `server/`.
+Create `server/src/app/services/thingService.ts`. Functions take a **single argument** (usually an object) and return arrays or records. Use Drizzle via `db` from `../../core/db/index.js`; add any new app table to `server/src/app/db/schema.ts` first and run `npm run db:generate` inside `server/`.
 
 ```ts
 import { eq } from 'drizzle-orm';
-import { db } from '../db/index.js';
+import { db } from '../../core/db/index.js';
 import { things } from '../db/schema.js';
 
 export async function listThings(params?: { filter?: string }) {
@@ -78,10 +78,10 @@ export async function deleteThing(id: number) {
 
 ### Step 2 — Write the config
 
-Create `server/src/configs/thingsConfig.ts`.
+Create `server/src/app/configs/thingsConfig.ts`.
 
 ```ts
-import type { CRUDTableConfig } from '../crudtable/types.js';
+import type { CRUDTableConfig } from '../../core/crudtable/types.js';
 import * as thingService from '../services/thingService.js';
 import * as cityService from '../services/cityService.js';
 
@@ -133,25 +133,24 @@ export const thingsConfig: CRUDTableConfig = {
 
 ### Step 3 — Register the config
 
-Edit `server/src/configs/index.ts`:
+Edit `server/src/app/index.ts`:
 
 ```ts
-import { thingsConfig } from './thingsConfig.js';
+import { registerConfig } from '../core/crudtable/registry.js';
+import { thingsConfig } from './configs/thingsConfig.js';
 
-export function registerCRUDConfigs(): void {
-  // …existing…
-  registerConfig(thingsConfig);
-}
+// …add alongside existing registrations:
+registerConfig(thingsConfig);
 ```
 
-### Step 4 — Add a node to the menu tree
+### Step 4 — Add a node to the app menu
 
-Edit `server/src/menus/menuTree.ts` and drop a `CrudNode` under the appropriate parent menu (top-level for user-facing screens; under the `admin` submenu for admin-only screens):
+Edit `server/src/app/menus/appMenu.ts` and add a `CrudNode` inside the `registerMenuItems([...])` call (top-level for user-facing screens; nest under a `MenuNode` for grouped navigation):
 
 ```ts
-import { PERMISSIONS } from '../services/access.js';
-import { thingsConfig } from '../configs/thingsConfig.js';
+import { PERMISSIONS } from '../../core/services/access.js';
 
+// Inside the existing registerMenuItems([...]) call:
 {
   type: 'crudtable',
   key: 'things',
@@ -164,7 +163,7 @@ import { thingsConfig } from '../configs/thingsConfig.js';
 }
 ```
 
-**No other files need to change.** No edits to `server/src/index.ts`, `server/src/screens/mainMenu.ts`, or any manual screen handler. The menu runtime:
+**No other files need to change.** No edits to `server/src/index.ts`, `server/src/core/screens/mainMenu.ts`, or any core file. The menu runtime:
 
 1. Hides the item if the user lacks `requirePermission`.
 2. Pushes the parent menu onto `session.screenStack` on selection.
@@ -190,7 +189,7 @@ If the list needs caller-supplied filtering or defaults, put that logic in `init
 
 ## Step 5 (optional) — Expose the config over MCP
 
-Every CRUDTable config can be opened up to remote AI agents as a set of MCP tools with **no extra handler code**. Add an `mcp` block to the config; the runtime at `server/src/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs, and enforces the same AS500 RBAC that gates the terminal UI.
+Every CRUDTable config can be opened up to remote AI agents as a set of MCP tools with **no extra handler code**. Add an `mcp` block to the config; the runtime at `server/src/core/mcp/` auto-generates one tool per enabled operation (`<id>.list`, `<id>.read`, `<id>.create`, `<id>.update`, `<id>.delete`), with a zod input schema derived from the same field configs, and enforces the same AS500 RBAC that gates the terminal UI.
 
 ```ts
 // Inside your CRUDTableConfig
@@ -243,11 +242,11 @@ cd server
 npx tsc && node scripts/smoke-mcp.mjs   # walks DCR → consent → token → tools/list → tools/call
 ```
 
-Reference: `server/src/configs/timeRegV2.ts` has a working `mcp` block with scope params. The `MCPConfig` and `MCPOperationOverride` types in `server/src/crudtable/types.ts` are the authoritative shape; `server/src/mcp/schemaBuilder.ts` shows how each field is translated into zod.
+Reference: `server/src/app/configs/timeRegV2.ts` has a working `mcp` block with scope params. The `MCPConfig` and `MCPOperationOverride` types in `server/src/core/crudtable/types.ts` are the authoritative shape; `server/src/core/mcp/schemaBuilder.ts` shows how each field is translated into zod.
 
 ## Step 6 (optional) — Expose the config over the REST API
 
-Every CRUDTable config can also be served as a conventional HTTP REST API with **no extra handler code**. Add an `api` block to the config; the runtime at `server/src/api/` mounts routes on `GET/POST/PUT/DELETE /api/<id>[/<id>]` (port 3002) and enforces the same AS500 RBAC that gates the terminal UI and the MCP surface.
+Every CRUDTable config can also be served as a conventional HTTP REST API with **no extra handler code**. Add an `api` block to the config; the runtime at `server/src/core/api/` mounts routes on `GET/POST/PUT/DELETE /api/<id>[/<id>]` (port 3002) and enforces the same AS500 RBAC that gates the terminal UI and the MCP surface.
 
 ```ts
 // Inside your CRUDTableConfig
@@ -328,7 +327,7 @@ Option B — Third-party / AI agent: use the full OAuth 2.1 + DCR flow (same as 
 - Scope param names must match the keys your service functions read from `ctx.input`
 - Error format is `{ "error": { "code": "…", "message": "…", "fields": […] } }` — HTTP 400/401/403/404/405/429/500
 
-Reference: `server/src/configs/timeRegV2.ts` has a working `api` block. The `APIConfig` and `APIOperationConfig` types in `server/src/crudtable/types.ts` are the authoritative shape. Full reference in `CLAUDE.md § REST API`.
+Reference: `server/src/app/configs/timeRegV2.ts` has a working `api` block. The `APIConfig` and `APIOperationConfig` types in `server/src/core/crudtable/types.ts` are the authoritative shape. Full reference in `CLAUDE.md § REST API`.
 
 ## Patterns to reach for
 
@@ -393,21 +392,22 @@ listHeader: (ctx) => [
 **Rules of thumb.**
 
 - `actionKey` must not collide with `Enter`, `Esc`/`F3`/`F12`, or field input handling. Uppercase letters (`M`, `S`, `L`) are safe.
-- The child **must** be registered in `configs/index.ts`. An unknown `targetConfigId` silently no-ops.
+- The child **must** be registered in `server/src/app/index.ts`. An unknown `targetConfigId` silently no-ops.
 - The child's list/create/update/delete `params` must all echo the scoping keys from `ctx.input` — otherwise new child rows can be created orphaned.
 - Relations don't do their own permission check; the **child's** `requirePermission` gate still runs on navigation.
 - Use `listHeader(ctx)` on the child to show the parent label — `mapInput` conventionally provides a `*Label` key for exactly this.
 - Esc from the child list (or its own edit form) returns the user to the parent form in its previous state — the runtime handles the stack.
 
-Canonical example: `server/src/configs/motorcyclesConfig.ts` (parent with two relations) + `modsConfig.ts` / `servicesPerformedConfig.ts` (scoped children).
+Canonical example: `server/src/app/configs/motorcyclesConfig.ts` (parent with two relations) + `modsConfig.ts` / `servicesPerformedConfig.ts` (scoped children, same directory).
 
 ## Anti-patterns (do NOT)
 
 - **Do not hand-roll a new list/form DSL screen** when CRUDTable fits. Configs are ~50–150 lines; hand-rolled screens are ~250+.
-- **Do not hand-roll a new menu screen.** All menu navigation is declared in `server/src/menus/menuTree.ts` and rendered by `server/src/menus/menuRuntime.ts`. New screens are exposed by adding a node there, not by writing a DSL menu.
+- **Do not hand-roll a new menu screen.** All menu navigation is registered via `registerMenuItems()` in `server/src/app/menus/appMenu.ts` and rendered by `server/src/core/menus/menuRuntime.ts`. New screens are exposed by adding a node there, not by writing a DSL menu.
 - **Do not edit `server/src/index.ts`** to add a case for the new screen. The default case handles all `CRUD_*` and `MENU_*` IDs.
-- **Do not edit `server/src/screens/mainMenu.ts`.** It is a thin delegator to `menuRuntime.ts`; the main-menu contents are in `menuTree.ts`.
-- **Do not navigate into a CRUD screen from a manual screen handler** when a menu entry will do. Put the entry in the tree (`type: 'crudtable'`) and let the runtime dispatch; use `initContext` for any pre-navigation seeding.
+- **Do not edit `server/src/core/screens/mainMenu.ts`.** It is a thin delegator to `menuRuntime.ts`; app menu items are registered in `server/src/app/menus/appMenu.ts`.
+- **Do not edit anything in `server/src/core/`** when building app features. App code belongs under `server/src/app/`.
+- **Do not navigate into a CRUD screen from a manual screen handler** when a menu entry will do. Register the item via `registerMenuItems` (`type: 'crudtable'`) and let the runtime dispatch; use `initContext` for any pre-navigation seeding.
 - **Do not mutate `CRUDContext` outside a service, `listKeys.handler`, or `initContext` on the menu node**. Config functions (`params`, validators, `cellRenderer`, `listHeader`, `getInitialValues`, `mapContext`) are read-only.
 - **Do not call services from the config body (top level)**. Anything that needs runtime data goes inside a `params` / `cellRenderer` / `listKeys.handler` closure.
 - **Do not use a different screen-ID convention.** It must be exactly `CRUD_{config.id.toUpperCase()}` — anything else won't route.
@@ -419,11 +419,11 @@ Canonical example: `server/src/configs/motorcyclesConfig.ts` (parent with two re
 
 | File | What it demonstrates |
 |---|---|
-| `server/src/configs/timeRegV2.ts` | `listHeader` + `listKeys` (F7/F8 day nav) + `input`-driven filtering + init helper + **`mcp` block** + **`api` block** (canonical reference for both remote surfaces) |
-| `server/src/configs/userMgmtConfig.ts` | `staticOptions` select, context-sensitive `required`/`disabled`, password+confirm with validator, `formValue` for booleans |
-| `server/src/configs/roleDefaultsConfig.ts` | Composite primary key, `SYS_ADMIN` gate, validators using a seeded registry |
-| `server/src/configs/motorcyclesConfig.ts` | **`relations`** — two edit-form hotkeys (`M=Mods`, `S=Services`) jumping to scoped child lists via `mapInput` |
-| `server/src/configs/modsConfig.ts` / `servicesPerformedConfig.ts` | Child side of a relation: `ctx.input.motorcycleId` scoping on list + all mutations, parent label in `listHeader` |
+| `server/src/app/configs/timeRegV2.ts` | `listHeader` + `listKeys` (F7/F8 day nav) + `input`-driven filtering + init helper + **`mcp` block** + **`api` block** (canonical reference for both remote surfaces) |
+| `server/src/core/configs/userMgmtConfig.ts` | `staticOptions` select, context-sensitive `required`/`disabled`, password+confirm with validator, `formValue` for booleans |
+| `server/src/core/configs/roleDefaultsConfig.ts` | Composite primary key, `SYS_ADMIN` gate, validators using a seeded registry |
+| `server/src/app/configs/motorcyclesConfig.ts` | **`relations`** — two edit-form hotkeys (`M=Mods`, `S=Services`) jumping to scoped child lists via `mapInput` |
+| `server/src/app/configs/modsConfig.ts` / `servicesPerformedConfig.ts` | Child side of a relation: `ctx.input.motorcycleId` scoping on list + all mutations, parent label in `listHeader` |
 
 Open one of these before writing a config from scratch — pattern-matching will save time.
 
@@ -432,14 +432,14 @@ Open one of these before writing a config from scratch — pattern-matching will
 After implementing a new CRUD screen:
 
 - [ ] `npm run typecheck` passes from the repo root
-- [ ] Service file lives under `server/src/services/`; each function takes a single argument
-- [ ] Any new DB table is in `server/src/db/schema.ts` and a migration was generated with `npm run db:generate`
-- [ ] Config file lives under `server/src/configs/` and is imported + registered in `configs/index.ts`
+- [ ] Service file lives under `server/src/app/services/`; each function takes a single argument
+- [ ] Any new DB table is in `server/src/app/db/schema.ts` and a migration was generated with `npm run db:generate`
+- [ ] Config file lives under `server/src/app/configs/` and is imported + registered in `server/src/app/index.ts`
 - [ ] The config `id` is lowercase-snake; screens route on `CRUD_{ID_UPPERCASE}`
 - [ ] Every `fieldConfigs[*]` has `length`
 - [ ] `columnBuilder` and `formBuilder` reference only existing `fieldConfigs` keys
-- [ ] Permissions exist in `server/src/services/access.ts` (add them if new) and are seeded for the relevant roles
-- [ ] A `CrudNode` for the config is added to `server/src/menus/menuTree.ts` with the right parent menu, `requirePermission`, and `configId` matching the config's `id`
+- [ ] Permissions exist in `server/src/core/services/access.ts` (add them if new) and are seeded for the relevant roles
+- [ ] A `CrudNode` for the config is added via `registerMenuItems()` in `server/src/app/menus/appMenu.ts` with the right parent, `requirePermission`, and `configId` matching the config's `id`
 - [ ] If the list needs caller context, it is seeded inside `initContext(session)` on the menu node — not from a screen handler and not in the config body
 
 **If adding an `api` block (Step 6):**
