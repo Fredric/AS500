@@ -63,7 +63,8 @@ export async function buildCRUDScreenForResume(
 
   if (config.requirePermission && !hasPermission(session, config.requirePermission)) {
     session.currentScreen = 'MAIN_MENU';
-    return buildLoginScreen('Access denied. Insufficient permissions.', 'error');
+    const { mainMenuScreen } = await import('../screens/mainMenu.js');
+    return mainMenuScreen(session);
   }
 
   if (mode === 'list') {

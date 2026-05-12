@@ -270,8 +270,9 @@ export function useTerminal() {
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      ws.onerror = () => {
+        // Browser WebSocket error events carry no useful detail (intentionally opaque).
+        // The onclose handler fires next and schedules a reconnect.
       };
     }
 
@@ -283,7 +284,12 @@ export function useTerminal() {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-      wsRef.current?.close();
+      // Don't close a CONNECTING socket — the browser logs a warning if you do.
+      // The onopen handler checks `destroyed` and closes it there instead.
+      const ws = wsRef.current;
+      if (ws && ws.readyState !== WebSocket.CONNECTING) {
+        ws.close();
+      }
     };
   }, []);
 

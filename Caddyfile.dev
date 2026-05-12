@@ -7,9 +7,15 @@
 #
 # Then: docker-compose up
 # MCP endpoint: https://localhost:3443/mcp
-
 {
 	auto_https off
+	servers {
+		protocols h1 h2
+	}
+	log {
+		format console
+		level WARN
+	}
 }
 
 :3443 {

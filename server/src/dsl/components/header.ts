@@ -88,6 +88,5 @@ export function renderHeader(
       result.push({ row: 3, col: 0, content: row3Content });
     }
   }
- console.log(result);
   return { rows: result };
 }
