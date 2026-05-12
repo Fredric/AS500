@@ -40,7 +40,8 @@ Screen IDs are always `CRUD_{config.id.toUpperCase()}` (CRUD screens) or `MENU_{
 
 - Every `FieldConfig` has a `length` (required — drives form width and column-width fallback).
 - `columnBuilder` and `formBuilder` reference only existing keys in `fieldConfigs`.
-- Config functions (`params`, validators, `cellRenderer`, `listHeader`, `getInitialValues`, `mapContext`) are **read-only on `CRUDTableContext`**. Only services and `listKeys.handler` may mutate context.
+- Config functions (`params`, validators, `cellRenderer`, `listHeader`, `getInitialValues`, `mapContext`) are **read-only on `CRUDContext`**. Only services and `listKeys.handler` may mutate context.
+- **Every config function takes `ctx: CRUDContext` as its first parameter.** `cellRenderer(ctx, record, datasource?)`, `formValue(ctx, rawValue)`, `mapInput(ctx)`, `listKeys.handler(ctx)` — no exceptions. Callers that don't need ctx use `_ctx` as the parameter name.
 - Gate sensitive operations with `requirePermission` at both the config (screen-level) and each `ServiceCall` (operation-level). Permission keys live in `server/src/services/access.ts`.
 - TypeScript relative imports use `.js` extensions (even when the source is `.ts`).
 

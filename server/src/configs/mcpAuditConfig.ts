@@ -33,7 +33,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       length: 20,
       column: {
         width: 19,
-        cellRenderer: (r) => formatTimestamp(r.created_at),
+        cellRenderer: (_ctx, r) => formatTimestamp(r.created_at),
       },
     },
     username: {
@@ -42,7 +42,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 14,
-        cellRenderer: (r) =>
+        cellRenderer: (_ctx, r) =>
           r.username ? String(r.username) : r.user_id != null ? `#${r.user_id}` : '',
       },
     },
@@ -52,7 +52,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 14,
-        cellRenderer: (r) => String(r.client_id ?? ''),
+        cellRenderer: (_ctx, r) => String(r.client_id ?? ''),
       },
     },
     tool_name: {
@@ -73,7 +73,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       length: 3,
       column: {
         width: 3,
-        cellRenderer: (r) => (r.ok ? 'Y' : 'N'),
+        cellRenderer: (_ctx, r) => (r.ok ? 'Y' : 'N'),
       },
     },
     duration_ms: {
@@ -83,7 +83,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       column: {
         width: 6,
         align: 'right',
-        cellRenderer: (r) => String(r.duration_ms ?? ''),
+        cellRenderer: (_ctx, r) => String(r.duration_ms ?? ''),
       },
     },
     error_code: {
@@ -92,7 +92,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       length: 20,
       column: {
         width: 16,
-        cellRenderer: (r) => String(r.error_code ?? ''),
+        cellRenderer: (_ctx, r) => String(r.error_code ?? ''),
       },
     },
     source: {
@@ -101,7 +101,7 @@ export const mcpAuditConfig: CRUDTableConfig = {
       length: 4,
       column: {
         width: 4,
-        cellRenderer: (r) => String(r.source ?? 'mcp'),
+        cellRenderer: (_ctx, r) => String(r.source ?? 'mcp'),
       },
     },
   },
