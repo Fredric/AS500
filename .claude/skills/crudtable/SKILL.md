@@ -121,7 +121,7 @@ export const thingsConfig: CRUDTableConfig = {
       form: { required: true },
       column: {
         width: 18,
-        cellRenderer: (r, ds) => ds?.find(c => c.id === r.cityId)?.name ?? '',
+        cellRenderer: (_ctx, r, ds) => ds?.find(c => c.id === r.cityId)?.name ?? '',
       },
     },
   },
@@ -336,14 +336,14 @@ Reference: `server/src/configs/timeRegV2.ts` has a working `api` block. The `API
 |---|---|
 | Field only required on create | `form.required: ctx => ctx.formMode === 'create'` |
 | Field read-only when editing | `form.disabled: ctx => ctx.formMode === 'edit'` |
-| Map backend boolean to `'Y'`/`'N'` in the form | `form.formValue: v => v === true ? 'Y' : 'N'`, plus a validator on submit |
+| Map backend boolean to `'Y'`/`'N'` in the form | `form.formValue: (_ctx, v) => v === true ? 'Y' : 'N'`, plus a validator on submit |
 | Cross-field check (e.g. password == confirm) | Validator on one field reads `ctx.values.other` |
-| Resolve foreign-key id to a label in the list | `column.cellRenderer: (r, ds) => ds?.find(...)?.name` + matching `datasource` |
+| Resolve foreign-key id to a label in the list | `column.cellRenderer: (_ctx, r, ds) => ds?.find(...)?.name` + matching `datasource` |
 | Filter the list by something the caller provides | `services.list.params: ctx => ({ … ctx.input.foo })` + seed the child's `ctx.input` via a menu node's `initContext` or a parent's relation `mapInput` |
 | Composite primary key (no single `id`) | Store originals in a hidden field or use `editRecord.original_*`; see `roleDefaultsConfig.ts` |
 | Day / page / group stepping with F7/F8 | `listKeys.F7` + `listKeys.F8` mutating `ctx.input` and `ctx.pageOffset = 0` |
 | Extra contextual text at the top of the list | `listHeader: ctx => [{ row, col, content }, …]` |
-| **"From parent X's edit form, jump to list of child Y's scoped to X"** | `relations: [{ label, actionKey, targetConfigId, mapInput: rec => ({ parentId: rec.id, parentLabel: … }) }]` — see **Relations** below |
+| **"From parent X's edit form, jump to list of child Y's scoped to X"** | `relations: [{ label, actionKey, targetConfigId, mapInput: ctx => ({ parentId: ctx.editRecord!.id, parentLabel: … }) }]` — see **Relations** below |
 
 ## Relations — parent → child navigation from the edit form
 
@@ -356,15 +356,15 @@ relations: [
     label: 'Mods',        // shown in form status bar: 'Esc=Back  M=Mods'
     actionKey: 'M',       // single key, case-insensitive
     targetConfigId: 'mods',
-    mapInput: (rec) => ({
-      motorcycleId: rec.id,
-      motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+    mapInput: (ctx) => ({
+      motorcycleId: ctx.editRecord!.id,
+      motorcycleLabel: `${ctx.editRecord!.brand} ${ctx.editRecord!.model} ${ctx.editRecord!.year}`,
     }),
   },
 ],
 ```
 
-The runtime seeds `session.context['crud_mods_input'] = mapInput(editRecord)`, pushes the parent form onto `screenStack`, and navigates to the child's list. The child reads the scoping via `ctx.input`:
+The runtime calls `mapInput(ctx)` (passing the full parent context, so `ctx.editRecord` holds the parent record), seeds `session.context['crud_mods_input']` with the result, pushes the parent form onto `screenStack`, and navigates to the child's list. The child reads the scoping via `ctx.input`:
 
 ```ts
 // Child config (e.g. modsConfig.ts)

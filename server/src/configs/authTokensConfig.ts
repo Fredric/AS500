@@ -39,7 +39,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 20,
       column: {
         width: 16,
-        cellRenderer: (r) => String(r.username ?? `#${r.user_id}`),
+        cellRenderer: (_ctx, r) => String(r.username ?? `#${r.user_id}`),
       },
     },
     device_name: {
@@ -48,7 +48,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 30,
       column: {
         width: 22,
-        cellRenderer: (r) => String(r.device_name ?? r.client_id ?? ''),
+        cellRenderer: (_ctx, r) => String(r.device_name ?? r.client_id ?? ''),
       },
     },
     ip_address: {
@@ -57,7 +57,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 20,
       column: {
         width: 15,
-        cellRenderer: (r) => String(r.ip_address ?? ''),
+        cellRenderer: (_ctx, r) => String(r.ip_address ?? ''),
       },
     },
     created_at: {
@@ -66,7 +66,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 16,
-        cellRenderer: (r) => formatTimestamp(r.created_at),
+        cellRenderer: (_ctx, r) => formatTimestamp(r.created_at),
       },
     },
     last_used_at: {
@@ -75,7 +75,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 16,
-        cellRenderer: (r) => formatTimestamp(r.last_used_at),
+        cellRenderer: (_ctx, r) => formatTimestamp(r.last_used_at),
       },
     },
     expires_at: {
@@ -84,7 +84,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 16,
-        cellRenderer: (r) => formatTimestamp(r.expires_at),
+        cellRenderer: (_ctx, r) => formatTimestamp(r.expires_at),
       },
     },
     status: {
@@ -93,7 +93,7 @@ export const authTokensConfig: CRUDTableConfig = {
       length: 8,
       column: {
         width: 8,
-        cellRenderer: (r) => String(r.status ?? '').toUpperCase(),
+        cellRenderer: (_ctx, r) => String(r.status ?? '').toUpperCase(),
       },
     },
   },

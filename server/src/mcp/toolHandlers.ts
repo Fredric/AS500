@@ -12,7 +12,7 @@
 // handled upstream in the transport layer.
 
 import type { CRUDContext, CRUDTableConfig, ServiceCall, MCPOperationOverride } from '../crudtable/types.js';
-import { synthesizeContext, type McpCallUser } from './contextSynth.js';
+import { synthesizeContext, splitScope, type McpCallUser } from './contextSynth.js';
 import type { McpOp } from './schemaBuilder.js';
 import { LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX } from './schemaBuilder.js';
 import {
@@ -293,7 +293,7 @@ export async function handleUpdate({
   assertService(config.services.read, 'update'); // we need read to populate editRecord
   requireMcpPermissions(config, 'update', config.services.update, user);
 
-  const { scope, body } = splitByScope(config, input);
+  const { scope, body } = splitScope(config, input);
   const id = body.id;
   if (id === undefined) {
     throw new McpToolError('validation_failed', 'id is required for update.');
@@ -343,7 +343,7 @@ export async function handleDelete({
   assertService(config.services.read, 'delete'); // selection[0] sourced from read
   requireMcpPermissions(config, 'delete', config.services.delete, user);
 
-  const { scope, body } = splitByScope(config, input);
+  const { scope, body } = splitScope(config, input);
   const id = body.id;
   if (id === undefined) {
     throw new McpToolError('validation_failed', 'id is required for delete.');
@@ -372,20 +372,3 @@ export async function handleDelete({
   });
 }
 
-// ============================================
-// Local util — avoids a circular helper in contextSynth for caller use
-// ============================================
-
-function splitByScope(
-  config: CRUDTableConfig,
-  input: Record<string, unknown>
-): { scope: Record<string, unknown>; body: Record<string, unknown> } {
-  const scopeKeys = new Set((config.mcp?.scope ?? []).map((p) => p.name));
-  const scope: Record<string, unknown> = {};
-  const body: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(input)) {
-    if (scopeKeys.has(k)) scope[k] = v;
-    else body[k] = v;
-  }
-  return { scope, body };
-}
