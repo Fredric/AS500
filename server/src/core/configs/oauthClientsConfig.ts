@@ -46,7 +46,7 @@ export const oauthClientsConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 14,
-        cellRenderer: (r) =>
+        cellRenderer: (_ctx, r) =>
           r.is_public
             ? 'public'
             : String(r.token_endpoint_auth_method ?? ''),
@@ -59,7 +59,7 @@ export const oauthClientsConfig: CRUDTableConfig = {
       column: {
         width: 5,
         align: 'right',
-        cellRenderer: (r) => String(r.redirect_uri_count ?? 0),
+        cellRenderer: (_ctx, r) => String(r.redirect_uri_count ?? 0),
       },
     },
     registered_at: {
@@ -68,7 +68,7 @@ export const oauthClientsConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 16,
-        cellRenderer: (r) => formatTimestamp(r.registered_at),
+        cellRenderer: (_ctx, r) => formatTimestamp(r.registered_at),
       },
     },
     active_token_count: {
@@ -78,7 +78,7 @@ export const oauthClientsConfig: CRUDTableConfig = {
       column: {
         width: 6,
         align: 'right',
-        cellRenderer: (r) => String(r.active_token_count ?? 0),
+        cellRenderer: (_ctx, r) => String(r.active_token_count ?? 0),
       },
     },
     last_used_at: {
@@ -87,7 +87,7 @@ export const oauthClientsConfig: CRUDTableConfig = {
       length: 16,
       column: {
         width: 16,
-        cellRenderer: (r) => formatTimestamp(r.last_used_at),
+        cellRenderer: (_ctx, r) => formatTimestamp(r.last_used_at),
       },
     },
   },

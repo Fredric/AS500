@@ -172,6 +172,9 @@ export function synthesizeContext({
   const ctxInput: Record<string, unknown> = { ...scope, ...injected };
   const values: Record<string, string> = {};
 
+  const formMode: CRUDContext['formMode'] =
+    op === 'create' ? 'create' : op === 'update' ? 'edit' : null;
+
   // Per-op wiring.
   switch (op) {
     case 'list':
@@ -195,16 +198,44 @@ export function synthesizeContext({
       }
       break;
 
-    case 'update':
+    case 'update': {
       if (body.id !== undefined) ctxInput.id = body.id;
+
+      // Build a partial context (input + formMode set, values still empty) so
+      // formValue(ctx, rawVal) can be called during seeding. formValue
+      // functions that only inspect `rawVal` work correctly; those that also
+      // read ctx.values for dependent logic will see empty values for other
+      // fields at this stage — acceptable since the agent overlays its own
+      // values immediately after.
+      //
+      // NOTE: datasources is always {} in synthetic contexts. Config authors
+      // must not rely on ctx.datasources inside formValue, cellRenderer,
+      // validators, or BoolExprs that run in MCP/REST flows — datasources are
+      // only loaded during the terminal screen build cycle.
+      const partialCtx: CRUDContext = {
+        records: [],
+        selection: [],
+        values,
+        input: ctxInput,
+        user: user.username,
+        formMode,
+        editRecord: editRecord ?? null,
+        pendingDeleteRecord: null,
+        pageOffset: 0,
+        datasources: {},
+      };
+
       // Seed values from the existing record first so fields omitted from the
-      // agent's input carry forward their current values. Without this, service
-      // params functions that call normalizeTime / .trim() on missing fields
-      // throw "Cannot read properties of undefined (reading 'trim')".
+      // agent's input carry forward their current values. Apply formValue where
+      // configured so the seeded strings match what the terminal would produce
+      // (e.g. boolean true → 'Y' for an active flag, not raw 'true').
       if (editRecord) {
         for (const [k, v] of Object.entries(editRecord)) {
           if (k === 'id') continue;
-          values[k] = valueToString(v);
+          const fc = _config.fieldConfigs[k];
+          values[k] = fc?.form?.formValue
+            ? fc.form.formValue(partialCtx, v)
+            : valueToString(v);
         }
       }
       // Overlay with the agent-supplied fields (only keys present in the input).
@@ -213,10 +244,8 @@ export function synthesizeContext({
         values[k] = valueToString(v);
       }
       break;
+    }
   }
-
-  const formMode: CRUDContext['formMode'] =
-    op === 'create' ? 'create' : op === 'update' ? 'edit' : null;
 
   return {
     records: [],
@@ -228,6 +257,11 @@ export function synthesizeContext({
     editRecord: op === 'update' ? (editRecord ?? null) : null,
     pendingDeleteRecord: op === 'delete' ? (deleteRecord ?? null) : null,
     pageOffset: 0,
+    // NOTE: datasources is always {} in synthetic (MCP/REST) contexts.
+    // Functions that run in both terminal and MCP/REST paths (formValue,
+    // cellRenderer, validators, BoolExprs) must not rely on datasources being
+    // populated here — they are only loaded during the terminal screen build
+    // cycle.
     datasources: {},
   };
 }

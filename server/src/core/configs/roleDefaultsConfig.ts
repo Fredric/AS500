@@ -59,7 +59,7 @@ export const roleDefaultsConfig: CRUDTableConfig = {
         required: true,
         uppercase: true,
         hint: '(USER/SUPERUSER/AIAGENT/ADMIN)',
-        formValue: (value) => String(value ?? '').toUpperCase(),
+        formValue: (_ctx, value) => String(value ?? '').toUpperCase(),
         validators: [
           (ctx) => {
             const role = ctx.values.role;
@@ -72,7 +72,7 @@ export const roleDefaultsConfig: CRUDTableConfig = {
       },
       column: {
         width: 10,
-        cellRenderer: (record) => String(record.role ?? '').toUpperCase(),
+        cellRenderer: (_ctx, record) => String(record.role ?? '').toUpperCase(),
       },
     },
 

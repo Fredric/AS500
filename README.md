@@ -300,19 +300,26 @@ Expects Postgres up (`docker-compose up -d postgres`) and the seed already run (
 
 Claude Code (2026+) speaks MCP natively and drives the full OAuth 2.1 + DCR dance for you — you never paste a token by hand.
 
-**1. Start the server.** `docker-compose up` boots Postgres, the WebSocket server **and** the MCP server in one shot — the `server` service publishes both `3001` (WebSocket) and `3002` (MCP). No extra step. Confirm it's up:
+**1. Start the server.** `docker-compose up` boots Postgres, the WebSocket server, the MCP server, **and** the Caddy TLS sidecar in one shot. No extra step. Confirm everything is up:
 
 ```bash
 curl http://localhost:3002/mcp/health
 # => {"ok":true,"auth":"oauth2.1","phase":3}
 ```
 
-(Using `npm run dev` in `server/` directly also works — MCP still boots in-process unless `MCP_ENABLED=false`.)
+> **Prerequisites (one-time, on the host):** Caddy terminates TLS at `https://localhost:3443` and proxies to `server:3002`, because Claude Code Desktop requires HTTPS for remote MCP servers. Before the first run you must generate a locally-trusted certificate:
+> ```powershell
+> winget install FiloSottile.mkcert   # skip if already installed
+> mkcert -install                      # trust the local CA
+> mkcert -cert-file certs/local.pem -key-file certs/local-key.pem localhost 127.0.0.1
+> ```
+
+(Using `npm run dev` in `server/` directly also works — MCP still boots in-process unless `MCP_ENABLED=false`. You'll need a separate HTTPS proxy if your MCP client requires TLS.)
 
 **2. Register the server with Claude Code.** From the project root:
 
 ```bash
-# Local dev
+# Local dev (via Caddy TLS sidecar)
 claude mcp add --transport http as500 https://localhost:3443/mcp
 
 # Production deployment
@@ -323,7 +330,7 @@ The first time you invoke an `as500` tool (or run `/mcp` in Claude Code), Claude
 
 1. Hit `/.well-known/oauth-protected-resource/mcp` to discover the authorization server.
 2. Dynamically register itself as an OAuth client via `POST /register` (RFC 7591).
-3. Open `http://localhost:3002/authorize?...` in your browser — the green-on-black AS500 consent page.
+3. Open `https://localhost:3443/authorize?...` in your browser — the green-on-black AS500 consent page.
 4. Prompt you for your AS500 username + password and click **Approve**.
 5. Exchange the resulting code for an access + refresh token pair (stored in Claude Code's OS keychain).
 6. Auto-refresh access tokens every hour; you won't see a login prompt again for 30 days unless you revoke.
@@ -346,7 +353,7 @@ The first time you invoke an `as500` tool (or run `/mcp` in Claude Code), Claude
   "mcpServers": {
     "as500": {
       "type": "http",
-      "url": "http://localhost:3002/mcp"
+      "url": "https://localhost:3443/mcp"
     }
   }
 }

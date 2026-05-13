@@ -31,8 +31,5 @@ export default defineConfig({
       usePolling: true,
       interval: 300,
     },
-    hmr: {
-      host: 'localhost',
-    },
   },
 });

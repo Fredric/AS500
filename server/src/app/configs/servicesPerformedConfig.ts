@@ -92,7 +92,7 @@ export const servicesPerformedConfig: CRUDTableConfig = {
       column: {
         width: 10,
         align: 'right',
-        cellRenderer: (r) => {
+        cellRenderer: (_ctx, r) => {
           const v = r.odometer_km;
           if (v === null || v === undefined || v === '') return '';
           return Number(v).toLocaleString('en-US');

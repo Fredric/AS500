@@ -359,9 +359,10 @@ export function startMcpServer(opts: StartMcpServerOptions = {}): HttpServer {
 
   const { toolCount, configCount } = buildMcpServer({ debug: opts.debug });
 
+  const publicUrl = opts.issuerUrl ? opts.issuerUrl.toString().replace(/\/$/, '') : `http://${host}:${port}`;
   const httpServer = app.listen(port, host, () => {
     console.log(
-      `AS500 MCP server running on http://${host}:${port}/mcp ` +
+      `AS500 MCP server listening on port ${port} — public URL: ${publicUrl}/mcp ` +
         `— ${toolCount} tool(s) across ${configCount} config(s). ` +
         `OAuth 2.1 + DCR enabled.`
     );

@@ -157,7 +157,7 @@ export const timeRegV2Config: CRUDTableConfig = {
   listKeys: {
     F7: {
       label: 'Prev',
-      handler: async (ctx, session) => {
+      handler: async (ctx) => {
         const currentDate = ctx.input.date as string;
         const userId = ctx.input.userId as number;
         ctx.input.date = timeRegCrud.getPreviousDay(userId, currentDate);
@@ -171,7 +171,7 @@ export const timeRegV2Config: CRUDTableConfig = {
 
     F8: {
       label: 'Next',
-      handler: async (ctx, session) => {
+      handler: async (ctx) => {
         const currentDate = ctx.input.date as string;
         const userId = ctx.input.userId as number;
         ctx.input.date = timeRegCrud.getNextDay(currentDate);

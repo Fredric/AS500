@@ -213,6 +213,11 @@ async function startServer() {
             connectionSessions.set(ws, existingSession.id);
             console.log(`Session resumed for user: ${existingSession.username}`);
 
+            // Permissions are not persisted to disk; reload them now so that
+            // menu item visibility and CRUD permission checks work correctly
+            // when building the resumed screen.
+            await ensurePermissionsLoaded(existingSession);
+
             const response: ScreenResponse = {
               ...(await getCurrentScreenResponse(existingSession)),
               sessionId: existingSession.id,

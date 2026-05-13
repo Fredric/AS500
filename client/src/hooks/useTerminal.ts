@@ -3,13 +3,11 @@ import type { ScreenResponse, ClientRequest, Field, ScreenNavigation } from '../
 
 // Dynamic WebSocket URL: use secure wss:// in production, ws:// in development
 function getWebSocketUrl(): string {
-  if (import.meta.env.PROD) {
-    // Production: connect to same host using secure WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}`;
-  }
-  // Development: connect to local server
-  return 'ws://localhost:3001';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = import.meta.env.PROD
+    ? window.location.host
+    : `${window.location.hostname}:3001`;
+  return `${protocol}//${host}`;
 }
 
 const WS_URL = getWebSocketUrl();
@@ -17,6 +15,35 @@ const SESSION_COOKIE_NAME = 'as500_session';
 const ACCESS_TOKEN_COOKIE_NAME = 'as500_access_token';
 const REFRESH_TOKEN_COOKIE_NAME = 'as500_refresh_token';
 const DEVICE_ID_COOKIE_NAME = 'as500_device_id';
+
+function generateUuid(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  if (cryptoApi?.getRandomValues) {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-');
+}
+
 // Cookie helpers with proper security flags
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -39,7 +66,7 @@ function deleteCookie(name: string) {
 function getDeviceId(): string {
   let deviceId = getCookie(DEVICE_ID_COOKIE_NAME);
   if (!deviceId) {
-    deviceId = crypto.randomUUID();
+    deviceId = generateUuid();
     setCookie(DEVICE_ID_COOKIE_NAME, deviceId, 365 * 24); // 1 year
   }
   return deviceId;
@@ -243,8 +270,9 @@ export function useTerminal() {
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      ws.onerror = () => {
+        // Browser WebSocket error events carry no useful detail (intentionally opaque).
+        // The onclose handler fires next and schedules a reconnect.
       };
     }
 
@@ -256,7 +284,12 @@ export function useTerminal() {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-      wsRef.current?.close();
+      // Don't close a CONNECTING socket — the browser logs a warning if you do.
+      // The onopen handler checks `destroyed` and closes it there instead.
+      const ws = wsRef.current;
+      if (ws && ws.readyState !== WebSocket.CONNECTING) {
+        ws.close();
+      }
     };
   }, []);
 

@@ -139,7 +139,7 @@ export const motorcyclesConfig: CRUDTableConfig = {
       column: {
         width: 8,
         align: 'right',
-        cellRenderer: (r) => {
+        cellRenderer: (_ctx, r) => {
           const v = r.odometer_km;
           if (v === null || v === undefined || v === '') return '';
           return Number(v).toLocaleString('en-US');
@@ -213,18 +213,18 @@ export const motorcyclesConfig: CRUDTableConfig = {
       label: 'Mods',
       actionKey: 'M',
       targetConfigId: 'mods',
-      mapInput: (rec) => ({
-        motorcycleId: rec.id,
-        motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+      mapInput: (ctx) => ({
+        motorcycleId: ctx.editRecord!.id,
+        motorcycleLabel: `${ctx.editRecord!.brand} ${ctx.editRecord!.model} ${ctx.editRecord!.year}`,
       }),
     },
     {
       label: 'Services',
       actionKey: 'S',
       targetConfigId: 'services_performed',
-      mapInput: (rec) => ({
-        motorcycleId: rec.id,
-        motorcycleLabel: `${rec.brand} ${rec.model} ${rec.year}`,
+      mapInput: (ctx) => ({
+        motorcycleId: ctx.editRecord!.id,
+        motorcycleLabel: `${ctx.editRecord!.brand} ${ctx.editRecord!.model} ${ctx.editRecord!.year}`,
       }),
     },
   ],

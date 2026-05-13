@@ -106,7 +106,7 @@ export const userMgmtConfig: CRUDTableConfig = {
       form: {
         required: true,
         uppercase: true,
-        formValue: (v) => v === true ? 'Y' : v === false ? 'N' : String(v ?? ''),
+        formValue: (_ctx, v) => v === true ? 'Y' : v === false ? 'N' : String(v ?? ''),
         validators: [
           (ctx) => {
             const v = ctx.values.active;
@@ -117,7 +117,7 @@ export const userMgmtConfig: CRUDTableConfig = {
       },
       column: {
         width: 6,
-        cellRenderer: (record) => (record.active as boolean) ? 'Yes' : 'No',
+        cellRenderer: (_ctx, record) => (record.active as boolean) ? 'Yes' : 'No',
       },
     },
 
@@ -134,7 +134,7 @@ export const userMgmtConfig: CRUDTableConfig = {
       form: {
         required: true,
         uppercase: true,
-        formValue: (v) => String(v ?? 'USER').toUpperCase(),
+        formValue: (_ctx, v) => String(v ?? 'USER').toUpperCase(),
         validators: [
           (ctx) => {
             const v = ctx.values.role;
@@ -157,7 +157,7 @@ export const userMgmtConfig: CRUDTableConfig = {
       },
       column: {
         width: 10,
-        cellRenderer: (record) => String(record.role ?? '').toUpperCase(),
+        cellRenderer: (_ctx, record) => String(record.role ?? '').toUpperCase(),
       },
     },
   },

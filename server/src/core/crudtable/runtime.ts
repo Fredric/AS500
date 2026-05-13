@@ -136,7 +136,7 @@ export async function buildListScreen(
       if (!fc) continue;
 
       if (fc.column?.cellRenderer) {
-        display[fieldKey] = fc.column.cellRenderer(record, crudCtx.datasources[fieldKey]);
+        display[fieldKey] = fc.column.cellRenderer(crudCtx, record, crudCtx.datasources[fieldKey]);
       } else {
         display[fieldKey] = record[fc.field] ?? '';
       }
@@ -345,7 +345,7 @@ export async function handleList(
   // Custom F-key handlers
   if (config.listKeys?.[request.key]) {
     const keyConfig = config.listKeys[request.key];
-    await keyConfig.handler(crudCtx, session);
+    await keyConfig.handler(crudCtx);
     saveContext(session, config.id, crudCtx);
 
     return {
@@ -519,7 +519,7 @@ export async function buildFormScreen(
       if (!fc) continue;
       const val = crudCtx.editRecord[fc.field];
       if (fc.form?.formValue) {
-        fieldValues[fc.field] = fc.form.formValue(val);
+        fieldValues[fc.field] = fc.form.formValue(crudCtx, val);
       } else {
         fieldValues[fc.field] = val !== null && val !== undefined ? String(val) : '';
       }
@@ -661,7 +661,7 @@ export async function handleForm(
       if (request.key === rel.actionKey || request.key === rel.actionKey.toUpperCase()) {
         const targetConfig = getConfig(rel.targetConfigId);
         if (targetConfig) {
-          session.context[`crud_${rel.targetConfigId}_input`] = rel.mapInput(crudCtx.editRecord);
+          session.context[`crud_${rel.targetConfigId}_input`] = rel.mapInput(crudCtx);
           session.screenStack.push(formScreenId(config.id));
           session.currentScreen = listScreenId(rel.targetConfigId);
           saveContext(session, config.id, crudCtx);

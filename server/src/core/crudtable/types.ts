@@ -1,7 +1,6 @@
 // CRUDTable Type Definitions
 // Declarative config system for auto-generated CRUD screens
 
-import type { Session } from '../types/index.js';
 import type { FieldType } from '../dsl/types.js';
 
 // Boolean expression: static or context-evaluated
@@ -59,13 +58,14 @@ export interface FieldConfig {
     uppercase?: boolean;
     validators?: Validator[];
     hint?: string;
-    formValue?: (rawValue: unknown) => string;
+    formValue?: (ctx: CRUDContext, rawValue: unknown) => string;
   };
 
   column?: {
     width?: number;
     align?: 'left' | 'right' | 'center';
     cellRenderer?: (
+      ctx: CRUDContext,
       record: Record<string, unknown>,
       datasource?: Record<string, unknown>[]
     ) => string;
@@ -113,7 +113,7 @@ export interface OpenUIConfig {
 // Custom F-key handler for list screen
 export interface ListKeyConfig {
   label: string;
-  handler: (context: CRUDContext, session: Session) => Promise<void>;
+  handler: (ctx: CRUDContext) => Promise<void>;
 }
 
 /**
@@ -213,7 +213,7 @@ export interface RelationConfig {
    * human-readable label (e.g. `motorcycleLabel`) is conventional so the child
    * `listHeader` can show it.
    */
-  mapInput: (editRecord: Record<string, unknown>) => Record<string, unknown>;
+  mapInput: (ctx: CRUDContext) => Record<string, unknown>;
 }
 
 /**
