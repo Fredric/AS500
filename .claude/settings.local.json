@@ -10,7 +10,9 @@
       "Bash(curl -s http://localhost:3002/mcp/health)",
       "mcp__as500__timereg_v2_list",
       "mcp__as500__timereg_v2_delete",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git merge *)",
+      "Bash(git checkout *)"
     ]
   }
 }
