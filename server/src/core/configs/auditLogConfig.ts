@@ -284,6 +284,8 @@ export const auditLogConfig: CRUDTableConfig = {
     'params_hash',
   ],
 
+  formPageSize: 9,
+
   navigation: {
     primaryAction: 'edit',
   },

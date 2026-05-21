@@ -20,6 +20,7 @@ export function loadContext(session: Session, configId: string): CRUDContext {
     editRecord: (ctx[key(configId, 'editRecord')] as Record<string, unknown>) || null,
     pendingDeleteRecord: (ctx[key(configId, 'pendingDeleteRecord')] as Record<string, unknown>) || null,
     pageOffset: (ctx[key(configId, 'pageOffset')] as number) || 0,
+    formPage: (ctx[key(configId, 'formPage')] as number) || 0,
     datasources: (ctx[key(configId, 'datasources')] as Record<string, Record<string, unknown>[]>) || {},
   };
 }
@@ -34,6 +35,7 @@ export function saveContext(session: Session, configId: string, crudCtx: CRUDCon
   ctx[key(configId, 'editRecord')] = crudCtx.editRecord;
   ctx[key(configId, 'pendingDeleteRecord')] = crudCtx.pendingDeleteRecord;
   ctx[key(configId, 'pageOffset')] = crudCtx.pageOffset;
+  ctx[key(configId, 'formPage')] = crudCtx.formPage;
   ctx[key(configId, 'datasources')] = crudCtx.datasources;
 }
 

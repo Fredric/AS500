@@ -315,6 +315,7 @@ export async function handleList(
     }
     crudCtx.formMode = 'create';
     crudCtx.editRecord = null;
+    crudCtx.formPage = 0;
     saveContext(session, config.id, crudCtx);
 
     session.screenStack.push(listScreenId(config.id));
@@ -389,6 +390,7 @@ export async function handleList(
         crudCtx.formMode = 'edit';
         crudCtx.editRecord = records[i];
         crudCtx.selection = [records[i]];
+        crudCtx.formPage = 0;
         saveContext(session, config.id, crudCtx);
 
         session.screenStack.push(listScreenId(config.id));
@@ -512,16 +514,36 @@ export async function buildFormScreen(
   const isCreate = crudCtx.formMode === 'create';
   const title = isCreate
     ? `CREATE ${config.title.toUpperCase()}`
-    : `EDIT ${config.title.toUpperCase()}`;
+    : config.services.update
+      ? `EDIT ${config.title.toUpperCase()}`
+      : config.title.toUpperCase();
 
-  // Build field values
+  // ---- Pagination setup ----
+  const pageSize = config.formPageSize ?? 0;
+
+  // Collect the full ordered list of visible field keys (across all pages)
+  const visibleKeys = config.formBuilder.filter(k => {
+    const fc = config.fieldConfigs[k];
+    if (!fc) return false;
+    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) return false;
+    return true;
+  });
+
+  const totalPages = pageSize > 0 ? Math.ceil(visibleKeys.length / pageSize) : 1;
+  const currentPage = pageSize > 0
+    ? Math.max(0, Math.min(crudCtx.formPage, totalPages - 1))
+    : 0;
+  const pageKeys = pageSize > 0
+    ? visibleKeys.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+    : visibleKeys;
+
+  // Build field values for ALL visible fields (needed so values persist across pages)
   let fieldValues: Record<string, string> = {};
 
   if (isCreate && config.getInitialValues) {
     fieldValues = config.getInitialValues(crudCtx);
   } else if (!isCreate && crudCtx.editRecord) {
-    // Pre-populate from edit record
-    for (const fieldKey of config.formBuilder) {
+    for (const fieldKey of visibleKeys) {
       const fc = config.fieldConfigs[fieldKey];
       if (!fc) continue;
       const val = crudCtx.editRecord[fc.field];
@@ -531,20 +553,19 @@ export async function buildFormScreen(
         fieldValues[fc.field] = val !== null && val !== undefined ? String(val) : '';
       }
     }
+    // Also merge any values saved from other pages
+    for (const [k, v] of Object.entries(crudCtx.values)) {
+      if (!(k in fieldValues)) fieldValues[k] = v;
+    }
   }
 
-  // Build form rows from formBuilder
+  // Build form rows from the current page's keys only
   const formRows: Array<[string, FieldDef]> = [];
   let firstFieldName: string | undefined;
 
-  for (const fieldKey of config.formBuilder) {
+  for (const fieldKey of pageKeys) {
     const fc = config.fieldConfigs[fieldKey];
     if (!fc) continue;
-
-    // Evaluate visibility
-    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) {
-      continue;
-    }
 
     const isDisabled = evalBool(fc.form?.disabled, crudCtx, false);
     const isRequired = evalBool(fc.form?.required, crudCtx, false);
@@ -555,7 +576,6 @@ export async function buildFormScreen(
       uppercase: fc.form?.uppercase,
     });
 
-    // Build label with dots for AS/400 style
     const labelText = `${fc.label} . . . :`;
     formRows.push([labelText, fieldDef]);
 
@@ -564,34 +584,43 @@ export async function buildFormScreen(
     }
   }
 
-  // Build hint text elements positioned after form fields
+  // Build hint elements for the current page's fields
   const hintElements = [];
   let hintRowIndex = 0;
-  for (const fieldKey of config.formBuilder) {
+  for (const fieldKey of pageKeys) {
     const fc = config.fieldConfigs[fieldKey];
     if (!fc) continue;
-    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) continue;
-
     if (fc.form?.hint) {
-      const hintCol = 30 + fc.length + 2; // fieldCol + field length + gap
+      const hintCol = 30 + fc.length + 2;
       hintElements.push(text(7 + hintRowIndex, hintCol, fc.form.hint));
     }
     hintRowIndex++;
   }
 
-  // Build status line: Esc=Back followed by relation hotkeys
-  const relationParts: string[] = [];
+  // Page indicator element (row 5) — only shown when there are multiple pages
+  const pageIndicatorElements = totalPages > 1
+    ? [text(5, 2, `Page ${currentPage + 1} of ${totalPages}`)]
+    : [];
+
+  // Build status line: page nav + Esc=Back + relation hotkeys
+  const statusParts: string[] = [];
+  if (totalPages > 1) {
+    if (currentPage > 0) statusParts.push('F7=Prev');
+    if (currentPage < totalPages - 1) statusParts.push('F8=Next');
+  }
+  statusParts.push('Esc=Back');
   if (config.relations) {
     for (const rel of config.relations) {
-      relationParts.push(`${rel.actionKey.toUpperCase()}=${rel.label}`);
+      statusParts.push(`${rel.actionKey.toUpperCase()}=${rel.label}`);
     }
   }
-  const formStatusLine = ['Esc=Back', ...relationParts].join('  ');
+  const formStatusLine = statusParts.join('  ');
 
   const screenId = formScreenId(config.id);
   const screenDef = defineScreen(screenId, {
     elements: [
       header({ system: 'AS500 SYSTEM', title, showDateTime: true, showUser: true }),
+      ...pageIndicatorElements,
       form(7, formRows, { labelCol: 8, fieldCol: 30 }),
       ...hintElements,
     ],
@@ -682,6 +711,7 @@ export async function handleForm(
   if (request.key === 'F3' || request.key === 'F12') {
     crudCtx.formMode = null;
     crudCtx.editRecord = null;
+    crudCtx.formPage = 0;
     saveContext(session, config.id, crudCtx);
 
     session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
@@ -690,6 +720,38 @@ export async function handleForm(
       ...(await buildListScreen(config, session)),
       ...base,
     };
+  }
+
+  // F7 / F8 — previous / next form page (only active when formPageSize is set)
+  if (request.key === 'F7' || request.key === 'F8') {
+    const pageSize = config.formPageSize ?? 0;
+    if (pageSize > 0) {
+      // Save any editable values entered on this page before navigating
+      for (const fieldKey of config.formBuilder) {
+        const fc = config.fieldConfigs[fieldKey];
+        if (!fc) continue;
+        if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) continue;
+        if (evalBool(fc.form?.disabled, crudCtx, false)) continue;
+        const v = request.input[fc.field];
+        if (v !== undefined) crudCtx.values[fc.field] = String(v).trim();
+      }
+
+      const visibleCount = config.formBuilder.filter(k => {
+        const fc = config.fieldConfigs[k];
+        if (!fc) return false;
+        if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) return false;
+        return true;
+      }).length;
+      const totalPages = Math.ceil(visibleCount / pageSize);
+
+      if (request.key === 'F7') {
+        crudCtx.formPage = Math.max(0, crudCtx.formPage - 1);
+      } else {
+        crudCtx.formPage = Math.min(totalPages - 1, crudCtx.formPage + 1);
+      }
+      saveContext(session, config.id, crudCtx);
+      return { ...(await buildFormScreen(config, session)), ...base };
+    }
   }
 
   // ENTER - Submit form

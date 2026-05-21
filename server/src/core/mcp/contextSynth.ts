@@ -222,6 +222,7 @@ export function synthesizeContext({
         editRecord: editRecord ?? null,
         pendingDeleteRecord: null,
         pageOffset: 0,
+        formPage: 0,
         datasources: {},
       };
 
@@ -257,6 +258,7 @@ export function synthesizeContext({
     editRecord: op === 'update' ? (editRecord ?? null) : null,
     pendingDeleteRecord: op === 'delete' ? (deleteRecord ?? null) : null,
     pageOffset: 0,
+    formPage: 0,
     // NOTE: datasources is always {} in synthetic (MCP/REST) contexts.
     // Functions that run in both terminal and MCP/REST paths (formValue,
     // cellRenderer, validators, BoolExprs) must not rely on datasources being
