@@ -652,9 +652,12 @@ export async function buildFormScreen(
   }
 
   // Build form navigation actions (Esc=Back + relation hotkeys)
-  const formNavActions: Array<{ key: string; label: string }> = [
-    { key: 'F3', label: 'Esc=Back' },
-  ];
+  const formNavActions: Array<{ key: string; label: string }> = [];
+  if (totalPages > 1) {
+    if (currentPage > 0) formNavActions.push({ key: 'F7', label: 'F7=Prev' });
+    if (currentPage < totalPages - 1) formNavActions.push({ key: 'F8', label: 'F8=Next' });
+  }
+  formNavActions.push({ key: 'F3', label: 'Esc=Back' });
   if (config.relations) {
     for (const rel of config.relations) {
       formNavActions.push({
