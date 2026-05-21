@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   primaryKey,
   customType,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -200,4 +201,52 @@ export const mcpAuditLog = pgTable('mcp_audit_log', {
   index('idx_mcp_audit_log_client_id').on(t.client_id),
   index('idx_mcp_audit_log_user_id').on(t.user_id),
   index('idx_mcp_audit_log_config_id').on(t.config_id),
+]);
+
+// ============================================
+// Unified Audit Log
+// ============================================
+//
+// Append-only record of every security- and data-relevant event across ALL
+// access surfaces: terminal UI, MCP tool calls, REST API, auth lifecycle,
+// and WebSocket session events.
+//
+// Rows are never updated or deleted by application code.
+// before_data / after_data hold JSONB snapshots for terminal CRUD ops.
+// params_hash (sha256) is used for MCP/API calls to avoid storing PII.
+
+export const auditLog = pgTable('audit_log', {
+  id: serial('id').primaryKey(),
+  // 'auth' | 'crud' | 'mcp' | 'api' | 'session'
+  event_type: varchar('event_type', { length: 16 }).notNull(),
+  // e.g. 'login' | 'login_failed' | 'logout' | 'token_refresh' |
+  //      'create' | 'update' | 'delete' | 'list' | 'read' |
+  //      'connect' | 'disconnect' | 'resume' | 'expire'
+  action: varchar('action', { length: 32 }).notNull(),
+  // 'terminal' | 'mcp' | 'api'
+  source: varchar('source', { length: 16 }).notNull(),
+  // Not FK-referenced — audit rows must survive user deletion.
+  user_id: integer('user_id'),
+  // Denormalized for readability even after user deletion.
+  username: varchar('username', { length: 64 }),
+  client_id: varchar('client_id', { length: 64 }),
+  config_id: varchar('config_id', { length: 64 }),
+  record_id: varchar('record_id', { length: 128 }),
+  ok: boolean('ok').notNull(),
+  error_code: varchar('error_code', { length: 64 }),
+  duration_ms: integer('duration_ms').notNull().default(0),
+  ip_address: inet('ip_address'),
+  user_agent: text('user_agent'),
+  // Full record snapshot before and after the change (terminal CRUD only).
+  // MCP/API calls use params_hash instead to avoid leaking PII.
+  before_data: jsonb('before_data'),
+  after_data: jsonb('after_data'),
+  params_hash: varchar('params_hash', { length: 64 }),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_audit_log_created_at').on(t.created_at),
+  index('idx_audit_log_event_type').on(t.event_type),
+  index('idx_audit_log_user_id').on(t.user_id).where(sql`${t.user_id} IS NOT NULL`),
+  index('idx_audit_log_config_id').on(t.config_id).where(sql`${t.config_id} IS NOT NULL`),
+  index('idx_audit_log_source').on(t.source),
 ]);

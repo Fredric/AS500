@@ -16,6 +16,7 @@ import {
   field,
 } from '../dsl/index.js';
 import type { SubfileColumnDef, FieldDef } from '../dsl/types.js';
+import { writeAuditEvent } from '../audit/writer.js';
 
 const LIST_PAGE_SIZE = 12;
 const LIST_START_ROW = 7;
@@ -148,13 +149,16 @@ export async function buildListScreen(
   const pageData = records.slice(crudCtx.pageOffset, crudCtx.pageOffset + LIST_PAGE_SIZE);
   const dataRowCount = pageData.length;
 
-  // Determine primary action for keyboard navigation
+  // Determine primary action for keyboard navigation.
+  // '2' (edit/view form) fires when there is either an update service OR a
+  // non-empty formBuilder (e.g. read-only detail screens).
+  const hasFormView = !!(config.services.update || config.formBuilder.length > 0);
   let primaryAction = '';
   if (config.navigation?.primaryAction === 'open' && config.openUI) {
     primaryAction = '9';
-  } else if (config.navigation?.primaryAction === 'edit' && config.services.update) {
+  } else if (config.navigation?.primaryAction === 'edit' && hasFormView) {
     primaryAction = '2';
-  } else if (config.services.update) {
+  } else if (hasFormView) {
     primaryAction = '2';
   } else if (config.openUI) {
     primaryAction = '9';
@@ -184,8 +188,11 @@ export async function buildListScreen(
 
   // Build status line with keyboard shortcut hints first, then F-keys
   const shortcutHints: string[] = [];
-  if (primaryAction === '2') shortcutHints.push('Enter=Edit');
-  else if (primaryAction === '9') shortcutHints.push('Enter=Open');
+  if (primaryAction === '2') {
+    shortcutHints.push(config.services.update ? 'Enter=Edit' : 'Enter=View');
+  } else if (primaryAction === '9') {
+    shortcutHints.push('Enter=Open');
+  }
   if (config.services.delete && checkServicePermission(session, config.services.delete)) shortcutHints.push('D=Delete');
   if (config.navigation?.shortcuts) {
     for (const s of config.navigation.shortcuts) {
@@ -308,6 +315,7 @@ export async function handleList(
     }
     crudCtx.formMode = 'create';
     crudCtx.editRecord = null;
+    crudCtx.formPage = 0;
     saveContext(session, config.id, crudCtx);
 
     session.screenStack.push(listScreenId(config.id));
@@ -371,9 +379,9 @@ export async function handleList(
 
       const optNum = parseInt(opt, 10);
 
-      // Option 2 - Edit
-      if (opt === '2' && config.services.update) {
-        if (!checkServicePermission(session, config.services.update)) {
+      // Option 2 - Edit (or view-only detail when no update service but formBuilder is defined)
+      if (opt === '2' && (config.services.update || config.formBuilder.length > 0)) {
+        if (config.services.update && !checkServicePermission(session, config.services.update)) {
           return {
             ...(await buildListScreen(config, session, 'Access denied: cannot edit records', 'error')),
             ...base,
@@ -382,6 +390,7 @@ export async function handleList(
         crudCtx.formMode = 'edit';
         crudCtx.editRecord = records[i];
         crudCtx.selection = [records[i]];
+        crudCtx.formPage = 0;
         saveContext(session, config.id, crudCtx);
 
         session.screenStack.push(listScreenId(config.id));
@@ -505,16 +514,36 @@ export async function buildFormScreen(
   const isCreate = crudCtx.formMode === 'create';
   const title = isCreate
     ? `CREATE ${config.title.toUpperCase()}`
-    : `EDIT ${config.title.toUpperCase()}`;
+    : config.services.update
+      ? `EDIT ${config.title.toUpperCase()}`
+      : config.title.toUpperCase();
 
-  // Build field values
+  // ---- Pagination setup ----
+  const pageSize = config.formPageSize ?? 0;
+
+  // Collect the full ordered list of visible field keys (across all pages)
+  const visibleKeys = config.formBuilder.filter(k => {
+    const fc = config.fieldConfigs[k];
+    if (!fc) return false;
+    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) return false;
+    return true;
+  });
+
+  const totalPages = pageSize > 0 ? Math.ceil(visibleKeys.length / pageSize) : 1;
+  const currentPage = pageSize > 0
+    ? Math.max(0, Math.min(crudCtx.formPage, totalPages - 1))
+    : 0;
+  const pageKeys = pageSize > 0
+    ? visibleKeys.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+    : visibleKeys;
+
+  // Build field values for ALL visible fields (needed so values persist across pages)
   let fieldValues: Record<string, string> = {};
 
   if (isCreate && config.getInitialValues) {
     fieldValues = config.getInitialValues(crudCtx);
   } else if (!isCreate && crudCtx.editRecord) {
-    // Pre-populate from edit record
-    for (const fieldKey of config.formBuilder) {
+    for (const fieldKey of visibleKeys) {
       const fc = config.fieldConfigs[fieldKey];
       if (!fc) continue;
       const val = crudCtx.editRecord[fc.field];
@@ -524,20 +553,19 @@ export async function buildFormScreen(
         fieldValues[fc.field] = val !== null && val !== undefined ? String(val) : '';
       }
     }
+    // Also merge any values saved from other pages
+    for (const [k, v] of Object.entries(crudCtx.values)) {
+      if (!(k in fieldValues)) fieldValues[k] = v;
+    }
   }
 
-  // Build form rows from formBuilder
+  // Build form rows from the current page's keys only
   const formRows: Array<[string, FieldDef]> = [];
   let firstFieldName: string | undefined;
 
-  for (const fieldKey of config.formBuilder) {
+  for (const fieldKey of pageKeys) {
     const fc = config.fieldConfigs[fieldKey];
     if (!fc) continue;
-
-    // Evaluate visibility
-    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) {
-      continue;
-    }
 
     const isDisabled = evalBool(fc.form?.disabled, crudCtx, false);
     const isRequired = evalBool(fc.form?.required, crudCtx, false);
@@ -548,7 +576,6 @@ export async function buildFormScreen(
       uppercase: fc.form?.uppercase,
     });
 
-    // Build label with dots for AS/400 style
     const labelText = `${fc.label} . . . :`;
     formRows.push([labelText, fieldDef]);
 
@@ -557,34 +584,43 @@ export async function buildFormScreen(
     }
   }
 
-  // Build hint text elements positioned after form fields
+  // Build hint elements for the current page's fields
   const hintElements = [];
   let hintRowIndex = 0;
-  for (const fieldKey of config.formBuilder) {
+  for (const fieldKey of pageKeys) {
     const fc = config.fieldConfigs[fieldKey];
     if (!fc) continue;
-    if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) continue;
-
     if (fc.form?.hint) {
-      const hintCol = 30 + fc.length + 2; // fieldCol + field length + gap
+      const hintCol = 30 + fc.length + 2;
       hintElements.push(text(7 + hintRowIndex, hintCol, fc.form.hint));
     }
     hintRowIndex++;
   }
 
-  // Build status line: Esc=Back followed by relation hotkeys
-  const relationParts: string[] = [];
+  // Page indicator element (row 5) — only shown when there are multiple pages
+  const pageIndicatorElements = totalPages > 1
+    ? [text(5, 2, `Page ${currentPage + 1} of ${totalPages}`)]
+    : [];
+
+  // Build status line: page nav + Esc=Back + relation hotkeys
+  const statusParts: string[] = [];
+  if (totalPages > 1) {
+    if (currentPage > 0) statusParts.push('↑ Prev');
+    if (currentPage < totalPages - 1) statusParts.push('↓ Next');
+  }
+  statusParts.push('Esc=Back');
   if (config.relations) {
     for (const rel of config.relations) {
-      relationParts.push(`${rel.actionKey.toUpperCase()}=${rel.label}`);
+      statusParts.push(`${rel.actionKey.toUpperCase()}=${rel.label}`);
     }
   }
-  const formStatusLine = ['Esc=Back', ...relationParts].join('  ');
+  const formStatusLine = statusParts.join('  ');
 
   const screenId = formScreenId(config.id);
   const screenDef = defineScreen(screenId, {
     elements: [
       header({ system: 'AS500 SYSTEM', title, showDateTime: true, showUser: true }),
+      ...pageIndicatorElements,
       form(7, formRows, { labelCol: 8, fieldCol: 30 }),
       ...hintElements,
     ],
@@ -616,9 +652,12 @@ export async function buildFormScreen(
   }
 
   // Build form navigation actions (Esc=Back + relation hotkeys)
-  const formNavActions: Array<{ key: string; label: string }> = [
-    { key: 'F3', label: 'Esc=Back' },
-  ];
+  const formNavActions: Array<{ key: string; label: string }> = [];
+  if (totalPages > 1) {
+    if (currentPage > 0) formNavActions.push({ key: 'F7', label: '↑ Prev' });
+    if (currentPage < totalPages - 1) formNavActions.push({ key: 'F8', label: '↓ Next' });
+  }
+  formNavActions.push({ key: 'F3', label: 'Esc=Back' });
   if (config.relations) {
     for (const rel of config.relations) {
       formNavActions.push({
@@ -675,6 +714,7 @@ export async function handleForm(
   if (request.key === 'F3' || request.key === 'F12') {
     crudCtx.formMode = null;
     crudCtx.editRecord = null;
+    crudCtx.formPage = 0;
     saveContext(session, config.id, crudCtx);
 
     session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
@@ -683,6 +723,38 @@ export async function handleForm(
       ...(await buildListScreen(config, session)),
       ...base,
     };
+  }
+
+  // F7 / F8 / ArrowUp / ArrowDown — previous / next form page (only active when formPageSize is set)
+  if (request.key === 'F7' || request.key === 'F8' || request.key === 'ArrowUp' || request.key === 'ArrowDown') {
+    const pageSize = config.formPageSize ?? 0;
+    if (pageSize > 0) {
+      // Save any editable values entered on this page before navigating
+      for (const fieldKey of config.formBuilder) {
+        const fc = config.fieldConfigs[fieldKey];
+        if (!fc) continue;
+        if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) continue;
+        if (evalBool(fc.form?.disabled, crudCtx, false)) continue;
+        const v = request.input[fc.field];
+        if (v !== undefined) crudCtx.values[fc.field] = String(v).trim();
+      }
+
+      const visibleCount = config.formBuilder.filter(k => {
+        const fc = config.fieldConfigs[k];
+        if (!fc) return false;
+        if (fc.form?.visible !== undefined && !evalBool(fc.form.visible, crudCtx, true)) return false;
+        return true;
+      }).length;
+      const totalPages = Math.ceil(visibleCount / pageSize);
+
+      if (request.key === 'F7' || request.key === 'ArrowUp') {
+        crudCtx.formPage = Math.max(0, crudCtx.formPage - 1);
+      } else {
+        crudCtx.formPage = Math.min(totalPages - 1, crudCtx.formPage + 1);
+      }
+      saveContext(session, config.id, crudCtx);
+      return { ...(await buildFormScreen(config, session)), ...base };
+    }
   }
 
   // ENTER - Submit form
@@ -741,6 +813,7 @@ export async function handleForm(
     }
 
     // Call create or update service
+    const opStart = Date.now();
     try {
       if (isCreate && config.services.create) {
         if (!checkServicePermission(session, config.services.create)) {
@@ -751,6 +824,17 @@ export async function handleForm(
         }
         const createParams = (await config.services.create.params?.(crudCtx)) ?? values;
         await callService(config.services.create.service, config.services.create.method, createParams);
+        void writeAuditEvent({
+          event_type: 'crud',
+          action: 'create',
+          source: 'terminal',
+          user_id: session.viserId ?? null,
+          username: session.username ?? null,
+          config_id: config.id,
+          ok: true,
+          duration_ms: Date.now() - opStart,
+          after_data: createParams as Record<string, unknown>,
+        });
       } else if (!isCreate && config.services.update) {
         if (!checkServicePermission(session, config.services.update)) {
           return {
@@ -759,10 +843,24 @@ export async function handleForm(
           };
         }
         const updateParams = config.services.update.params?.(crudCtx) ?? values;
+        const beforeSnap = crudCtx.editRecord ? { ...crudCtx.editRecord } as Record<string, unknown> : null;
         await callService(config.services.update.service, config.services.update.method, updateParams);
+        void writeAuditEvent({
+          event_type: 'crud',
+          action: 'update',
+          source: 'terminal',
+          user_id: session.viserId ?? null,
+          username: session.username ?? null,
+          config_id: config.id,
+          record_id: beforeSnap?.id != null ? String(beforeSnap.id) : null,
+          ok: true,
+          duration_ms: Date.now() - opStart,
+          before_data: beforeSnap,
+          after_data: updateParams as Record<string, unknown>,
+        });
       }
 
-      // Return to list with success message
+      // Return to list — show success message only when a service actually ran
       crudCtx.formMode = null;
       crudCtx.editRecord = null;
       crudCtx.values = {};
@@ -770,13 +868,26 @@ export async function handleForm(
 
       session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
 
-      const msg = isCreate ? 'Record created' : 'Record updated';
+      const didRun = (isCreate && !!config.services.create) || (!isCreate && !!config.services.update);
+      const msg = didRun ? (isCreate ? 'Record created' : 'Record updated') : null;
       return {
-        ...(await buildListScreen(config, session, msg, 'info')),
+        ...(await buildListScreen(config, session, msg, msg ? 'info' : null)),
         ...base,
       };
     } catch (error) {
       console.error('CRUDTable form submit error:', error);
+      const isCreate2 = crudCtx.formMode === 'create';
+      void writeAuditEvent({
+        event_type: 'crud',
+        action: isCreate2 ? 'create' : 'update',
+        source: 'terminal',
+        user_id: session.viserId ?? null,
+        username: session.username ?? null,
+        config_id: config.id,
+        ok: false,
+        error_code: error instanceof Error ? error.message.substring(0, 64) : 'unknown',
+        duration_ms: Date.now() - opStart,
+      });
       const fallback = isCreate ? 'Error creating record' : 'Error updating record';
       const msg = error instanceof Error ? error.message : fallback;
       return {
@@ -906,9 +1017,24 @@ export async function handleDeleteConfirm(
       };
     }
 
+    const deleteStart = Date.now();
+    const deletedRecord = crudCtx.pendingDeleteRecord ? { ...crudCtx.pendingDeleteRecord } as Record<string, unknown> : null;
     try {
       const deleteParams = config.services.delete.params?.(crudCtx);
       await callService(config.services.delete.service, config.services.delete.method, deleteParams);
+
+      void writeAuditEvent({
+        event_type: 'crud',
+        action: 'delete',
+        source: 'terminal',
+        user_id: session.viserId ?? null,
+        username: session.username ?? null,
+        config_id: config.id,
+        record_id: deletedRecord?.id != null ? String(deletedRecord.id) : null,
+        ok: true,
+        duration_ms: Date.now() - deleteStart,
+        before_data: deletedRecord,
+      });
 
       crudCtx.pendingDeleteRecord = null;
       crudCtx.selection = [];
@@ -923,6 +1049,19 @@ export async function handleDeleteConfirm(
       };
     } catch (error) {
       console.error('CRUDTable delete error:', error);
+      void writeAuditEvent({
+        event_type: 'crud',
+        action: 'delete',
+        source: 'terminal',
+        user_id: session.viserId ?? null,
+        username: session.username ?? null,
+        config_id: config.id,
+        record_id: deletedRecord?.id != null ? String(deletedRecord.id) : null,
+        ok: false,
+        error_code: error instanceof Error ? error.message.substring(0, 64) : 'unknown',
+        duration_ms: Date.now() - deleteStart,
+        before_data: deletedRecord,
+      });
       return {
         ...(await buildDeleteConfirmScreen(config, session, 'Failed to delete record', 'error')),
         ...base,

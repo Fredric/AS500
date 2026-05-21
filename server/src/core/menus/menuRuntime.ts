@@ -8,6 +8,7 @@ import { menuScreenId, getMenuNodeByScreenId } from './menuTree.js';
 import { hasPermission } from '../services/access.js';
 import { revokeAllUserTokens } from '../services/auth.js';
 import { defineScreen, render, header, text } from '../dsl/index.js';
+import { writeAuditEvent } from '../audit/writer.js';
 
 const ITEM_ROW_BASE = 8;
 
@@ -161,6 +162,7 @@ async function handleLogOff(
   session: Session
 ): Promise<Omit<ScreenResponse, 'sessionId'> & { accessToken: null; refreshToken: null }> {
   const userId = session.viserId;
+  const username = session.username;
 
   session.authenticated = false;
   session.isAdmin = false;
@@ -175,6 +177,15 @@ async function handleLogOff(
   if (userId) {
     await revokeAllUserTokens(userId);
   }
+
+  void writeAuditEvent({
+    event_type: 'auth',
+    action: 'logout',
+    source: 'terminal',
+    user_id: userId ?? null,
+    username: username ?? null,
+    ok: true,
+  });
 
   const { buildLoginScreen } = await import('../screens/login.js');
   return {

@@ -11,6 +11,7 @@ import type { ClientRequest, ScreenResponse, Session } from './core/types/index.
 import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './core/services/auth.js';
 import { loadUserPermissions } from './core/services/access.js';
 import { tokenRefreshRateLimiter } from './core/utils/rateLimiter.js';
+import { writeAuditEvent } from './core/audit/writer.js';
 
 // Import database initialization
 import { initializeDatabase, closeDatabase } from './core/db/index.js';
@@ -188,7 +189,18 @@ async function startServer() {
     });
   }, PING_INTERVAL);
 
-  wss.on('connection', (ws: WebSocket) => {
+  /** Extract the real client IP, respecting reverse-proxy forwarding headers. */
+  function extractClientIp(req: IncomingMessage): string | null {
+    const fwd = req.headers['x-forwarded-for'];
+    if (fwd) {
+      const first = Array.isArray(fwd) ? fwd[0] : fwd.split(',')[0];
+      return first.trim() || null;
+    }
+    return req.socket?.remoteAddress ?? null;
+  }
+
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    const clientIp = extractClientIp(req);
     console.log('Client connected');
 
     // Mark connection as alive for ping/pong
@@ -210,8 +222,19 @@ async function startServer() {
 
           if (existingSession && existingSession.authenticated) {
             // Valid authenticated session - restore it
+            existingSession.clientIp = clientIp;
             connectionSessions.set(ws, existingSession.id);
             console.log(`Session resumed for user: ${existingSession.username}`);
+
+            void writeAuditEvent({
+              event_type: 'session',
+              action: 'resume',
+              source: 'terminal',
+              user_id: existingSession.viserId ?? null,
+              username: existingSession.username ?? null,
+              ok: true,
+              ip_address: clientIp,
+            });
 
             // Permissions are not persisted to disk; reload them now so that
             // menu item visibility and CRUD permission checks work correctly
@@ -248,8 +271,18 @@ async function startServer() {
                 session.context = {};
               }
 
+              session.clientIp = clientIp;
               connectionSessions.set(ws, session.id);
               console.log(`Auto-authenticated via access token for user: ${user.username}`);
+              void writeAuditEvent({
+                event_type: 'session',
+                action: 'resume',
+                source: 'terminal',
+                user_id: user.id,
+                username: user.username,
+                ok: true,
+                ip_address: clientIp,
+              });
 
               const response: ScreenResponse = {
                 ...(await getCurrentScreenResponse(session)),
@@ -302,8 +335,18 @@ async function startServer() {
                   session.context = {};
                 }
 
+                session.clientIp = clientIp;
                 connectionSessions.set(ws, session.id);
                 console.log(`Auto-authenticated via refresh token for user: ${refreshedUser.username}`);
+                void writeAuditEvent({
+                  event_type: 'auth',
+                  action: 'token_refresh',
+                  source: 'terminal',
+                  user_id: refreshedUser.id,
+                  username: refreshedUser.username,
+                  ok: true,
+                  ip_address: clientIp,
+                });
 
                 const response: ScreenResponse = {
                   ...(await getCurrentScreenResponse(session)),
@@ -389,7 +432,8 @@ async function startServer() {
           return;
         }
 
-        // Update connection mapping
+        // Update connection mapping and track the client IP on the session
+        currentSession.clientIp = clientIp;
         connectionSessions.set(ws, currentSession.id);
 
         // Ensure permissions are loaded (needed after disk-restore where Set is not persisted)
@@ -467,6 +511,21 @@ async function startServer() {
 
     ws.on('close', () => {
       console.log('Client disconnected');
+      const sessionId = connectionSessions.get(ws);
+      if (sessionId) {
+        const session = getSession(sessionId);
+        if (session?.authenticated) {
+          void writeAuditEvent({
+            event_type: 'session',
+            action: 'disconnect',
+            source: 'terminal',
+            user_id: session.viserId ?? null,
+            username: session.username ?? null,
+            ok: true,
+            ip_address: session.clientIp ?? null,
+          });
+        }
+      }
       connectionSessions.delete(ws);
     });
 

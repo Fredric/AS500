@@ -39,6 +39,7 @@ import {
   revokeRefreshToken,
 } from '../mcp/oauth/store.js';
 import { directLoginRateLimiter } from '../utils/rateLimiter.js';
+import { writeAuditEvent } from '../audit/writer.js';
 
 // Sentinel client_id for first-party direct-login tokens.
 // Distinguishable from OAuth-issued tokens in the auth_tokens table.
@@ -91,6 +92,7 @@ export function buildAuthRouter(): Router {
       return;
     }
 
+    const loginStart = Date.now();
     const result = await mcpLogin(rawUsername, password);
     if (!result.ok) {
       const message =
@@ -99,6 +101,17 @@ export function buildAuthRouter(): Router {
           : result.reason === 'inactive'
             ? 'Account is inactive.'
             : 'Invalid username or password.';
+      void writeAuditEvent({
+        event_type: 'auth',
+        action: 'login_failed',
+        source: 'api',
+        username: rawUsername.toUpperCase().trim() || null,
+        ok: false,
+        error_code: result.reason ?? 'invalid_credentials',
+        duration_ms: Date.now() - loginStart,
+        ip_address: ipKey(req) !== 'unknown' ? ipKey(req) : null,
+        user_agent: req.headers['user-agent'] ?? null,
+      });
       res.status(401).json({ error: { code: 'invalid_credentials', message } });
       return;
     }
@@ -117,6 +130,19 @@ export function buildAuthRouter(): Router {
         clientId: DIRECT_CLIENT_ID,
         scopes: [],
         parentRefreshToken: refreshToken,
+      });
+
+      void writeAuditEvent({
+        event_type: 'auth',
+        action: 'login',
+        source: 'api',
+        user_id: user.id,
+        username: user.username,
+        client_id: DIRECT_CLIENT_ID,
+        ok: true,
+        duration_ms: Date.now() - loginStart,
+        ip_address: ipKey(req) !== 'unknown' ? ipKey(req) : null,
+        user_agent: req.headers['user-agent'] ?? null,
       });
 
       res.json({
@@ -145,8 +171,18 @@ export function buildAuthRouter(): Router {
       return;
     }
 
+    const refreshStart = Date.now();
     const live = await findLiveRefresh(tokenValue, DIRECT_CLIENT_ID);
     if (!live) {
+      void writeAuditEvent({
+        event_type: 'auth',
+        action: 'token_refresh',
+        source: 'api',
+        ok: false,
+        error_code: 'invalid_token',
+        duration_ms: Date.now() - refreshStart,
+        ip_address: ipKey(req) !== 'unknown' ? ipKey(req) : null,
+      });
       res.status(401).json({
         error: { code: 'invalid_token', message: 'Refresh token is invalid, expired, or already used.' },
       });
@@ -171,6 +207,18 @@ export function buildAuthRouter(): Router {
         clientId: DIRECT_CLIENT_ID,
         scopes: live.scope ? live.scope.split(' ').filter(Boolean) : [],
         parentRefreshToken: newRefresh,
+      });
+
+      void writeAuditEvent({
+        event_type: 'auth',
+        action: 'token_refresh',
+        source: 'api',
+        user_id: live.userId,
+        username,
+        client_id: DIRECT_CLIENT_ID,
+        ok: true,
+        duration_ms: Date.now() - refreshStart,
+        ip_address: ipKey(req) !== 'unknown' ? ipKey(req) : null,
       });
 
       res.json({
@@ -198,19 +246,33 @@ export function buildAuthRouter(): Router {
       return;
     }
 
+    let revokedUserId: number | undefined;
     try {
       if (hint === 'refresh_token' || !hint) {
+        const liveRefresh = await findLiveRefresh(token, DIRECT_CLIENT_ID);
+        if (liveRefresh) revokedUserId = liveRefresh.userId;
         await revokeRefreshToken(token);
       }
       if (hint === 'access_token' || !hint) {
         const claims = await verifyAccessToken(token);
         if (claims?.jti) {
+          if (claims.sub && !revokedUserId) revokedUserId = Number(claims.sub);
           await revokeAccessTokenByJti(claims.jti);
         }
       }
     } catch {
       // Silently swallow — revocation always returns 200.
     }
+
+    void writeAuditEvent({
+      event_type: 'auth',
+      action: 'logout',
+      source: 'api',
+      user_id: revokedUserId ?? null,
+      client_id: DIRECT_CLIENT_ID,
+      ok: true,
+      ip_address: ipKey(req) !== 'unknown' ? ipKey(req) : null,
+    });
 
     res.json({ ok: true });
   });

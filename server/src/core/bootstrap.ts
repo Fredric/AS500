@@ -4,6 +4,7 @@ import { roleDefaultsConfig } from './configs/roleDefaultsConfig.js';
 import { authTokensConfig } from './configs/authTokensConfig.js';
 import { oauthClientsConfig } from './configs/oauthClientsConfig.js';
 import { mcpAuditConfig } from './configs/mcpAuditConfig.js';
+import { auditLogConfig } from './configs/auditLogConfig.js';
 
 export function bootstrapCore(): void {
   registerConfig(userMgmtConfig);
@@ -11,4 +12,5 @@ export function bootstrapCore(): void {
   registerConfig(authTokensConfig);
   registerConfig(oauthClientsConfig);
   registerConfig(mcpAuditConfig);
+  registerConfig(auditLogConfig);
 }

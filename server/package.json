@@ -18,7 +18,9 @@
     "migrate-data": "npm run export-data && npm run import-data",
     "backup-db": "tsx scripts/backup-database.ts",
     "restore-db": "tsx scripts/restore-database.ts",
-    "push-to-heroku": "tsx scripts/push-to-heroku.ts"
+    "push-to-heroku": "tsx scripts/push-to-heroku.ts",
+    "audit": "node scripts/audit.mjs",
+    "audit:tail": "node scripts/audit.mjs --tail"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
@@ -30,6 +32,8 @@
     "@types/ws": "^8.5.14",
     "axios": "^1.15.0",
     "bcrypt": "^6.0.0",
+    "chalk": "^5.6.2",
+    "cli-table3": "^0.6.5",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.2",
     "pg": "^8.13.0",

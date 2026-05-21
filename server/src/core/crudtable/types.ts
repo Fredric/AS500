@@ -20,6 +20,8 @@ export interface CRUDContext {
   editRecord: Record<string, unknown> | null;
   pendingDeleteRecord: Record<string, unknown> | null;
   pageOffset: number;
+  /** Current form page (0-based). Only used when config.formPageSize is set. */
+  formPage: number;
   datasources: Record<string, Record<string, unknown>[]>;
 }
 
@@ -417,6 +419,11 @@ export interface CRUDTableConfig {
 
   columnBuilder: string[];
   formBuilder: string[];
+  /**
+   * Max fields shown per form page. When set, the form shows this many fields
+   * at a time and F7/F8 navigate between pages. 0 or absent = show all fields.
+   */
+  formPageSize?: number;
 
   actions?: Record<string, ActionConfig>;
 

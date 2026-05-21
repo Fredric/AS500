@@ -356,6 +356,20 @@ export default function Terminal() {
         }
       }
     } else if (!isMenuMode) {
+      // ArrowUp/Down in form mode: send F7/F8 for multi-page form navigation.
+      // This only has an effect when the server has formPageSize set; for
+      // single-page forms the server ignores these keys harmlessly.
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        sendKey('F7');
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        sendKey('F8');
+        return;
+      }
+
       // --- Form action tab stop mode ---
       if (focusedActionIndex !== null && formActions.length > 0) {
         if (e.key === 'Tab') {
@@ -574,25 +588,32 @@ export default function Terminal() {
       // Form action button is focused — keep container focused
       containerRef.current?.focus();
     } else if (fields.length > 0) {
-      const targetField = fields.find(
-        f => f.row === cursor.row && f.col === cursor.col
-      ) || fields[0];
+      // When every field is readonly (disabled), focus the container so
+      // keyboard shortcuts (ArrowUp/Down, F7/F8, Esc) work without a click.
+      const hasEditableFields = fields.some(f => f.type !== 'readonly');
+      if (!hasEditableFields) {
+        containerRef.current?.focus();
+      } else {
+        const targetField = fields.find(
+          f => f.row === cursor.row && f.col === cursor.col
+        ) || fields[0];
 
-      pendingFocusFrameRef.current = requestAnimationFrame(() => {
-        pendingFocusFrameRef.current = null;
+        pendingFocusFrameRef.current = requestAnimationFrame(() => {
+          pendingFocusFrameRef.current = null;
 
-        const activeElement = document.activeElement;
-        const activeInsideTerminal = !!(
-          activeElement &&
-          containerRef.current &&
-          containerRef.current.contains(activeElement)
-        );
-        const activeIsField = activeElement instanceof HTMLInputElement;
+          const activeElement = document.activeElement;
+          const activeInsideTerminal = !!(
+            activeElement &&
+            containerRef.current &&
+            containerRef.current.contains(activeElement)
+          );
+          const activeIsField = activeElement instanceof HTMLInputElement;
 
-        if (!activeInsideTerminal || !activeIsField) {
-          focusField(targetField);
-        }
-      });
+          if (!activeInsideTerminal || !activeIsField) {
+            focusField(targetField);
+          }
+        });
+      }
     } else {
       containerRef.current?.focus();
     }

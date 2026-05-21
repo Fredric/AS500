@@ -11,6 +11,8 @@ export interface Session {
   screenStack: string[];
   context: Record<string, unknown>;
   lastActivity: Date;
+  /** Client IP captured from the WebSocket upgrade request. */
+  clientIp?: string | null;
 }
 
 // Client request

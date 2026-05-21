@@ -216,6 +216,7 @@ export function buildApiRouter({ bearerAuth, debug = false }: ApiRouterOptions):
         result: auditResult(result.status >= 400, result.status >= 400 ? (result.body as Record<string, unknown>)?.error as string : null),
         startedAtMs,
         source: 'api',
+        ip_address: req.ip ?? null,
       });
     }
   });
@@ -257,6 +258,7 @@ export function buildApiRouter({ bearerAuth, debug = false }: ApiRouterOptions):
         result: auditResult(result.status >= 400),
         startedAtMs,
         source: 'api',
+        ip_address: req.ip ?? null,
       });
     }
   });
@@ -294,6 +296,7 @@ export function buildApiRouter({ bearerAuth, debug = false }: ApiRouterOptions):
         result: auditResult(result.status >= 400),
         startedAtMs,
         source: 'api',
+        ip_address: req.ip ?? null,
       });
     }
   });
@@ -336,6 +339,7 @@ export function buildApiRouter({ bearerAuth, debug = false }: ApiRouterOptions):
         result: auditResult(result.status >= 400),
         startedAtMs,
         source: 'api',
+        ip_address: req.ip ?? null,
       });
     }
   });
@@ -377,6 +381,7 @@ export function buildApiRouter({ bearerAuth, debug = false }: ApiRouterOptions):
         result: auditResult(result.status >= 400),
         startedAtMs,
         source: 'api',
+        ip_address: req.ip ?? null,
       });
     }
   });
