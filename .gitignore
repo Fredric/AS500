@@ -17,6 +17,7 @@ client/dist/
 # Logs
 *.log
 npm-debug.log*
+server/logs/
 
 # OS files
 .DS_Store
