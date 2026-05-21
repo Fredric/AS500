@@ -605,8 +605,8 @@ export async function buildFormScreen(
   // Build status line: page nav + Esc=Back + relation hotkeys
   const statusParts: string[] = [];
   if (totalPages > 1) {
-    if (currentPage > 0) statusParts.push('F7=Prev');
-    if (currentPage < totalPages - 1) statusParts.push('F8=Next');
+    if (currentPage > 0) statusParts.push('↑/F7=Prev');
+    if (currentPage < totalPages - 1) statusParts.push('↓/F8=Next');
   }
   statusParts.push('Esc=Back');
   if (config.relations) {
@@ -722,8 +722,8 @@ export async function handleForm(
     };
   }
 
-  // F7 / F8 — previous / next form page (only active when formPageSize is set)
-  if (request.key === 'F7' || request.key === 'F8') {
+  // F7 / F8 / ArrowUp / ArrowDown — previous / next form page (only active when formPageSize is set)
+  if (request.key === 'F7' || request.key === 'F8' || request.key === 'ArrowUp' || request.key === 'ArrowDown') {
     const pageSize = config.formPageSize ?? 0;
     if (pageSize > 0) {
       // Save any editable values entered on this page before navigating
@@ -744,7 +744,7 @@ export async function handleForm(
       }).length;
       const totalPages = Math.ceil(visibleCount / pageSize);
 
-      if (request.key === 'F7') {
+      if (request.key === 'F7' || request.key === 'ArrowUp') {
         crudCtx.formPage = Math.max(0, crudCtx.formPage - 1);
       } else {
         crudCtx.formPage = Math.min(totalPages - 1, crudCtx.formPage + 1);
