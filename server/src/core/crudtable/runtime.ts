@@ -605,8 +605,8 @@ export async function buildFormScreen(
   // Build status line: page nav + Esc=Back + relation hotkeys
   const statusParts: string[] = [];
   if (totalPages > 1) {
-    if (currentPage > 0) statusParts.push('↑/F7=Prev');
-    if (currentPage < totalPages - 1) statusParts.push('↓/F8=Next');
+    if (currentPage > 0) statusParts.push('↑ Prev');
+    if (currentPage < totalPages - 1) statusParts.push('↓ Next');
   }
   statusParts.push('Esc=Back');
   if (config.relations) {
@@ -654,8 +654,8 @@ export async function buildFormScreen(
   // Build form navigation actions (Esc=Back + relation hotkeys)
   const formNavActions: Array<{ key: string; label: string }> = [];
   if (totalPages > 1) {
-    if (currentPage > 0) formNavActions.push({ key: 'F7', label: 'F7=Prev' });
-    if (currentPage < totalPages - 1) formNavActions.push({ key: 'F8', label: 'F8=Next' });
+    if (currentPage > 0) formNavActions.push({ key: 'F7', label: '↑ Prev' });
+    if (currentPage < totalPages - 1) formNavActions.push({ key: 'F8', label: '↓ Next' });
   }
   formNavActions.push({ key: 'F3', label: 'Esc=Back' });
   if (config.relations) {

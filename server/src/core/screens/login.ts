@@ -120,6 +120,7 @@ export async function handleLogin(
       ok: false,
       error_code: 'invalid_credentials',
       duration_ms: Date.now() - loginStart,
+      ip_address: session.clientIp ?? null,
     });
     return {
       ...buildLoginScreen('Invalid user or password', 'error'),
@@ -153,6 +154,7 @@ export async function handleLogin(
     username: user.username,
     ok: true,
     duration_ms: Date.now() - loginStart,
+    ip_address: session.clientIp ?? null,
   });
 
   return {
