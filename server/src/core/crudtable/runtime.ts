@@ -149,13 +149,16 @@ export async function buildListScreen(
   const pageData = records.slice(crudCtx.pageOffset, crudCtx.pageOffset + LIST_PAGE_SIZE);
   const dataRowCount = pageData.length;
 
-  // Determine primary action for keyboard navigation
+  // Determine primary action for keyboard navigation.
+  // '2' (edit/view form) fires when there is either an update service OR a
+  // non-empty formBuilder (e.g. read-only detail screens).
+  const hasFormView = !!(config.services.update || config.formBuilder.length > 0);
   let primaryAction = '';
   if (config.navigation?.primaryAction === 'open' && config.openUI) {
     primaryAction = '9';
-  } else if (config.navigation?.primaryAction === 'edit' && config.services.update) {
+  } else if (config.navigation?.primaryAction === 'edit' && hasFormView) {
     primaryAction = '2';
-  } else if (config.services.update) {
+  } else if (hasFormView) {
     primaryAction = '2';
   } else if (config.openUI) {
     primaryAction = '9';
@@ -185,8 +188,11 @@ export async function buildListScreen(
 
   // Build status line with keyboard shortcut hints first, then F-keys
   const shortcutHints: string[] = [];
-  if (primaryAction === '2') shortcutHints.push('Enter=Edit');
-  else if (primaryAction === '9') shortcutHints.push('Enter=Open');
+  if (primaryAction === '2') {
+    shortcutHints.push(config.services.update ? 'Enter=Edit' : 'Enter=View');
+  } else if (primaryAction === '9') {
+    shortcutHints.push('Enter=Open');
+  }
   if (config.services.delete && checkServicePermission(session, config.services.delete)) shortcutHints.push('D=Delete');
   if (config.navigation?.shortcuts) {
     for (const s of config.navigation.shortcuts) {
