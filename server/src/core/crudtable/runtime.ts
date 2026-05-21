@@ -372,9 +372,9 @@ export async function handleList(
 
       const optNum = parseInt(opt, 10);
 
-      // Option 2 - Edit
-      if (opt === '2' && config.services.update) {
-        if (!checkServicePermission(session, config.services.update)) {
+      // Option 2 - Edit (or view-only detail when no update service but formBuilder is defined)
+      if (opt === '2' && (config.services.update || config.formBuilder.length > 0)) {
+        if (config.services.update && !checkServicePermission(session, config.services.update)) {
           return {
             ...(await buildListScreen(config, session, 'Access denied: cannot edit records', 'error')),
             ...base,
@@ -789,7 +789,7 @@ export async function handleForm(
         });
       }
 
-      // Return to list with success message
+      // Return to list — show success message only when a service actually ran
       crudCtx.formMode = null;
       crudCtx.editRecord = null;
       crudCtx.values = {};
@@ -797,9 +797,10 @@ export async function handleForm(
 
       session.currentScreen = session.screenStack.pop() || listScreenId(config.id);
 
-      const msg = isCreate ? 'Record created' : 'Record updated';
+      const didRun = (isCreate && !!config.services.create) || (!isCreate && !!config.services.update);
+      const msg = didRun ? (isCreate ? 'Record created' : 'Record updated') : null;
       return {
-        ...(await buildListScreen(config, session, msg, 'info')),
+        ...(await buildListScreen(config, session, msg, msg ? 'info' : null)),
         ...base,
       };
     } catch (error) {
