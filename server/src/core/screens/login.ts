@@ -4,6 +4,7 @@ import { loadUserPermissions } from '../services/access.js';
 import { mainMenuScreen } from './mainMenu.js';
 import { persistSessions } from '../session/index.js';
 import { loginRateLimiter } from '../utils/rateLimiter.js';
+import { writeAuditEvent } from '../audit/writer.js';
 
 // Import DSL
 import {
@@ -105,10 +106,21 @@ export async function handleLogin(
     };
   }
 
+  const loginStart = Date.now();
+
   // Authenticate
   const user = await validateCredentials(username, password);
 
   if (!user) {
+    void writeAuditEvent({
+      event_type: 'auth',
+      action: 'login_failed',
+      source: 'terminal',
+      username: normalizedUsername || null,
+      ok: false,
+      error_code: 'invalid_credentials',
+      duration_ms: Date.now() - loginStart,
+    });
     return {
       ...buildLoginScreen('Invalid user or password', 'error'),
       ...base,
@@ -131,6 +143,16 @@ export async function handleLogin(
   const tokens = await createAuthTokens(user.id, {
     deviceId: request.deviceId || 'unknown',
     deviceName: DEFAULT_DEVICE_NAME,
+  });
+
+  void writeAuditEvent({
+    event_type: 'auth',
+    action: 'login',
+    source: 'terminal',
+    user_id: user.id,
+    username: user.username,
+    ok: true,
+    duration_ms: Date.now() - loginStart,
   });
 
   return {

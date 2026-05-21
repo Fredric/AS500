@@ -16,6 +16,7 @@ import {
   field,
 } from '../dsl/index.js';
 import type { SubfileColumnDef, FieldDef } from '../dsl/types.js';
+import { writeAuditEvent } from '../audit/writer.js';
 
 const LIST_PAGE_SIZE = 12;
 const LIST_START_ROW = 7;
@@ -741,6 +742,7 @@ export async function handleForm(
     }
 
     // Call create or update service
+    const opStart = Date.now();
     try {
       if (isCreate && config.services.create) {
         if (!checkServicePermission(session, config.services.create)) {
@@ -751,6 +753,17 @@ export async function handleForm(
         }
         const createParams = (await config.services.create.params?.(crudCtx)) ?? values;
         await callService(config.services.create.service, config.services.create.method, createParams);
+        void writeAuditEvent({
+          event_type: 'crud',
+          action: 'create',
+          source: 'terminal',
+          user_id: session.viserId ?? null,
+          username: session.username ?? null,
+          config_id: config.id,
+          ok: true,
+          duration_ms: Date.now() - opStart,
+          after_data: createParams as Record<string, unknown>,
+        });
       } else if (!isCreate && config.services.update) {
         if (!checkServicePermission(session, config.services.update)) {
           return {
@@ -759,7 +772,21 @@ export async function handleForm(
           };
         }
         const updateParams = config.services.update.params?.(crudCtx) ?? values;
+        const beforeSnap = crudCtx.editRecord ? { ...crudCtx.editRecord } as Record<string, unknown> : null;
         await callService(config.services.update.service, config.services.update.method, updateParams);
+        void writeAuditEvent({
+          event_type: 'crud',
+          action: 'update',
+          source: 'terminal',
+          user_id: session.viserId ?? null,
+          username: session.username ?? null,
+          config_id: config.id,
+          record_id: beforeSnap?.id != null ? String(beforeSnap.id) : null,
+          ok: true,
+          duration_ms: Date.now() - opStart,
+          before_data: beforeSnap,
+          after_data: updateParams as Record<string, unknown>,
+        });
       }
 
       // Return to list with success message
@@ -777,6 +804,18 @@ export async function handleForm(
       };
     } catch (error) {
       console.error('CRUDTable form submit error:', error);
+      const isCreate2 = crudCtx.formMode === 'create';
+      void writeAuditEvent({
+        event_type: 'crud',
+        action: isCreate2 ? 'create' : 'update',
+        source: 'terminal',
+        user_id: session.viserId ?? null,
+        username: session.username ?? null,
+        config_id: config.id,
+        ok: false,
+        error_code: error instanceof Error ? error.message.substring(0, 64) : 'unknown',
+        duration_ms: Date.now() - opStart,
+      });
       const fallback = isCreate ? 'Error creating record' : 'Error updating record';
       const msg = error instanceof Error ? error.message : fallback;
       return {
@@ -906,9 +945,24 @@ export async function handleDeleteConfirm(
       };
     }
 
+    const deleteStart = Date.now();
+    const deletedRecord = crudCtx.pendingDeleteRecord ? { ...crudCtx.pendingDeleteRecord } as Record<string, unknown> : null;
     try {
       const deleteParams = config.services.delete.params?.(crudCtx);
       await callService(config.services.delete.service, config.services.delete.method, deleteParams);
+
+      void writeAuditEvent({
+        event_type: 'crud',
+        action: 'delete',
+        source: 'terminal',
+        user_id: session.viserId ?? null,
+        username: session.username ?? null,
+        config_id: config.id,
+        record_id: deletedRecord?.id != null ? String(deletedRecord.id) : null,
+        ok: true,
+        duration_ms: Date.now() - deleteStart,
+        before_data: deletedRecord,
+      });
 
       crudCtx.pendingDeleteRecord = null;
       crudCtx.selection = [];
@@ -923,6 +977,19 @@ export async function handleDeleteConfirm(
       };
     } catch (error) {
       console.error('CRUDTable delete error:', error);
+      void writeAuditEvent({
+        event_type: 'crud',
+        action: 'delete',
+        source: 'terminal',
+        user_id: session.viserId ?? null,
+        username: session.username ?? null,
+        config_id: config.id,
+        record_id: deletedRecord?.id != null ? String(deletedRecord.id) : null,
+        ok: false,
+        error_code: error instanceof Error ? error.message.substring(0, 64) : 'unknown',
+        duration_ms: Date.now() - deleteStart,
+        before_data: deletedRecord,
+      });
       return {
         ...(await buildDeleteConfirmScreen(config, session, 'Failed to delete record', 'error')),
         ...base,

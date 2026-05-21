@@ -11,6 +11,7 @@ import type { ClientRequest, ScreenResponse, Session } from './core/types/index.
 import { validateAccessToken, refreshAuthTokens, DEFAULT_DEVICE_NAME, type DeviceInfo } from './core/services/auth.js';
 import { loadUserPermissions } from './core/services/access.js';
 import { tokenRefreshRateLimiter } from './core/utils/rateLimiter.js';
+import { writeAuditEvent } from './core/audit/writer.js';
 
 // Import database initialization
 import { initializeDatabase, closeDatabase } from './core/db/index.js';
@@ -213,6 +214,15 @@ async function startServer() {
             connectionSessions.set(ws, existingSession.id);
             console.log(`Session resumed for user: ${existingSession.username}`);
 
+            void writeAuditEvent({
+              event_type: 'session',
+              action: 'resume',
+              source: 'terminal',
+              user_id: existingSession.viserId ?? null,
+              username: existingSession.username ?? null,
+              ok: true,
+            });
+
             // Permissions are not persisted to disk; reload them now so that
             // menu item visibility and CRUD permission checks work correctly
             // when building the resumed screen.
@@ -250,6 +260,14 @@ async function startServer() {
 
               connectionSessions.set(ws, session.id);
               console.log(`Auto-authenticated via access token for user: ${user.username}`);
+              void writeAuditEvent({
+                event_type: 'session',
+                action: 'resume',
+                source: 'terminal',
+                user_id: user.id,
+                username: user.username,
+                ok: true,
+              });
 
               const response: ScreenResponse = {
                 ...(await getCurrentScreenResponse(session)),
@@ -304,6 +322,14 @@ async function startServer() {
 
                 connectionSessions.set(ws, session.id);
                 console.log(`Auto-authenticated via refresh token for user: ${refreshedUser.username}`);
+                void writeAuditEvent({
+                  event_type: 'auth',
+                  action: 'token_refresh',
+                  source: 'terminal',
+                  user_id: refreshedUser.id,
+                  username: refreshedUser.username,
+                  ok: true,
+                });
 
                 const response: ScreenResponse = {
                   ...(await getCurrentScreenResponse(session)),
@@ -467,6 +493,20 @@ async function startServer() {
 
     ws.on('close', () => {
       console.log('Client disconnected');
+      const sessionId = connectionSessions.get(ws);
+      if (sessionId) {
+        const session = getSession(sessionId);
+        if (session?.authenticated) {
+          void writeAuditEvent({
+            event_type: 'session',
+            action: 'disconnect',
+            source: 'terminal',
+            user_id: session.viserId ?? null,
+            username: session.username ?? null,
+            ok: true,
+          });
+        }
+      }
       connectionSessions.delete(ws);
     });
 

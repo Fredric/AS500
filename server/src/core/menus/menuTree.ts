@@ -86,6 +86,13 @@ export const adminMenuNode: MenuNode = {
       requirePermission: PERMISSIONS.SYS_ADMIN,
       configId: 'mcp_audit',
     },
+    {
+      type: 'crudtable',
+      key: 'audit_log',
+      name: 'Audit Log',
+      requirePermission: PERMISSIONS.SYS_ADMIN,
+      configId: 'audit_log',
+    },
   ],
 };
 

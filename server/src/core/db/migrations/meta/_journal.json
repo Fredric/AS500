@@ -50,6 +50,13 @@
       "when": 1776960045880,
       "tag": "0006_freezing_spacker_dave",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779367416020,
+      "tag": "0007_perfect_rafael_vega",
+      "breakpoints": true
     }
   ]
 }
