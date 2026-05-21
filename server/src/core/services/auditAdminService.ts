@@ -3,7 +3,7 @@
 
 import { desc, eq, and, gte, type SQL } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { auditLog, users } from '../db/schema.js';
+import { auditLog } from '../db/schema.js';
 
 export interface AuditLogRow {
   id: number;
@@ -12,24 +12,25 @@ export interface AuditLogRow {
   source: string;
   user_id: number | null;
   username: string | null;
+  client_id: string | null;
   config_id: string | null;
   record_id: string | null;
   ok: boolean;
   error_code: string | null;
   duration_ms: number;
   ip_address: string | null;
+  user_agent: string | null;
+  before_data: unknown | null;
+  after_data: unknown | null;
+  params_hash: string | null;
   created_at: Date;
 }
 
 export interface ListAuditOptions {
   limit?: number;
-  /** Filter to a single user_id */
   userId?: number;
-  /** Filter to a single event_type ('auth', 'crud', 'mcp', 'api', 'session') */
   eventType?: string;
-  /** Filter to a single source ('terminal', 'mcp', 'api') */
   source?: string;
-  /** Only return events since this ISO timestamp */
   since?: string;
 }
 
@@ -43,25 +44,20 @@ export async function listAudit(opts: ListAuditOptions = {}): Promise<AuditLogRo
   if (opts.since) conditions.push(gte(auditLog.created_at, new Date(opts.since)));
 
   const rows = await db
-    .select({
-      id: auditLog.id,
-      event_type: auditLog.event_type,
-      action: auditLog.action,
-      source: auditLog.source,
-      user_id: auditLog.user_id,
-      username: auditLog.username,
-      config_id: auditLog.config_id,
-      record_id: auditLog.record_id,
-      ok: auditLog.ok,
-      error_code: auditLog.error_code,
-      duration_ms: auditLog.duration_ms,
-      ip_address: auditLog.ip_address,
-      created_at: auditLog.created_at,
-    })
+    .select()
     .from(auditLog)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(auditLog.created_at))
     .limit(limit);
 
   return rows as AuditLogRow[];
+}
+
+export async function getAuditById(id: number): Promise<AuditLogRow | null> {
+  const rows = await db
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.id, id))
+    .limit(1);
+  return (rows[0] as AuditLogRow) ?? null;
 }

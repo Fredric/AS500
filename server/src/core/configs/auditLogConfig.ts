@@ -1,10 +1,15 @@
 // Unified Audit Log — read-only admin inspector for the audit_log table.
-// Shows all access surfaces: terminal UI, MCP tool calls, REST API, auth,
-// and WebSocket session events. Newest 500 rows, newest first.
+// List: most-recent 500 rows across all surfaces.
+// Detail (Enter on a row): full-page view showing every field including
+// before_data / after_data JSONB snapshots.
 
-import type { CRUDTableConfig } from '../crudtable/types.js';
+import type { CRUDTableConfig, CRUDContext } from '../crudtable/types.js';
 import { PERMISSIONS } from '../services/access.js';
 import * as auditAdminService from '../services/auditAdminService.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function formatTimestamp(value: unknown): string {
   if (!value) return '';
@@ -14,32 +19,43 @@ function formatTimestamp(value: unknown): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-/** Map event_type + action to a compact two-char category label. */
+/** Map event_type + action to a compact 2-char code shown in the list. */
 function formatCategory(row: Record<string, unknown>): string {
   const type = String(row.event_type ?? '');
   const action = String(row.action ?? '');
   switch (type) {
-    case 'auth':
-      if (action === 'login') return 'LI';
-      if (action === 'login_failed') return 'LF';
-      if (action === 'logout') return 'LO';
-      if (action === 'token_refresh') return 'TR';
-      return 'AU';
+    case 'auth': {
+      const m: Record<string, string> = { login: 'LI', login_failed: 'LF', logout: 'LO', token_refresh: 'TR' };
+      return m[action] ?? 'AU';
+    }
     case 'crud': {
-      const map: Record<string, string> = { create: 'CR', update: 'UP', delete: 'DE', list: 'LS', read: 'RD' };
-      return map[action] ?? 'CD';
+      const m: Record<string, string> = { create: 'CR', update: 'UP', delete: 'DE', list: 'LS', read: 'RD' };
+      return m[action] ?? 'CD';
     }
     case 'mcp': return 'MC';
     case 'api': return 'AP';
-    case 'session':
-      if (action === 'connect') return 'CN';
-      if (action === 'disconnect') return 'DC';
-      if (action === 'resume') return 'RS';
-      if (action === 'expire') return 'EX';
-      return 'SS';
+    case 'session': {
+      const m: Record<string, string> = { connect: 'CN', disconnect: 'DC', resume: 'RS', expire: 'EX' };
+      return m[action] ?? 'SS';
+    }
     default: return type.substring(0, 2).toUpperCase();
   }
 }
+
+/** Stringify a JSONB value for display, capped at maxLen chars. */
+function jsonPreview(value: unknown, maxLen: number): string {
+  if (value === null || value === undefined) return '';
+  try {
+    const s = typeof value === 'string' ? value : JSON.stringify(value);
+    return s.length > maxLen ? s.substring(0, maxLen - 1) + '…' : s;
+  } catch {
+    return String(value).substring(0, maxLen);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
 export const auditLogConfig: CRUDTableConfig = {
   id: 'audit_log',
@@ -52,9 +68,15 @@ export const auditLogConfig: CRUDTableConfig = {
       service: auditAdminService as unknown as Record<string, Function>,
       method: 'listAudit',
     },
+    read: {
+      service: auditAdminService as unknown as Record<string, Function>,
+      method: 'getAuditById',
+      params: (ctx: CRUDContext) => ctx.editRecord?.id as number,
+    },
   },
 
   fieldConfigs: {
+    // ---- list-only fields ----
     created_at: {
       field: 'created_at',
       label: 'When',
@@ -62,6 +84,10 @@ export const auditLogConfig: CRUDTableConfig = {
       column: {
         width: 19,
         cellRenderer: (_ctx, r) => formatTimestamp(r.created_at),
+      },
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => formatTimestamp(v),
       },
     },
     cat: {
@@ -81,6 +107,7 @@ export const auditLogConfig: CRUDTableConfig = {
         width: 8,
         cellRenderer: (_ctx, r) => String(r.source ?? '').substring(0, 8),
       },
+      form: { disabled: true },
     },
     username: {
       field: 'username',
@@ -91,21 +118,28 @@ export const auditLogConfig: CRUDTableConfig = {
         cellRenderer: (_ctx, r) =>
           r.username ? String(r.username) : r.user_id != null ? `#${r.user_id}` : '',
       },
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) =>
+          v ? String(v) : '',
+      },
     },
     action: {
       field: 'action',
       label: 'Action',
-      length: 16,
+      length: 32,
       column: { width: 13 },
+      form: { disabled: true },
     },
     config_id: {
       field: 'config_id',
       label: 'Config',
-      length: 16,
+      length: 32,
       column: {
         width: 13,
         cellRenderer: (_ctx, r) => String(r.config_id ?? ''),
       },
+      form: { disabled: true },
     },
     ok: {
       field: 'ok',
@@ -114,6 +148,10 @@ export const auditLogConfig: CRUDTableConfig = {
       column: {
         width: 2,
         cellRenderer: (_ctx, r) => (r.ok ? 'Y' : 'N'),
+      },
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => (v ? 'Y' : 'N'),
       },
     },
     error_code: {
@@ -124,6 +162,93 @@ export const auditLogConfig: CRUDTableConfig = {
         width: 18,
         cellRenderer: (_ctx, r) => String(r.error_code ?? ''),
       },
+      form: { disabled: true },
+    },
+
+    // ---- detail-only fields (shown only on the form) ----
+    id: {
+      field: 'id',
+      label: 'ID',
+      length: 10,
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => String(v ?? ''),
+      },
+    },
+    event_type: {
+      field: 'event_type',
+      label: 'Event type',
+      length: 16,
+      form: { disabled: true },
+    },
+    user_id: {
+      field: 'user_id',
+      label: 'User ID',
+      length: 10,
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => (v != null ? String(v) : ''),
+      },
+    },
+    client_id: {
+      field: 'client_id',
+      label: 'Client ID',
+      length: 48,
+      form: { disabled: true },
+    },
+    record_id: {
+      field: 'record_id',
+      label: 'Record ID',
+      length: 48,
+      form: { disabled: true },
+    },
+    duration_ms: {
+      field: 'duration_ms',
+      label: 'Duration ms',
+      length: 10,
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => (v != null ? `${v} ms` : ''),
+      },
+    },
+    ip_address: {
+      field: 'ip_address',
+      label: 'IP address',
+      length: 45,
+      form: { disabled: true },
+    },
+    user_agent: {
+      field: 'user_agent',
+      label: 'User agent',
+      length: 48,
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => v ? String(v).substring(0, 48) : '',
+      },
+    },
+    before_data: {
+      field: 'before_data',
+      label: 'Before',
+      length: 48,
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => jsonPreview(v, 48),
+      },
+    },
+    after_data: {
+      field: 'after_data',
+      label: 'After',
+      length: 48,
+      form: {
+        disabled: true,
+        formValue: (_ctx, v) => jsonPreview(v, 48),
+      },
+    },
+    params_hash: {
+      field: 'params_hash',
+      label: 'Params hash',
+      length: 48,
+      form: { disabled: true },
     },
   },
 
@@ -137,9 +262,33 @@ export const auditLogConfig: CRUDTableConfig = {
     'ok',
     'error_code',
   ],
-  formBuilder: [],
+
+  formBuilder: [
+    'id',
+    'created_at',
+    'event_type',
+    'action',
+    'source',
+    'username',
+    'user_id',
+    'client_id',
+    'config_id',
+    'record_id',
+    'ok',
+    'error_code',
+    'duration_ms',
+    'ip_address',
+    'user_agent',
+    'before_data',
+    'after_data',
+    'params_hash',
+  ],
+
+  navigation: {
+    primaryAction: 'edit',
+  },
 
   listHeader: () => ([
-    { row: 5, col: 2, content: 'Unified audit log — all surfaces. Cat: LI=login LF=fail LO=logout TR=refresh CN/DC/RS=session CR/UP/DE=crud MC=mcp AP=api' },
+    { row: 5, col: 2, content: 'Unified audit log. Cat: LI=login LF=fail LO=logout TR=refresh CN/DC/RS=session CR/UP/DE=crud MC=mcp AP=api. Enter=Detail' },
   ]),
 };
