@@ -19,6 +19,9 @@ import { initializeDatabase, closeDatabase } from './core/db/index.js';
 // App self-registration: configs + menu items (side effects)
 import './app/index.js';
 
+// AI Agent chat integration
+import { streamChatTurn } from './core/ai/chatService.js';
+
 // CRUDTable system
 import { bootstrapCore } from './core/bootstrap.js';
 import { handleCRUDScreen, buildCRUDScreenForResume } from './core/crudtable/router.js';
@@ -382,6 +385,40 @@ async function startServer() {
               };
 
           ws.send(JSON.stringify(sessionExpiredResponse));
+          return;
+        }
+
+        // Handle AI_CHAT_SEND — stream a chat turn to the browser
+        if (request.key === 'AI_CHAT_SEND' && request.sessionId) {
+          const session = getSession(request.sessionId);
+          if (!session || !session.authenticated || session.viserId == null) {
+            ws.send(JSON.stringify({ type: 'AI_CHAT_ERROR', error: 'Not authenticated', sessionId: request.sessionId }));
+            return;
+          }
+          const chatId: string = (request.input?.chatId as string) || request.sessionId;
+          const userText: string = (request.input?.message as string) || '';
+          if (!userText.trim()) {
+            ws.send(JSON.stringify({ type: 'AI_CHAT_ERROR', error: 'Empty message', sessionId: request.sessionId }));
+            return;
+          }
+
+          // Stream chunks back to browser
+          try {
+            let fullAnswer = '';
+            for await (const chunk of streamChatTurn(session, chatId, userText)) {
+              ws.send(JSON.stringify({ type: 'AI_CHAT_DELTA', delta: chunk, chatId, sessionId: session.id }));
+              fullAnswer += chunk;
+            }
+            ws.send(JSON.stringify({ type: 'AI_CHAT_DONE', chatId, sessionId: session.id }));
+          } catch (err) {
+            console.error('[AI] streamChatTurn error:', err);
+            ws.send(JSON.stringify({
+              type: 'AI_CHAT_ERROR',
+              error: err instanceof Error ? err.message : 'Unknown error',
+              chatId,
+              sessionId: session.id,
+            }));
+          }
           return;
         }
 
