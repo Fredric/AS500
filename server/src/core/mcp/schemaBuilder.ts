@@ -221,6 +221,28 @@ export function buildInputShape(
 }
 
 // ============================================
+// Public: param-array → shape (for actions + standalone tools)
+// ============================================
+
+/**
+ * Build a ZodRawShape from a raw {@link MCPScopeParam} array.
+ *
+ * Server-injected params (`injectFromAuth`) are excluded — agents cannot
+ * supply them. All other params are mapped using the same rules as scope
+ * params on CRUD tools.
+ *
+ * Used by the action and standalone-tool registration loops in `transport.ts`.
+ */
+export function buildParamInputShape(params: MCPScopeParam[]): ZodRawShape {
+  const shape: ZodRawShape = {};
+  for (const p of params) {
+    if (p.injectFromAuth) continue;
+    shape[p.name] = zodForScopeParam(p);
+  }
+  return shape;
+}
+
+// ============================================
 // Public: tool name + description
 // ============================================
 

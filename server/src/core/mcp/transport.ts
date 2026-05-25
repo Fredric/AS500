@@ -19,6 +19,7 @@ import type { CRUDTableConfig } from '../crudtable/types.js';
 import { getAllConfigs } from '../crudtable/registry.js';
 import {
   buildInputShape,
+  buildParamInputShape,
   toolDescription,
   toolName,
   type McpOp,
@@ -29,8 +30,11 @@ import {
   handleList,
   handleRead,
   handleUpdate,
+  handleAction,
+  handleCustomTool,
   type HandlerArgs,
 } from './toolHandlers.js';
+import { getAllMcpToolGroups } from './toolRegistry.js';
 import type { McpCallUser } from './contextSynth.js';
 import { toolResultFromThrown, type McpCallToolResult } from './errors.js';
 import { writeAuditRow } from './audit.js';
@@ -103,6 +107,7 @@ export function buildMcpServer(opts: BuildMcpServerOptions = {}): {
   let toolCount = 0;
   let configCount = 0;
 
+  // ─── Loop 1: CRUD operations from CRUDTableConfig.mcp.operations ──────────
   for (const config of getAllConfigs()) {
     if (!config.mcp) continue;
     configCount++;
@@ -137,6 +142,87 @@ export function buildMcpServer(opts: BuildMcpServerOptions = {}): {
             configId: config.id,
             toolName: name,
             op,
+            user,
+            input,
+            result,
+            startedAtMs,
+          });
+          return result as never;
+        }
+      );
+
+      toolCount++;
+    }
+
+    // ─── Loop 1b: custom actions from CRUDTableConfig.mcp.actions (Option A) ─
+    for (const action of config.mcp.actions ?? []) {
+      const name = `${config.id}_${action.name}`;
+      const inputShape = buildParamInputShape(action.params ?? []);
+
+      server.registerTool(
+        name,
+        {
+          title: `${config.mcp.name ?? config.id}.${action.name}`,
+          description: action.description,
+          inputSchema: inputShape,
+        },
+        async (args: unknown) => {
+          const startedAtMs = Date.now();
+          const input = (args ?? {}) as Record<string, unknown>;
+          let result: McpCallToolResult;
+          try {
+            result = await handleAction({
+              action,
+              input,
+              user,
+              configRequirePermission: config.requirePermission,
+            });
+          } catch (err) {
+            result = toolResultFromThrown(err, { debug });
+          }
+          void writeAuditRow({
+            configId: config.id,
+            toolName: name,
+            op: 'action',
+            user,
+            input,
+            result,
+            startedAtMs,
+          });
+          return result as never;
+        }
+      );
+
+      toolCount++;
+    }
+  }
+
+  // ─── Loop 2: standalone tools from registerMcpTools (Option B) ────────────
+  for (const group of getAllMcpToolGroups()) {
+    for (const tool of group.tools) {
+      const name = `${group.id}_${tool.name}`;
+      const inputShape = buildParamInputShape(tool.params ?? []);
+
+      server.registerTool(
+        name,
+        {
+          title: `${group.name ?? group.id}.${tool.name}`,
+          description: tool.description,
+          inputSchema: inputShape,
+        },
+        async (args: unknown) => {
+          const startedAtMs = Date.now();
+          const input = (args ?? {}) as Record<string, unknown>;
+          let result: McpCallToolResult;
+          try {
+            result = await handleCustomTool({ group, tool, input, user });
+          } catch (err) {
+            result = toolResultFromThrown(err, { debug });
+          }
+          void writeAuditRow({
+            configId: group.id,
+            toolName: name,
+            op: 'action',
             user,
             input,
             result,

@@ -236,6 +236,19 @@ export interface MCPOperationOverride {
 }
 
 /**
+ * Minimal user context passed to custom MCP action and standalone tool handlers.
+ * Matches the shape of `McpCallUser` in `contextSynth.ts` — defined here to
+ * avoid a circular import between `types.ts` and `contextSynth.ts`.
+ */
+export interface MCPCallUserContext {
+  userId: number;
+  username: string;
+  isAdmin: boolean;
+  permissions: Set<string>;
+  clientId?: string;
+}
+
+/**
  * A scoping parameter that agents must pass with every tool call for a
  * parent-scoped config. The runtime copies these values into the synthesized
  * `CRUDContext.input` before validators and service `params` run — mirroring
@@ -292,6 +305,74 @@ export interface MCPScopeParam {
 }
 
 /**
+ * A custom (non-CRUD) MCP tool attached directly to a {@link CRUDTableConfig}.
+ *
+ * Use this when the operation is tightly coupled to the config's entity but
+ * doesn't map cleanly to list / read / create / update / delete. Classic
+ * examples: aggregate queries ("summarize hours across a date range"),
+ * cross-field computations, or report-style reads that take non-id inputs.
+ *
+ * Tool name is derived as `{configId}_{action.name}`, e.g. `timereg_v2_summarize_hours`.
+ *
+ * RBAC is checked in order: `CRUDTableConfig.requirePermission` → `action.requirePermission`.
+ * Admins bypass all checks.
+ *
+ * `params` uses the same {@link MCPScopeParam} shape as `MCPConfig.scope`:
+ *   - Non-injected params appear in the generated tool schema (agents must supply them).
+ *   - `injectFromAuth: 'userId'` params are invisible to agents; the runtime
+ *     populates them from the authenticated caller before `handler` is invoked.
+ *
+ * The `handler` receives the **resolved** args object (injected values already
+ * merged in) plus the authenticated `McpCallUser`. It may return any
+ * JSON-serialisable value; the runtime wraps it in a structured tool result.
+ *
+ * @example
+ * ```ts
+ * {
+ *   name: 'summarize_hours',
+ *   description: 'Total hours worked between two dates for the authenticated user.',
+ *   requirePermission: 'time_reg:read',
+ *   params: [
+ *     { name: 'userId', type: 'number', required: true, injectFromAuth: 'userId',
+ *       description: 'Injected from auth.' },
+ *     { name: 'startDate', type: 'string', required: true, description: 'Start YYYY-MM-DD.' },
+ *     { name: 'endDate',   type: 'string', required: true, description: 'End YYYY-MM-DD.'   },
+ *   ],
+ *   handler: async ({ userId, startDate, endDate }) =>
+ *     myService.summarize({ userId: userId as number, startDate, endDate }),
+ * }
+ * ```
+ */
+export interface MCPAction {
+  /** Appended to the config id: `{configId}_{name}`. Use lowercase_snake_case. */
+  name: string;
+  /** Agent-facing description. Write for an LLM that has never seen the system. */
+  description: string;
+  /**
+   * Optional additional permission required to invoke this action over MCP,
+   * on top of `CRUDTableConfig.requirePermission`.
+   */
+  requirePermission?: string;
+  /**
+   * Input parameters. Non-injected params become tool schema inputs; params
+   * with `injectFromAuth` are server-side only. Reuses {@link MCPScopeParam}.
+   */
+  params?: MCPScopeParam[];
+  /**
+   * The function that performs the action.
+   *
+   * @param args - Validated + injected args. Every param (including
+   *   `injectFromAuth` ones) is present; agents cannot override injected values.
+   * @param user - The authenticated MCP caller (useful for logging / secondary checks).
+   * @returns Any JSON-serialisable value; wrapped in a structured tool result.
+   */
+  handler: (
+    args: Record<string, unknown>,
+    user: MCPCallUserContext
+  ) => Promise<unknown>;
+}
+
+/**
  * MCP (Model Context Protocol) exposure block for a {@link CRUDTableConfig}.
  *
  * **Presence of this block is the opt-in signal.** A config without `mcp` is
@@ -336,6 +417,13 @@ export interface MCPConfig {
    * {@link MCPScopeParam}.
    */
   scope?: MCPScopeParam[];
+
+  /**
+   * Custom (non-CRUD) actions to expose as additional MCP tools on this
+   * config. Each action produces one tool named `{configId}_{action.name}`.
+   * See {@link MCPAction} for the full contract.
+   */
+  actions?: MCPAction[];
 
   /** Optional per-config rate-limit override. Both sides default from env. */
   rateLimit?: {

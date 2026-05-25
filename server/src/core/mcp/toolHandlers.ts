@@ -11,8 +11,9 @@
 // `McpCallUser.permissions` Set. Rate limiting and audit logging are
 // handled upstream in the transport layer.
 
-import type { CRUDContext, CRUDTableConfig, ServiceCall, MCPOperationOverride } from '../crudtable/types.js';
-import { synthesizeContext, splitScope, type McpCallUser } from './contextSynth.js';
+import type { CRUDContext, CRUDTableConfig, ServiceCall, MCPOperationOverride, MCPAction } from '../crudtable/types.js';
+import { synthesizeContext, splitScope, injectFromAuthValues, type McpCallUser } from './contextSynth.js';
+import type { McpToolGroup, McpToolDef } from './toolRegistry.js';
 import type { McpOp } from './schemaBuilder.js';
 import { LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX } from './schemaBuilder.js';
 import {
@@ -115,8 +116,28 @@ export function assertService(sc: ServiceCall | undefined, op: McpOp): asserts s
   }
 }
 
+// ============================================
+// Shared permission check
+// ============================================
+
 /**
- * Enforce AS500 RBAC on an MCP tool call.
+ * Throw `permission_denied` if the caller is missing any of the supplied keys.
+ * Admins always pass. Keys that are `undefined` or empty are skipped.
+ */
+function checkPermissions(user: McpCallUser, keys: (string | undefined)[]): void {
+  if (user.isAdmin) return;
+  const missing = keys.filter((k): k is string => !!k && !user.permissions.has(k));
+  if (missing.length === 0) return;
+  const unique = Array.from(new Set(missing));
+  throw new McpToolError(
+    'permission_denied',
+    `Missing required permission${unique.length > 1 ? 's' : ''}: ${unique.join(', ')}`,
+    unique.map((m) => ({ name: m, message: 'Permission not granted to caller.' }))
+  );
+}
+
+/**
+ * Enforce AS500 RBAC on an MCP CRUD tool call.
  *
  * Three permission sources are checked, in order:
  *
@@ -135,30 +156,11 @@ function requireMcpPermissions(
   service: ServiceCall,
   user: McpCallUser
 ): void {
-  if (user.isAdmin) return;
-
-  const missing: string[] = [];
-  const check = (key: string | undefined): void => {
-    if (!key) return;
-    if (!user.permissions.has(key)) missing.push(key);
-  };
-
-  check(config.requirePermission);
-  check(service.requirePermission);
-
   const opEntry = config.mcp?.operations?.[op];
-  if (opEntry && typeof opEntry === 'object') {
-    check((opEntry as MCPOperationOverride).requirePermission);
-  }
-
-  if (missing.length > 0) {
-    const unique = Array.from(new Set(missing));
-    throw new McpToolError(
-      'permission_denied',
-      `Missing required permission${unique.length > 1 ? 's' : ''}: ${unique.join(', ')}`,
-      unique.map((m) => ({ name: m, message: 'Permission not granted to caller.' }))
-    );
-  }
+  const opOverride = opEntry && typeof opEntry === 'object'
+    ? (opEntry as MCPOperationOverride).requirePermission
+    : undefined;
+  checkPermissions(user, [config.requirePermission, service.requirePermission, opOverride]);
 }
 
 async function fetchById(
@@ -370,5 +372,83 @@ export async function handleDelete({
   return toolResultOk(`Deleted ${config.title} record id=${String(id)}.`, {
     id,
   });
+}
+
+// ============================================
+// Option A: custom action handler (config-scoped)
+// ============================================
+
+export interface ActionHandlerArgs {
+  action: MCPAction;
+  input: Record<string, unknown>;
+  user: McpCallUser;
+  /** `requirePermission` from the parent `CRUDTableConfig`, checked first. */
+  configRequirePermission?: string;
+}
+
+/**
+ * Execute a custom {@link MCPAction} attached to a `CRUDTableConfig.mcp.actions` entry.
+ *
+ * Permission order: `configRequirePermission` → `action.requirePermission`.
+ * `injectFromAuth` params are resolved from `user` and merged into `args`
+ * before the `action.handler` is called — agents cannot supply or override them.
+ */
+export async function handleAction({
+  action,
+  input,
+  user,
+  configRequirePermission,
+}: ActionHandlerArgs): Promise<McpCallToolResult> {
+  checkPermissions(user, [configRequirePermission, action.requirePermission]);
+
+  const injected = injectFromAuthValues(action.params ?? [], user);
+  // Injected values overwrite any agent-supplied keys of the same name,
+  // preventing agents from forging e.g. a foreign userId.
+  const resolvedArgs: Record<string, unknown> = { ...input, ...injected };
+
+  const raw = await action.handler(resolvedArgs, user);
+  const data =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : { result: raw };
+
+  return toolResultOk(`Action "${action.name}" completed.`, data);
+}
+
+// ============================================
+// Option B: standalone tool handler (registry-scoped)
+// ============================================
+
+export interface CustomToolHandlerArgs {
+  group: McpToolGroup;
+  tool: McpToolDef;
+  input: Record<string, unknown>;
+  user: McpCallUser;
+}
+
+/**
+ * Execute a standalone MCP tool registered via {@link registerMcpTools}.
+ *
+ * Permission order: `group.requirePermission` → `tool.requirePermission`.
+ * `injectFromAuth` params are resolved from `user` before `tool.handler` runs.
+ */
+export async function handleCustomTool({
+  group,
+  tool,
+  input,
+  user,
+}: CustomToolHandlerArgs): Promise<McpCallToolResult> {
+  checkPermissions(user, [group.requirePermission, tool.requirePermission]);
+
+  const injected = injectFromAuthValues(tool.params ?? [], user);
+  const resolvedArgs: Record<string, unknown> = { ...input, ...injected };
+
+  const raw = await tool.handler(resolvedArgs, user);
+  const data =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : { result: raw };
+
+  return toolResultOk(`Tool "${tool.name}" completed.`, data);
 }
 

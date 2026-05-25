@@ -24,7 +24,8 @@ import { writeAuditEvent } from '../audit/writer.js';
 export interface AuditCallArgs {
   configId: string;
   toolName: string;
-  op: McpOp;
+  /** CRUD op for standard tools; `'action'` for custom actions and standalone tools. */
+  op: McpOp | 'action';
   user: McpCallUser;
   input: unknown;
   result: McpCallToolResult;

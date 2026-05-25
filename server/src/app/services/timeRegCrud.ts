@@ -1,6 +1,9 @@
 // Time Registration CRUD Adapter
 // Wraps existing timeReg service functions for CRUDTable ServiceCall pattern
 
+import { and, gte, lte, eq } from 'drizzle-orm';
+import { db } from '../../core/db/index.js';
+import { days, dayItems } from '../db/schema.js';
 import {
   getOrCreateDay,
   getDayItem,
@@ -145,6 +148,109 @@ export async function readEntry(params: { id: number }): Promise<Record<string, 
     jiratask: item.jiratask || '',
     description: item.description || '',
   };
+}
+
+// ============================================
+// Range queries (used by MCP custom actions)
+// ============================================
+
+export interface SummarizeHoursParams {
+  userId: number;
+  startDate: string;
+  endDate: string;
+}
+
+export interface SummarizeHoursResult {
+  startDate: string;
+  endDate: string;
+  totalHours: number;
+  workDays: number;
+  byDate: { date: string; hours: number }[];
+}
+
+/**
+ * Aggregate total hours worked between two dates (inclusive) for a user.
+ *
+ * Only days that already exist in the `days` table are counted — days with no
+ * entries (i.e. never opened in the UI or created via the API) are ignored.
+ * Returns a breakdown by date plus overall totals.
+ */
+export async function summarizeHours(params: SummarizeHoursParams): Promise<SummarizeHoursResult> {
+  const rows = await db
+    .select({ workday: days.workday, daysum: days.daysum })
+    .from(days)
+    .where(
+      and(
+        eq(days.user_id, params.userId),
+        gte(days.workday, params.startDate),
+        lte(days.workday, params.endDate)
+      )
+    )
+    .orderBy(days.workday);
+
+  const byDate = rows.map((r) => ({
+    date: r.workday,
+    hours: parseFloat(r.daysum),
+  }));
+
+  const totalHours = Math.round(byDate.reduce((sum, d) => sum + d.hours, 0) * 100) / 100;
+  const workDays = byDate.filter((d) => d.hours > 0).length;
+
+  return { startDate: params.startDate, endDate: params.endDate, totalHours, workDays, byDate };
+}
+
+export interface ListEntriesByRangeParams {
+  userId: number;
+  startDate: string;
+  endDate: string;
+}
+
+export interface TimeEntryWithDate {
+  id: number;
+  date: string;
+  start_hour: string;
+  end_hour: string;
+  hours: number;
+  jiratask: string | null;
+  description: string | null;
+}
+
+/**
+ * Return all individual time entries between two dates (inclusive) for a user,
+ * ordered by date and start time. Unlike `listEntries`, this spans multiple
+ * days and does not require a specific date.
+ */
+export async function listEntriesByRange(params: ListEntriesByRangeParams): Promise<TimeEntryWithDate[]> {
+  const rows = await db
+    .select({
+      id: dayItems.id,
+      workday: days.workday,
+      start_hour: dayItems.start_hour,
+      end_hour: dayItems.end_hour,
+      rowsum: dayItems.rowsum,
+      jiratask: dayItems.jiratask,
+      description: dayItems.description,
+    })
+    .from(dayItems)
+    .innerJoin(days, eq(dayItems.day_id, days.id))
+    .where(
+      and(
+        eq(days.user_id, params.userId),
+        gte(days.workday, params.startDate),
+        lte(days.workday, params.endDate)
+      )
+    )
+    .orderBy(days.workday, dayItems.start_hour);
+
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.workday,
+    start_hour: r.start_hour,
+    end_hour: r.end_hour,
+    hours: parseFloat(r.rowsum),
+    jiratask: r.jiratask,
+    description: r.description,
+  }));
 }
 
 // Re-export helpers the config needs

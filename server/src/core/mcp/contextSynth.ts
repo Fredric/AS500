@@ -114,6 +114,29 @@ export function buildInjectedScope(
   return injected;
 }
 
+/**
+ * Resolve the server-injected portion of a param list from the authenticated
+ * caller. Unlike {@link buildInjectedScope}, this version takes a raw
+ * `MCPScopeParam[]` directly — no `CRUDTableConfig` required — so it can be
+ * used by custom action handlers and standalone tool handlers that aren't
+ * backed by a CRUD config.
+ */
+export function injectFromAuthValues(
+  params: MCPScopeParam[],
+  user: McpCallUser
+): Record<string, unknown> {
+  const injected: Record<string, unknown> = {};
+  for (const p of params) {
+    if (!p.injectFromAuth) continue;
+    switch (p.injectFromAuth) {
+      case 'userId':
+        injected[p.name] = user.userId;
+        break;
+    }
+  }
+  return injected;
+}
+
 export interface SynthContextArgs {
   config: CRUDTableConfig;
   op: McpOp;

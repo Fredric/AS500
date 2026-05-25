@@ -273,6 +273,89 @@ export const timeRegV2Config: CRUDTableConfig = {
         description: 'Workday in YYYY-MM-DD format. A day row is created on demand.',
       },
     ],
+
+    // ──── Custom aggregate actions ────────────────────────────────────────────
+    //
+    // These extend the standard CRUD tools with range-based queries that don't
+    // fit the per-day, single-record pattern of the list/read tools above.
+    //
+    // Tool names on the wire:
+    //   timereg_v2_summarize_hours
+    //   timereg_v2_entries_by_range
+    //
+    actions: [
+      {
+        name: 'summarize_hours',
+        description:
+          'Aggregate total hours worked by the authenticated user between two dates (inclusive). ' +
+          'Returns a per-date breakdown plus overall totals. Only days with recorded entries are included. ' +
+          'Useful for weekly/monthly summaries or reporting periods.',
+        requirePermission: 'time_reg:read',
+        params: [
+          {
+            name: 'userId',
+            type: 'number' as const,
+            required: true,
+            description: 'Automatically injected from the OAuth token — not a tool input.',
+            injectFromAuth: 'userId' as const,
+          },
+          {
+            name: 'startDate',
+            type: 'string' as const,
+            required: true,
+            description: 'Inclusive start of the date range in YYYY-MM-DD format.',
+          },
+          {
+            name: 'endDate',
+            type: 'string' as const,
+            required: true,
+            description: 'Inclusive end of the date range in YYYY-MM-DD format.',
+          },
+        ],
+        handler: async ({ userId, startDate, endDate }) =>
+          timeRegCrud.summarizeHours({
+            userId: userId as number,
+            startDate: startDate as string,
+            endDate: endDate as string,
+          }),
+      },
+
+      {
+        name: 'entries_by_range',
+        description:
+          'List all individual time entries for the authenticated user between two dates (inclusive), ' +
+          'ordered by date and start time. Each entry includes the date, start/end times, computed hours, ' +
+          'optional Jira task id, and description.',
+        requirePermission: 'time_reg:read',
+        params: [
+          {
+            name: 'userId',
+            type: 'number' as const,
+            required: true,
+            description: 'Automatically injected from the OAuth token — not a tool input.',
+            injectFromAuth: 'userId' as const,
+          },
+          {
+            name: 'startDate',
+            type: 'string' as const,
+            required: true,
+            description: 'Inclusive start of the date range in YYYY-MM-DD format.',
+          },
+          {
+            name: 'endDate',
+            type: 'string' as const,
+            required: true,
+            description: 'Inclusive end of the date range in YYYY-MM-DD format.',
+          },
+        ],
+        handler: async ({ userId, startDate, endDate }) =>
+          timeRegCrud.listEntriesByRange({
+            userId: userId as number,
+            startDate: startDate as string,
+            endDate: endDate as string,
+          }),
+      },
+    ],
   },
 };
 
