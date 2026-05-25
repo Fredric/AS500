@@ -250,3 +250,25 @@ export const auditLog = pgTable('audit_log', {
   index('idx_audit_log_config_id').on(t.config_id).where(sql`${t.config_id} IS NOT NULL`),
   index('idx_audit_log_source').on(t.source),
 ]);
+
+// ============================================
+// AI Chat
+// ============================================
+
+export const aiChats = pgTable('ai_chats', {
+  id: text('id').primaryKey(),                           // client-supplied uuid
+  user_id: integer('user_id').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_ai_chats_user_id').on(t.user_id),
+]);
+
+export const aiMessages = pgTable('ai_messages', {
+  id: serial('id').primaryKey(),
+  chat_id: text('chat_id').notNull(),
+  role: varchar('role', { length: 16 }).notNull(),       // 'user' | 'assistant'
+  content: text('content').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_ai_messages_chat_id').on(t.chat_id),
+]);
