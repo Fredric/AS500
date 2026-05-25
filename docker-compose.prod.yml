@@ -41,3 +41,10 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      # Pin the bridge name so nftables rules survive Docker network recreations
+      com.docker.network.bridge.name: as500-docker-br
