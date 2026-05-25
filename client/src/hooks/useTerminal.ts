@@ -110,6 +110,9 @@ export function useTerminal() {
   // AI chat event handler — registered by useAiChat; called for every AI_CHAT_* message
   const aiChatHandlerRef = useRef<((event: AiChatEvent) => void) | null>(null);
 
+  // Track the latest screenId so the AI_CHAT_DONE refresh can use it from within the WS closure
+  const screenIdRef = useRef('');
+
   // Track if we've sent resume request
   const hasResumedRef = useRef(false);
   const storedSessionRef = useRef(getCookie(SESSION_COOKIE_NAME));
@@ -196,6 +199,17 @@ export function useTerminal() {
           // Route AI chat events to the registered handler — never treat them as screen updates
           if (typeof data.type === 'string' && data.type.startsWith('AI_CHAT_')) {
             aiChatHandlerRef.current?.(data as AiChatEvent);
+            // When the agent finishes, refresh the current screen so any changes
+            // made by the agent (e.g. creating a record) are immediately visible.
+            if (data.type === 'AI_CHAT_DONE' && storedSessionRef.current && screenIdRef.current) {
+              ws.send(JSON.stringify({
+                sessionId: storedSessionRef.current,
+                screenId: screenIdRef.current,
+                cursor: { row: 0, col: 0 },
+                input: {},
+                key: 'REFRESH',
+              }));
+            }
             return;
           }
 
@@ -244,6 +258,7 @@ export function useTerminal() {
             storedSessionRef.current = null;
           }
 
+          screenIdRef.current = response.screenId;
           setState(prev => ({
             ...prev,
             sessionId: response.sessionId,

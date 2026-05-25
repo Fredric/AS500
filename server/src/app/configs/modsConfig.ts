@@ -19,7 +19,18 @@ export const modsConfig: CRUDTableConfig = {
     list: {
       service: modsService as unknown as Record<string, Function>,
       method: 'listMods',
-      params: (ctx) => ({ motorcycleId: ctx.input.motorcycleId as number }),
+      params: (ctx) => ({
+        motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
+      }),
+    },
+    read: {
+      service: modsService as unknown as Record<string, Function>,
+      method: 'readMod',
+      params: (ctx) => ({
+        id: ctx.input.id as number,
+        motorcycleId: ctx.input.motorcycleId as number,
+      }),
     },
     create: {
       service: modsService as unknown as Record<string, Function>,
@@ -27,6 +38,7 @@ export const modsConfig: CRUDTableConfig = {
       requirePermission: 'mods:write',
       params: (ctx) => ({
         motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
         name: ctx.values.name?.trim() || '',
         category: toStringOrNull(ctx.values.category),
         cost: toStringOrNull(ctx.values.cost),
@@ -41,6 +53,7 @@ export const modsConfig: CRUDTableConfig = {
       params: (ctx) => ({
         id: ctx.editRecord!.id as number,
         motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
         name: ctx.values.name?.trim() || '',
         category: toStringOrNull(ctx.values.category),
         cost: toStringOrNull(ctx.values.cost),
@@ -55,6 +68,7 @@ export const modsConfig: CRUDTableConfig = {
       params: (ctx) => ({
         id: ctx.selection[0].id as number,
         motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
       }),
     },
   },
@@ -105,6 +119,84 @@ export const modsConfig: CRUDTableConfig = {
     return [
       { row: 5, col: 2, content: `Mods: ${label ?? ''}` },
     ];
+  },
+
+  // ============================================
+  // MCP (Model Context Protocol) exposure
+  // ============================================
+  //
+  // Exposes five tools:
+  //   mods.list   mods.read
+  //   mods.create mods.update mods.delete
+  //
+  // `motorcycleId` is provided by the agent. `userId` is injected from the
+  // OAuth token — the service verifies the motorcycle belongs to that user
+  // before executing any operation.
+
+  mcp: {
+    name: 'mods',
+    description:
+      'Modifications installed on a specific motorcycle. Each record represents ' +
+      'one mod with name, category, cost, installation date, and notes. ' +
+      'Pass the motorcycleId of a bike owned by the authenticated user.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description:
+          'Automatically injected from the OAuth token — not a tool input. ' +
+          'Used to verify the motorcycle belongs to the authenticated user.',
+        injectFromAuth: 'userId' as const,
+      },
+      {
+        name: 'motorcycleId',
+        type: 'number' as const,
+        required: true,
+        description: 'ID of the motorcycle whose mods to list or modify.',
+      },
+    ],
+  },
+
+  // ============================================
+  // REST API exposure
+  // ============================================
+  //
+  // GET|POST /api/mods?motorcycleId=<id>
+  // GET|PUT|DELETE /api/mods/:id?motorcycleId=<id>
+
+  api: {
+    name: 'mods',
+    description: 'Modifications for a motorcycle owned by the authenticated user.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description: 'Injected from the Bearer token — never a request param.',
+        injectFromAuth: 'userId' as const,
+      },
+      {
+        name: 'motorcycleId',
+        type: 'number' as const,
+        required: true,
+        description: 'ID of the motorcycle. Pass as a query param.',
+      },
+    ],
   },
 };
 

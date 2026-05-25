@@ -25,7 +25,18 @@ export const servicesPerformedConfig: CRUDTableConfig = {
     list: {
       service: servicesPerformedService as unknown as Record<string, Function>,
       method: 'listServicesPerformed',
-      params: (ctx) => ({ motorcycleId: ctx.input.motorcycleId as number }),
+      params: (ctx) => ({
+        motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
+      }),
+    },
+    read: {
+      service: servicesPerformedService as unknown as Record<string, Function>,
+      method: 'readServicePerformed',
+      params: (ctx) => ({
+        id: ctx.input.id as number,
+        motorcycleId: ctx.input.motorcycleId as number,
+      }),
     },
     create: {
       service: servicesPerformedService as unknown as Record<string, Function>,
@@ -33,6 +44,7 @@ export const servicesPerformedConfig: CRUDTableConfig = {
       requirePermission: 'services_performed:write',
       params: (ctx) => ({
         motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
         service_type: ctx.values.service_type?.trim() || '',
         service_date: ctx.values.service_date?.trim() || '',
         odometer_km: toIntOrNull(ctx.values.odometer_km),
@@ -48,6 +60,7 @@ export const servicesPerformedConfig: CRUDTableConfig = {
       params: (ctx) => ({
         id: ctx.editRecord!.id as number,
         motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
         service_type: ctx.values.service_type?.trim() || '',
         service_date: ctx.values.service_date?.trim() || '',
         odometer_km: toIntOrNull(ctx.values.odometer_km),
@@ -63,6 +76,7 @@ export const servicesPerformedConfig: CRUDTableConfig = {
       params: (ctx) => ({
         id: ctx.selection[0].id as number,
         motorcycleId: ctx.input.motorcycleId as number,
+        userId: ctx.input.userId as number | undefined,
       }),
     },
   },
@@ -129,6 +143,84 @@ export const servicesPerformedConfig: CRUDTableConfig = {
     return [
       { row: 5, col: 2, content: `Services: ${label ?? ''}` },
     ];
+  },
+
+  // ============================================
+  // MCP (Model Context Protocol) exposure
+  // ============================================
+  //
+  // Exposes five tools:
+  //   services_performed.list   services_performed.read
+  //   services_performed.create services_performed.update services_performed.delete
+  //
+  // `motorcycleId` is provided by the agent. `userId` is injected from the
+  // OAuth token — the service verifies the motorcycle belongs to that user
+  // before executing any operation.
+
+  mcp: {
+    name: 'services_performed',
+    description:
+      'Service and maintenance records for a specific motorcycle. Each record ' +
+      'represents one service event with type, date, odometer reading, cost, ' +
+      'shop, and notes. Pass the motorcycleId of a bike owned by the authenticated user.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description:
+          'Automatically injected from the OAuth token — not a tool input. ' +
+          'Used to verify the motorcycle belongs to the authenticated user.',
+        injectFromAuth: 'userId' as const,
+      },
+      {
+        name: 'motorcycleId',
+        type: 'number' as const,
+        required: true,
+        description: 'ID of the motorcycle whose service history to list or modify.',
+      },
+    ],
+  },
+
+  // ============================================
+  // REST API exposure
+  // ============================================
+  //
+  // GET|POST /api/services_performed?motorcycleId=<id>
+  // GET|PUT|DELETE /api/services_performed/:id?motorcycleId=<id>
+
+  api: {
+    name: 'services_performed',
+    description: 'Service records for a motorcycle owned by the authenticated user.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description: 'Injected from the Bearer token — never a request param.',
+        injectFromAuth: 'userId' as const,
+      },
+      {
+        name: 'motorcycleId',
+        type: 'number' as const,
+        required: true,
+        description: 'ID of the motorcycle. Pass as a query param.',
+      },
+    ],
   },
 };
 

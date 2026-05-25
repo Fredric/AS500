@@ -2,14 +2,18 @@
 
 import { and, eq, desc } from 'drizzle-orm';
 import { db } from '../../core/db/index.js';
-import { servicesPerformed } from '../db/schema.js';
+import { servicesPerformed, motorcycles } from '../db/schema.js';
 
 export interface ListParams {
   motorcycleId: number;
+  /** When provided (MCP/API path) the motorcycle's ownership is verified. */
+  userId?: number;
 }
 
 export interface CreateParams {
   motorcycleId: number;
+  /** When provided (MCP/API path) the motorcycle's ownership is verified. */
+  userId?: number;
   service_type: string;
   service_date: string;
   odometer_km: number | null;
@@ -22,7 +26,35 @@ export interface UpdateParams extends CreateParams {
   id: number;
 }
 
+async function verifyOwnership(motorcycleId: number, userId: number): Promise<void> {
+  const [row] = await db
+    .select({ id: motorcycles.id })
+    .from(motorcycles)
+    .where(and(eq(motorcycles.id, motorcycleId), eq(motorcycles.user_id, userId)));
+  if (!row) throw new Error('Motorcycle not found or not owned by you');
+}
+
+export async function readServicePerformed(params: { id: number; motorcycleId: number }): Promise<Record<string, unknown> | null> {
+  const [r] = await db
+    .select()
+    .from(servicesPerformed)
+    .where(and(eq(servicesPerformed.id, params.id), eq(servicesPerformed.motorcycle_id, params.motorcycleId)));
+  if (!r) return null;
+  return {
+    id: r.id,
+    motorcycle_id: r.motorcycle_id,
+    service_type: r.service_type,
+    service_date: r.service_date,
+    odometer_km: r.odometer_km ?? '',
+    cost: r.cost ?? '',
+    shop: r.shop ?? '',
+    notes: r.notes ?? '',
+  };
+}
+
 export async function listServicesPerformed(params: ListParams): Promise<Record<string, unknown>[]> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
+
   const rows = await db
     .select()
     .from(servicesPerformed)
@@ -42,6 +74,7 @@ export async function listServicesPerformed(params: ListParams): Promise<Record<
 }
 
 export async function createServicePerformed(params: CreateParams): Promise<Record<string, unknown>> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
   validate(params);
   const [row] = await db
     .insert(servicesPerformed)
@@ -59,6 +92,7 @@ export async function createServicePerformed(params: CreateParams): Promise<Reco
 }
 
 export async function updateServicePerformed(params: UpdateParams): Promise<Record<string, unknown>> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
   validate(params);
   const [row] = await db
     .update(servicesPerformed)
@@ -76,7 +110,8 @@ export async function updateServicePerformed(params: UpdateParams): Promise<Reco
   return row;
 }
 
-export async function deleteServicePerformed(params: { id: number; motorcycleId: number }): Promise<void> {
+export async function deleteServicePerformed(params: { id: number; motorcycleId: number; userId?: number }): Promise<void> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
   const result = await db
     .delete(servicesPerformed)
     .where(and(eq(servicesPerformed.id, params.id), eq(servicesPerformed.motorcycle_id, params.motorcycleId)))

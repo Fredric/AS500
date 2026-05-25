@@ -2,14 +2,18 @@
 
 import { and, eq, asc } from 'drizzle-orm';
 import { db } from '../../core/db/index.js';
-import { mods } from '../db/schema.js';
+import { mods, motorcycles } from '../db/schema.js';
 
 export interface ListParams {
   motorcycleId: number;
+  /** When provided (MCP/API path) the motorcycle's ownership is verified. */
+  userId?: number;
 }
 
 export interface CreateParams {
   motorcycleId: number;
+  /** When provided (MCP/API path) the motorcycle's ownership is verified. */
+  userId?: number;
   name: string;
   category: string | null;
   cost: string | null;
@@ -21,7 +25,34 @@ export interface UpdateParams extends CreateParams {
   id: number;
 }
 
+async function verifyOwnership(motorcycleId: number, userId: number): Promise<void> {
+  const [row] = await db
+    .select({ id: motorcycles.id })
+    .from(motorcycles)
+    .where(and(eq(motorcycles.id, motorcycleId), eq(motorcycles.user_id, userId)));
+  if (!row) throw new Error('Motorcycle not found or not owned by you');
+}
+
+export async function readMod(params: { id: number; motorcycleId: number }): Promise<Record<string, unknown> | null> {
+  const [r] = await db
+    .select()
+    .from(mods)
+    .where(and(eq(mods.id, params.id), eq(mods.motorcycle_id, params.motorcycleId)));
+  if (!r) return null;
+  return {
+    id: r.id,
+    motorcycle_id: r.motorcycle_id,
+    name: r.name,
+    category: r.category ?? '',
+    cost: r.cost ?? '',
+    installed_date: r.installed_date ?? '',
+    notes: r.notes ?? '',
+  };
+}
+
 export async function listMods(params: ListParams): Promise<Record<string, unknown>[]> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
+
   const rows = await db
     .select()
     .from(mods)
@@ -40,6 +71,7 @@ export async function listMods(params: ListParams): Promise<Record<string, unkno
 }
 
 export async function createMod(params: CreateParams): Promise<Record<string, unknown>> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
   validate(params);
   const [row] = await db
     .insert(mods)
@@ -56,6 +88,7 @@ export async function createMod(params: CreateParams): Promise<Record<string, un
 }
 
 export async function updateMod(params: UpdateParams): Promise<Record<string, unknown>> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
   validate(params);
   const [row] = await db
     .update(mods)
@@ -72,7 +105,8 @@ export async function updateMod(params: UpdateParams): Promise<Record<string, un
   return row;
 }
 
-export async function deleteMod(params: { id: number; motorcycleId: number }): Promise<void> {
+export async function deleteMod(params: { id: number; motorcycleId: number; userId?: number }): Promise<void> {
+  if (params.userId !== undefined) await verifyOwnership(params.motorcycleId, params.userId);
   const result = await db
     .delete(mods)
     .where(and(eq(mods.id, params.id), eq(mods.motorcycle_id, params.motorcycleId)))
