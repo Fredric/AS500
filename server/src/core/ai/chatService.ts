@@ -18,6 +18,8 @@ import { aiChats, aiMessages } from '../db/schema.js';
 import type { Session } from '../types/index.js';
 import { mintMcpAccessTokenForUser } from '../mcp/mintSessionToken.js';
 import { streamChatCompletion, type ChatMessageParam } from './agentClient.js';
+import { getConfigByScreenId } from '../crudtable/registry.js';
+import { loadContext } from '../crudtable/context.js';
 
 export interface AiChatMessage {
   role: 'user' | 'assistant';
@@ -59,6 +61,60 @@ async function appendMessage(
   content: string,
 ): Promise<void> {
   await db.insert(aiMessages).values({ chat_id: chatId, role, content });
+}
+
+// ============================================
+// Screen context injection
+// ============================================
+
+/**
+ * Build a concise, human-readable description of the user's current screen
+ * position. Injected as a system message on every chat turn so the agent
+ * always knows what the user is looking at without the user having to say so.
+ * Returns null when there is no useful context to add (e.g. login screen).
+ */
+function buildScreenContext(session: Session): string | null {
+  const screen = session.currentScreen;
+  if (!screen || screen === 'LOGIN') return null;
+
+  if (screen === 'MAIN_MENU') {
+    return 'Current screen context: The user is on the AS500 main menu.';
+  }
+
+  if (screen.startsWith('MENU_')) {
+    const name = screen.slice('MENU_'.length).replace(/_/g, ' ');
+    return `Current screen context: The user is in the "${name}" submenu.`;
+  }
+
+  if (screen.startsWith('CRUD_')) {
+    const match = getConfigByScreenId(screen);
+    if (!match) return null;
+
+    const { config, mode } = match;
+    const ctx = loadContext(session, config.id);
+
+    if (mode === 'list') {
+      const countNote = ctx.records.length > 0
+        ? ` There are ${ctx.records.length} record(s) currently loaded on the page.`
+        : '';
+      return `Current screen context: The user is viewing the "${config.title}" list.${countNote}`;
+    }
+
+    if (mode === 'form') {
+      if (ctx.formMode === 'create') {
+        return `Current screen context: The user is creating a new "${config.title}" record.`;
+      }
+      if (ctx.formMode === 'edit' && ctx.editRecord) {
+        return `Current screen context: The user is editing a "${config.title}" record. Current record data: ${JSON.stringify(ctx.editRecord)}.`;
+      }
+    }
+
+    if (mode === 'confirm_delete' && ctx.pendingDeleteRecord) {
+      return `Current screen context: The user is confirming deletion of a "${config.title}" record. Record: ${JSON.stringify(ctx.pendingDeleteRecord)}.`;
+    }
+  }
+
+  return null;
 }
 
 // ============================================
@@ -107,7 +163,13 @@ export async function* streamChatTurn(
   const mcpAccessToken = await mintMcpAccessTokenForUser(userId, username);
   lap('mintMcpAccessToken', t);
 
+  // Prepend a system message describing the user's current screen so the agent
+  // has context without the user needing to explain where they are.
+  // This is rebuilt fresh on every turn and never stored in history.
+  const screenContext = buildScreenContext(session);
+
   const messages: ChatMessageParam[] = [
+    ...(screenContext ? [{ role: 'system' as const, content: screenContext }] : []),
     ...history.map((m) => ({ role: m.role, content: m.content }) as ChatMessageParam),
     { role: 'user' as const, content: userText },
   ];
