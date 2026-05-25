@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import { useTerminal } from '../hooks/useTerminal';
+import { useAiChat } from '../hooks/useAiChat';
+import AiChatPanel from './AiChatPanel';
 import FieldDropdown from './FieldDropdown';
 import type { DropdownHandle } from './FieldDropdown';
 import type { Field } from '../types';
@@ -39,7 +41,20 @@ export default function Terminal() {
     setCursor,
     sendKey,
     sendKeyWithInput,
+    registerAiChatHandler,
+    sendRaw,
+    sessionId,
   } = useTerminal();
+
+  const authenticated = connected && !!sessionId && screenId !== '' && screenId !== 'LOGIN';
+
+  const chat = useAiChat({
+    sessionId,
+    screenId,
+    connected,
+    registerAiChatHandler,
+    sendRaw,
+  });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
@@ -812,6 +827,21 @@ export default function Terminal() {
           }}
         />
       )}
+
+      {/* AI chat toggle button — shown on the right edge when authenticated */}
+      {authenticated && (
+        <button
+          className={`ai-chat-toggle${chat.isOpen ? ' ai-chat-toggle--active' : ''}`}
+          onClick={chat.toggle}
+          aria-label="Toggle AI chat"
+          title="AI Assistant"
+        >
+          &#x2726;
+        </button>
+      )}
+
+      {/* AI chat overlay — fixed-position, outside terminal scroll */}
+      <AiChatPanel chat={chat} authenticated={authenticated} />
     </div>
   );
 }

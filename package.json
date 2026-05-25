@@ -4,7 +4,7 @@
   "description": "AS500 Terminal System - AS/400 inspired time tracking",
   "private": true,
   "scripts": {
-    "build:server": "cd server && npm ci && npm run build", 
+    "build:server": "cd server && npm ci && npm run build",
     "build:client": "cd client && npm ci && npm run build",
     "build": "npm run build:server && npm run build:client",
     "start": "cd server && npm start",
@@ -24,6 +24,7 @@
     "@types/node": "^22.10.5"
   },
   "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.73.1",
     "pg": "^8.18.0"
   }
 }

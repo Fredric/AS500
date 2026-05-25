@@ -415,6 +415,118 @@ Tokens issued this way carry sentinel `client_id = 'as500-direct'` and are other
 
 ---
 
+## AI Agent Integration
+
+AS500 ships an in-terminal AI chat panel backed by a local Python AI agent (`as500-agent` repo). The user opens the panel with the star button (✦) in the top-right corner; the server streams responses token-by-token over the existing WebSocket.
+
+### Architecture
+
+```
+Browser (React)
+  ⇅  WebSocket  (AI_CHAT_SEND / AI_CHAT_DELTA / AI_CHAT_DONE / AI_CHAT_ERROR)
+AS500 Node server  (:3001)
+  ⇅  OpenAI-compatible HTTP + SSE  (:8010)
+as500-agent FastAPI server  (Python, local GPU machine)
+  ├── ⇅  vLLM  (:8000)  — local LLM inference
+  └── ⇅  AS500 MCP server  (:3002)  — tool calls run under the real user's RBAC
+```
+
+The agent is a black box from AS500's perspective: AS500 only calls two endpoints — `GET /v1/models` and `POST /v1/chat/completions` — on the agent over the internal network. The agent handles LLM inference, MCP tool dispatch, and context management.
+
+### Required environment variables (`server/.env.local`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `AI_AGENT_BASE_URL` | yes | Base URL of the agent HTTP API, e.g. `http://host.docker.internal:8010/v1` (Docker) or `http://127.0.0.1:8010/v1` (local) |
+| `AI_AGENT_API_KEY` | yes | Shared secret; agent rejects requests without it. Must match `AGENT_API_KEY` in the `as500-agent` `.env`. Min 32 chars. |
+| `AI_AGENT_MODEL` | no | Model id to pass in `POST /v1/chat/completions`. Defaults to `as500-agent`. |
+
+If `AI_AGENT_BASE_URL` or `AI_AGENT_API_KEY` are unset the agent client throws at startup. The chat panel still renders but every message returns an error.
+
+### WebSocket protocol (AI chat messages)
+
+**Browser → Server:**
+
+```typescript
+// Sent when the user submits a message
+{
+  sessionId: string,
+  screenId: string,
+  cursor: { row: 0, col: 0 },
+  key: 'AI_CHAT_SEND',
+  input: {
+    chatId: string,   // stable UUID per browser session (sessionStorage)
+    message: string,  // user's text
+  }
+}
+```
+
+**Server → Browser (streamed):**
+
+```typescript
+{ type: 'AI_CHAT_DELTA'; delta: string; chatId: string; sessionId: string }
+{ type: 'AI_CHAT_DONE';  chatId: string; sessionId: string }
+{ type: 'AI_CHAT_ERROR'; error: string; chatId?: string; sessionId: string }
+```
+
+`AI_CHAT_*` messages are routed by `useTerminal` to the registered `useAiChat` handler and never treated as screen updates. The terminal state is untouched during a chat turn.
+
+### MCP token delegation (trusted-subsystem pattern)
+
+The agent needs a valid MCP Bearer token to call AS500 tools on behalf of the user. AS500 mints one per request using `mintMcpAccessTokenForUser(userId, username)` in `server/src/core/mcp/mintSessionToken.ts`. The token:
+
+- Is a standard HS256 JWT, identical to tokens issued by `POST /api/auth/token`
+- Uses `client_id: 'as500-ai'` — distinguishable in `mcp_audit_log`
+- Expires in 1 hour; revocable via `jti` in `auth_tokens`
+- Is passed to the agent in `metadata.mcpAccessToken` on every `POST /v1/chat/completions` call
+- Is **never** stored in the session, returned to the browser, or written to disk by the agent
+
+The agent opens a per-request MCP session with this token as a static Bearer. No OAuth browser flow, no DCR, no token caching on the agent side.
+
+Security invariant: `mintMcpAccessTokenForUser` is only called after asserting `session.authenticated === true` and `session.viserId != null`.
+
+### Chat history persistence
+
+Each conversation is stored in two Postgres tables (auto-migrated at server startup):
+
+```sql
+ai_chats    (id text PK, user_id int, created_at)
+ai_messages (id serial PK, chat_id text, role text, content text, created_at)
+```
+
+The `chatId` is a UUID generated in the browser (`sessionStorage`) and passed with every `AI_CHAT_SEND`. History is loaded and appended in `chatService.ts` before and after every turn.
+
+### Key files
+
+| Purpose | Path |
+|---|---|
+| Agent HTTP client (OpenAI-compatible) | `server/src/core/ai/agentClient.ts` |
+| Chat service (history + streaming orchestration) | `server/src/core/ai/chatService.ts` |
+| MCP token mint helper | `server/src/core/mcp/mintSessionToken.ts` |
+| WebSocket bridge (`AI_CHAT_SEND` handler) | `server/src/index.ts` |
+| React chat hook | `client/src/hooks/useAiChat.ts` |
+| Chat panel component | `client/src/components/AiChatPanel.tsx` |
+| AI chat types (WebSocket events + messages) | `client/src/types/aiChat.ts` |
+| Chat panel styles | `client/src/styles/ai-chat.css` |
+
+### Setting up the agent side
+
+The Python agent lives in the separate `as500-agent` repo. See its `README.md` for full setup. Summary:
+
+1. Install Python dependencies and the agent CLI (`pip install -e .` inside `agent/`)
+2. Copy `.env.example` → `.env` and set at minimum `AGENT_API_KEY` (≥32 chars, must match `AI_AGENT_API_KEY` in AS500), `LOCAL_LLM_MODEL`, and `AS500_MCP_BASE_URL`
+3. Start the vLLM server: `.\scripts\start-vllm.ps1`
+4. Start the agent HTTP server: `as500-agent serve` (binds on `:8010`)
+5. Verify connectivity: `GET http://localhost:8010/health` should return `{ "status": "ok" }`
+
+**Docker note:** when AS500 runs in Docker and the agent runs on the host, use `http://host.docker.internal:8010/v1` as `AI_AGENT_BASE_URL`.
+
+### Disabling the chat panel
+
+The toggle button and `AiChatPanel` only render when the user is authenticated (`connected && sessionId && screenId !== 'LOGIN'`). There is no server-side feature flag — to disable, unset `AI_AGENT_BASE_URL` (the button still renders but sends will return errors) or remove the `useAiChat` / `AiChatPanel` wiring in `Terminal.tsx`.
+
+---
+
 ## Key Files
 
 ### Core infrastructure (`server/src/core/`) — never edited by app developers
@@ -448,6 +560,13 @@ Tokens issued this way carry sentinel `client_id = 'as500-direct'` and are other
 | Terminal renderer | `client/src/components/Terminal.tsx` |
 | Terminal styles | `client/src/styles/terminal.css` |
 | Client types | `client/src/types/index.ts` |
+| **AI chat hook** | `client/src/hooks/useAiChat.ts` |
+| **AI chat panel component** | `client/src/components/AiChatPanel.tsx` |
+| **AI chat WebSocket event types** | `client/src/types/aiChat.ts` |
+| **AI chat panel styles** | `client/src/styles/ai-chat.css` |
+| **Agent HTTP client** | `server/src/core/ai/agentClient.ts` |
+| **Chat service (history + streaming)** | `server/src/core/ai/chatService.ts` |
+| **MCP token mint helper** | `server/src/core/mcp/mintSessionToken.ts` |
 | Test setup utilities | `tests/testSetup.ts` |
 
 ### App layer (`server/src/app/`) — where application developers work

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ScreenResponse, ClientRequest, Field, ScreenNavigation } from '../types';
+import type { AiChatEvent } from '../types/aiChat';
 
 // Dynamic WebSocket URL: use secure wss:// in production, ws:// in development
 function getWebSocketUrl(): string {
@@ -106,6 +107,9 @@ export function useTerminal() {
     navigation: null,
   });
 
+  // AI chat event handler — registered by useAiChat; called for every AI_CHAT_* message
+  const aiChatHandlerRef = useRef<((event: AiChatEvent) => void) | null>(null);
+
   // Track if we've sent resume request
   const hasResumedRef = useRef(false);
   const storedSessionRef = useRef(getCookie(SESSION_COOKIE_NAME));
@@ -186,6 +190,12 @@ export function useTerminal() {
           const data = JSON.parse(event.data);
 
           if (data.type === 'PONG') {
+            return;
+          }
+
+          // Route AI chat events to the registered handler — never treat them as screen updates
+          if (typeof data.type === 'string' && data.type.startsWith('AI_CHAT_')) {
+            aiChatHandlerRef.current?.(data as AiChatEvent);
             return;
           }
 
@@ -367,11 +377,25 @@ export function useTerminal() {
     wsRef.current.send(JSON.stringify(request));
   }, [state.sessionId, state.screenId, state.cursor, state.fieldValues]);
 
+  /** Register a handler that receives AI_CHAT_* WebSocket events. */
+  const registerAiChatHandler = useCallback((handler: ((event: AiChatEvent) => void) | null) => {
+    aiChatHandlerRef.current = handler;
+  }, []);
+
+  /** Send a raw JSON payload over the WebSocket (used by useAiChat for AI_CHAT_SEND). */
+  const sendRaw = useCallback((payload: object) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
+    }
+  }, []);
+
   return {
     ...state,
     setFieldValue,
     setCursor,
     sendKey,
     sendKeyWithInput,
+    registerAiChatHandler,
+    sendRaw,
   };
 }

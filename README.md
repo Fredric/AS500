@@ -17,6 +17,7 @@ WebSocket
 - **Modern token-based authentication** — OAuth 2.0-inspired access/refresh token pattern
 - **Remote MCP server** — every CRUDTable config can be opened up to AI agents as [Model Context Protocol](https://modelcontextprotocol.io) tools, gated by OAuth 2.1 + DCR and the same RBAC as the UI
 - **REST API** — same CRUDTable configs also served as a conventional REST API (`GET/POST/PUT/DELETE /api/:configId`) with first-party Bearer token login (`POST /api/auth/token`) and token rotation
+- **In-terminal AI chat** — overlay panel backed by a local Python AI agent; streams responses token-by-token over the existing WebSocket with per-request MCP token delegation so tool calls run under the real user's RBAC
 - **Secure session management** — 30-day auto-login with 1-hour token rotation
 - **Role-based access control** — Roles (`user`, `superuser`, `aiagent`, `admin`), user groups, and named permission keys with per-operation CRUDTable enforcement
 - **Device tracking** — Multi-device session management with device fingerprinting
@@ -667,4 +668,12 @@ See [CLAUDE.md § REST API](CLAUDE.md#rest-api) for the REST API reference:
 - First-party login flow (`POST /api/auth/token`)
 - How to expose a CRUDTable config on the REST surface (`api` block)
 - Scope params and `injectFromAuth`
+
+See [CLAUDE.md § AI Agent Integration](CLAUDE.md#ai-agent-integration) for the in-terminal AI chat panel:
+
+- Required env variables (`AI_AGENT_BASE_URL`, `AI_AGENT_API_KEY`, `AI_AGENT_MODEL`)
+- WebSocket protocol (`AI_CHAT_SEND` / `AI_CHAT_DELTA` / `AI_CHAT_DONE` / `AI_CHAT_ERROR`)
+- MCP token delegation (trusted-subsystem pattern, `mintMcpAccessTokenForUser`)
+- Chat history persistence (`ai_chats` / `ai_messages`)
+- Agent-side setup summary (see `as500-agent` repo for full details)
 

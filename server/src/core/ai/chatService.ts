@@ -86,14 +86,26 @@ export async function* streamChatTurn(
 
   const userId = session.viserId;
   const username = session.username;
+  const t0 = Date.now();
+  const lap = (label: string, since = t0) =>
+    console.log(`[AI timing] ${label}: ${Date.now() - since}ms  (total: ${Date.now() - t0}ms)`);
 
+  let t = Date.now();
   await ensureChat(chatId, userId);
+  lap('ensureChat', t);
 
+  t = Date.now();
   const history = await loadHistory(chatId);
+  lap(`loadHistory (${history.length} msgs)`, t);
+
+  t = Date.now();
   await appendMessage(chatId, 'user', userText);
+  lap('appendMessage user', t);
 
   // Mint a short-lived JWT for this request — not stored anywhere after use.
+  t = Date.now();
   const mcpAccessToken = await mintMcpAccessTokenForUser(userId, username);
+  lap('mintMcpAccessToken', t);
 
   const messages: ChatMessageParam[] = [
     ...history.map((m) => ({ role: m.role, content: m.content }) as ChatMessageParam),
@@ -108,14 +120,30 @@ export async function* streamChatTurn(
   };
 
   let fullAnswer = '';
+  let chunkCount = 0;
+  let ttfb: number | null = null;
+  t = Date.now();
+
   for await (const chunk of streamChatCompletion(messages, metadata)) {
+    if (ttfb === null) {
+      ttfb = Date.now() - t;
+      console.log(`[AI timing] streamChatCompletion TTFB: ${ttfb}ms  (total: ${Date.now() - t0}ms)`);
+    }
+    chunkCount++;
     fullAnswer += chunk;
     yield chunk;
   }
 
+  const streamMs = Date.now() - t;
+  console.log(`[AI timing] streamChatCompletion full stream: ${streamMs}ms  chunks: ${chunkCount}  chars: ${fullAnswer.length}  (total: ${Date.now() - t0}ms)`);
+
   if (fullAnswer) {
+    t = Date.now();
     await appendMessage(chatId, 'assistant', fullAnswer);
+    lap('appendMessage assistant', t);
   }
+
+  lap('>>> streamChatTurn TOTAL');
 }
 
 /**

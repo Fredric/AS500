@@ -33,6 +33,10 @@ services:
       # >=32 chars. If unset, every restart invalidates every agent's token.
       AS500_MCP_JWT_SECRET: ${AS500_MCP_JWT_SECRET}
       MCP_PUBLIC_URL: ${MCP_PUBLIC_URL}
+      # AI agent integration (optional — chat panel silently errors if unset)
+      AI_AGENT_BASE_URL: ${AI_AGENT_BASE_URL}
+      AI_AGENT_API_KEY: ${AI_AGENT_API_KEY}
+      AI_AGENT_MODEL: ${AI_AGENT_MODEL:-as500-agent}
     restart: unless-stopped
 
 volumes:
