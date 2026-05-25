@@ -77,6 +77,15 @@ export const motorcyclesConfig: CRUDTableConfig = {
         notes: toStringOrNull(ctx.values.notes),
       }),
     },
+    read: {
+      service: motorcycleService as unknown as Record<string, Function>,
+      method: 'readMotorcycle',
+      params: (ctx) => ({
+        id: ctx.input.id as number,
+        userId: ctx.input.userId as number,
+      }),
+    },
+
     delete: {
       service: motorcycleService as unknown as Record<string, Function>,
       method: 'deleteMotorcycle',
@@ -232,6 +241,75 @@ export const motorcyclesConfig: CRUDTableConfig = {
   getInitialValues: () => ({
     year: String(currentYear),
   }),
+
+  // ============================================
+  // MCP (Model Context Protocol) exposure
+  // ============================================
+  //
+  // Exposes five tools to authorized remote agents:
+  //   motorcycles.list   motorcycles.read
+  //   motorcycles.create motorcycles.update motorcycles.delete
+  //
+  // `userId` is injected from the OAuth token — agents always operate
+  // on the authenticated user's own garage and cannot access other users' bikes.
+
+  mcp: {
+    name: 'motorcycles',
+    description:
+      'User-owned motorcycle garage. Each record represents one motorcycle ' +
+      'with brand, model, year, nickname, odometer, engine displacement, color, ' +
+      'purchase/sell dates, cost, and notes. Only the authenticated user\'s own bikes ' +
+      'are accessible.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description:
+          'Automatically injected from the OAuth token — not a tool input. ' +
+          'Always resolves to the authenticated user\'s own id.',
+        injectFromAuth: 'userId' as const,
+      },
+    ],
+  },
+
+  // ============================================
+  // REST API exposure
+  // ============================================
+  //
+  // GET|POST /api/motorcycles
+  // GET|PUT|DELETE /api/motorcycles/:id
+  //
+  // `userId` is injected from the Bearer token; no scope params need to be
+  // passed by the caller.
+
+  api: {
+    name: 'motorcycles',
+    description: 'User-owned motorcycle garage for the authenticated user.',
+    operations: {
+      list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description: 'Injected from the Bearer token — never a request param.',
+        injectFromAuth: 'userId' as const,
+      },
+    ],
+  },
 
   // Garage summary header: bike counts + total spent
   listHeader: (ctx) => {

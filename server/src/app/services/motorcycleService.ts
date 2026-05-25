@@ -27,6 +27,31 @@ export interface UpdateParams extends CreateParams {
   id: number;
 }
 
+export async function readMotorcycle(params: { id: number; userId: number }): Promise<Record<string, unknown> | null> {
+  const [r] = await db
+    .select()
+    .from(motorcycles)
+    .where(and(eq(motorcycles.id, params.id), eq(motorcycles.user_id, params.userId)));
+
+  if (!r) return null;
+  return {
+    id: r.id,
+    user_id: r.user_id,
+    brand: r.brand,
+    model: r.model,
+    year: r.year,
+    purchase_date: r.purchase_date ?? '',
+    sell_date: r.sell_date ?? '',
+    cost: r.cost ?? '',
+    nickname: r.nickname ?? '',
+    odometer_km: r.odometer_km ?? '',
+    engine_cc: r.engine_cc ?? '',
+    color: r.color ?? '',
+    notes: r.notes ?? '',
+    status: r.sell_date ? 'Sold' : 'Owned',
+  };
+}
+
 export async function listMotorcycles(params: ListParams): Promise<Record<string, unknown>[]> {
   const rows = await db
     .select()
