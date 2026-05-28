@@ -60,6 +60,103 @@ EMBEDDING_DIM=768
 
 ---
 
+## Local Development Workflow
+
+This covers ingesting a new manual and testing it when AS500 is running locally via `docker compose up`.
+
+### Prerequisites
+
+| Tool | Details |
+|---|---|
+| Python 3.12 | `C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe` |
+| as500-docs postgres | Separate Docker container on port **5434** |
+| Ollama | Running on `localhost:11434` with `nomic-embed-text` pulled |
+| AS500 | Running via `docker compose up` in `C:\Users\fredr\code\AS500` |
+
+### 1 — Start as500-docs services
+
+```powershell
+cd C:\Users\fredr\code\as500-docs
+
+# Start the docs-specific postgres (port 5434 — does NOT conflict with AS500's port 5433)
+docker compose up -d postgres
+
+# Start the docs API (custom runner needed on Windows for psycopg3 compatibility)
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe run_api.py
+```
+
+The API starts on `http://localhost:8080`. Leave this terminal open.
+
+### 2 — Verify AS500 picks it up
+
+Open a browser at `http://localhost:5173` (the AS500 UI) and ask any question in the AI chat.
+
+Check the as500-docs terminal for a line like:
+```
+INFO: POST /search HTTP/1.1 200 OK
+```
+
+If you see it, AS500 is successfully calling the docs API via `http://host.docker.internal:8080`.
+
+> The `DOCS_API_URL=http://host.docker.internal:8080` is already set in `server/.env.local`. AS500 Docker containers use `host.docker.internal` to reach services running on the Windows host.
+
+### 3 — Set env vars for the CLI
+
+Open a separate PowerShell for ingestion work:
+
+```powershell
+$env:DATABASE_URL="postgresql+psycopg://as500_docs:as500_docs@localhost:5434/as500_docs"
+$env:STORAGE_ROOT="C:\Users\fredr\code\as500-docs\storage"
+$env:EMBEDDING_BACKEND="ollama"
+$env:EMBEDDING_MODEL="nomic-embed-text"
+$env:EMBEDDING_DIM="768"
+$env:OLLAMA_BASE_URL="http://localhost:11434"
+$env:USE_VLM="false"
+```
+
+### 4 — Ingest a manual
+
+```powershell
+cd C:\Users\fredr\code\as500-docs
+
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest `
+  "path\to\manual.pdf" `
+  --manufacturer "CFMOTO" --model "450 MT" --year 2024 `
+  --title "CFMOTO 450 MT Service Manual 2024"
+```
+
+Note the `manual_id` printed at the end — you need it for translation.
+
+### 5 — For non-English manuals: translate + re-embed
+
+```powershell
+# Translate content, headings, section paths to English
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli translate-manual `
+  <manual_id> --to English --model "gemma4:31b-it-q4_K_M"
+
+# Re-embed so English queries find the content
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli reembed-manual `
+  <manual_id>
+```
+
+### 6 — Test in the CLI
+
+```powershell
+# Quick search
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli search "engine oil change"
+
+# Full RAG answer
+$env:RAG_MODEL="gemma4:31b-it-q4_K_M"
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ask `
+  "What is the engine oil capacity?" --sources
+```
+
+### 7 — Test in AS500
+
+Ask a manual-related question in the AS500 AI chat. The docs API terminal should show `POST /search 200 OK` and the answer will include manual context.
+
+---
+
 ## Adding a New Manual
 
 Manuals are ingested locally (where you have GPU and Ollama), then the resulting database rows and image files are pushed to production using the export script.
