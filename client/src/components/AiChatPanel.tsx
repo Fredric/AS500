@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import type { UseAiChatReturn } from '../hooks/useAiChat';
+import MarkdownMessage from './MarkdownMessage';
 import '../styles/ai-chat.css';
 
 interface AiChatPanelProps {
@@ -74,8 +75,10 @@ export default function AiChatPanel({ chat, authenticated }: AiChatPanelProps) {
               {msg.role === 'user' ? 'YOU' : 'AI '}
             </span>
             <span className="ai-chat-msg-content">
-              {msg.content}
-              {msg.streaming && <span className="ai-chat-cursor">&#x258C;</span>}
+              {msg.role === 'assistant'
+                ? <MarkdownMessage content={msg.content} streaming={msg.streaming} />
+                : <>{msg.content}{msg.streaming && <span className="ai-chat-cursor">&#x258C;</span>}</>
+              }
             </span>
           </div>
         ))}
