@@ -33,7 +33,7 @@ interface DocsSearchResponse {
 const DOCS_API_URL = process.env.DOCS_API_URL?.replace(/\/$/, '') ?? '';
 const DOCS_MIN_SCORE = parseFloat(process.env.DOCS_MIN_SCORE ?? '0.25');
 const DOCS_TOP_K = 10;
-const DOCS_TIMEOUT_MS = 15_000;
+const DOCS_TIMEOUT_MS = 45_000;
 
 /**
  * Query the as500-docs /search endpoint and return a formatted system-message
