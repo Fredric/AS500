@@ -318,3 +318,103 @@
   font-style: italic;
   color: #aaffaa;
 }
+
+/* ── Manual source panel ─────────────────────────────────────────────────── */
+
+.src-panel {
+  margin-top: 0.6em;
+  border-top: 1px solid #1a3a1a;
+  padding-top: 0.3em;
+}
+
+.src-panel-toggle {
+  background: none;
+  border: none;
+  color: #1a8c1a;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+.src-panel-toggle:hover { color: #33ff33; }
+.src-panel-toggle--open { color: #33ff33; }
+
+.src-panel-arrow {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.src-panel-body {
+  margin-top: 0.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+
+.src-panel-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.src-panel-citation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+  align-items: baseline;
+  font-size: 10px;
+}
+
+.src-panel-manual {
+  color: #00ff00;
+  font-weight: bold;
+}
+.src-panel-page {
+  color: #1a8c1a;
+}
+.src-panel-section {
+  color: #1a8c1a;
+  opacity: 0.8;
+  font-style: italic;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.src-panel-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+
+.src-panel-img-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  max-width: 100%;
+}
+
+.src-panel-img {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  border: 1px solid #1a3a1a;
+  border-radius: 2px;
+  background: #060f06;
+  display: block;
+}
+
+.src-panel-img-caption {
+  font-size: 10px;
+  color: #1a8c1a;
+  font-style: italic;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -141,12 +141,45 @@ async function startServer() {
   // Register core system configs
   bootstrapCore();
 
+  const DOCS_API_URL_INTERNAL = process.env.DOCS_API_URL?.replace(/\/$/, '') ?? '';
+
   // Create HTTP server for static file serving in production
-  const httpServer = createServer((req, res) => {
+  const httpServer = createServer(async (req, res) => {
+    const url = req.url || '/';
+
+    // Proxy manual page images from as500-docs.
+    // Route: GET /docs-images/:imageId  →  docs:8080/images/:imageId
+    const imageMatch = url.match(/^\/docs-images\/([^/?#]+)/);
+    if (imageMatch && req.method === 'GET') {
+      if (!DOCS_API_URL_INTERNAL) {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('DOCS_API_URL not configured');
+        return;
+      }
+      try {
+        const proxyRes = await fetch(`${DOCS_API_URL_INTERNAL}/images/${imageMatch[1]}`);
+        if (!proxyRes.ok) {
+          res.writeHead(proxyRes.status);
+          res.end();
+          return;
+        }
+        const buf = await proxyRes.arrayBuffer();
+        const ct = proxyRes.headers.get('content-type') ?? 'image/png';
+        res.writeHead(200, {
+          'Content-Type': ct,
+          'Cache-Control': 'public, max-age=3600',
+        });
+        res.end(Buffer.from(buf));
+      } catch {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('Docs service unreachable');
+      }
+      return;
+    }
+
     if (IS_PRODUCTION) {
       serveStatic(req, res);
     } else {
-      // In development, just return a simple message (Vite serves the client)
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('AS500 WebSocket Server - Use Vite dev server for client');
     }
@@ -402,12 +435,16 @@ async function startServer() {
             return;
           }
 
-          // Stream chunks back to browser
+          // Stream events back to browser (sources first, then delta chunks)
           try {
             let fullAnswer = '';
-            for await (const chunk of streamChatTurn(session, chatId, userText)) {
-              ws.send(JSON.stringify({ type: 'AI_CHAT_DELTA', delta: chunk, chatId, sessionId: session.id }));
-              fullAnswer += chunk;
+            for await (const event of streamChatTurn(session, chatId, userText)) {
+              if (event.type === 'sources') {
+                ws.send(JSON.stringify({ type: 'AI_CHAT_SOURCES', sources: event.sources, chatId, sessionId: session.id }));
+              } else {
+                ws.send(JSON.stringify({ type: 'AI_CHAT_DELTA', delta: event.delta, chatId, sessionId: session.id }));
+                fullAnswer += event.delta;
+              }
             }
             ws.send(JSON.stringify({ type: 'AI_CHAT_DONE', chatId, sessionId: session.id }));
           } catch (err) {

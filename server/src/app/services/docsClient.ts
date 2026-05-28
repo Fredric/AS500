@@ -1,17 +1,58 @@
 // as500-docs RAG client.
 //
-// Fetches relevant manual context for a user question and returns
-// pre-formatted system-message text ready to be injected before the
-// agent call. Returns null when the docs service is unavailable, not
-// configured, or no relevant content is found.
+// Fetches relevant manual context for a user question and returns both:
+//   - A pre-formatted system-message string for the AI agent.
+//   - Structured source references (page images + citations) for the UI.
 //
 // Configuration (server/.env.local):
 //   DOCS_API_URL=http://host.docker.internal:8080
 //   DOCS_MIN_SCORE=0.25   (optional — chunks below this score are ignored)
 
+export interface DocsImageRef {
+  image_id: string;
+  page_number: number | null;
+  caption: string | null;
+}
+
+export interface DocsSource {
+  manual_title: string;
+  manufacturer: string;
+  model: string;
+  year: number | null;
+  page_start: number | null;
+  page_end: number | null;
+  section: string | null;
+  images: DocsImageRef[];
+}
+
+export interface DocsContextResult {
+  /** Formatted text ready to inject as a system message; null if no relevant results. */
+  context: string | null;
+  /** Structured sources with image refs for the chat UI. */
+  sources: DocsSource[];
+}
+
+interface DocsImageRefRaw {
+  image_id: string;
+  page_number: number | null;
+  caption: string | null;
+}
+
 interface DocsSearchResult {
   score: number;
   page_start: number | null;
+  page_end: number | null;
+  section_path: string[] | null;
+  heading: string | null;
+  image_refs: DocsImageRefRaw[];
+  citation: {
+    manual_title: string;
+    manufacturer: string;
+    model: string;
+    year: number | null;
+    page_start: number | null;
+    page_end: number | null;
+  };
 }
 
 interface DocsCitation {
@@ -36,16 +77,17 @@ const DOCS_TOP_K = 10;
 const DOCS_TIMEOUT_MS = 45_000;
 
 /**
- * Query the as500-docs /search endpoint and return a formatted system-message
- * string with the most relevant manual excerpts.
+ * Query the as500-docs /search endpoint and return both a formatted context
+ * string and structured source references for the chat UI.
  *
- * Returns null if:
+ * Returns `{context: null, sources: []}` if:
  *   - DOCS_API_URL is not configured
  *   - The docs service is unreachable
  *   - No chunks meet the minimum relevance score
  */
-export async function fetchDocsContext(question: string): Promise<string | null> {
-  if (!DOCS_API_URL) return null;
+export async function fetchDocsContext(question: string): Promise<DocsContextResult> {
+  const empty: DocsContextResult = { context: null, sources: [] };
+  if (!DOCS_API_URL) return empty;
 
   let data: DocsSearchResponse;
 
@@ -59,44 +101,79 @@ export async function fetchDocsContext(question: string): Promise<string | null>
 
     if (!res.ok) {
       console.warn(`[docs] search returned ${res.status} — skipping context injection`);
-      return null;
+      return empty;
     }
 
     data = (await res.json()) as DocsSearchResponse;
   } catch (err) {
-    // Service is down or unreachable — fail silently so chat still works.
     console.warn('[docs] service unreachable:', (err as Error).message);
-    return null;
+    return empty;
   }
 
-  // Filter blocks that have a strong enough match.
   const topScore = data.results[0]?.score ?? 0;
   const relevant = data.results.filter((r) => r.score >= DOCS_MIN_SCORE);
   console.log(
     `[docs] query="${question.slice(0, 60)}" total=${data.total} topScore=${topScore.toFixed(3)} relevant=${relevant.length} threshold=${DOCS_MIN_SCORE}`,
   );
-  if (relevant.length === 0 || data.answer_context_blocks.length === 0) return null;
 
-  // Take at most the top-k pre-formatted blocks.
+  if (relevant.length === 0 || data.answer_context_blocks.length === 0) return empty;
+
+  // ── Context text (for system message) ──────────────────────────────────────
   const blocks = data.answer_context_blocks
     .slice(0, relevant.length)
     .join('\n\n---\n\n');
 
-  // Build a compact citation line, e.g. "CFMOTO 450 MT Service Manual 2024 p.34"
   const citationLine = data.citations
     .slice(0, relevant.length)
     .map((c) => {
       const page = c.page_start != null ? ` p.${c.page_start}` : '';
       return `${c.manual_title}${page}`;
     })
-    .filter((v, i, a) => a.indexOf(v) === i) // deduplicate
+    .filter((v, i, a) => a.indexOf(v) === i)
     .join('; ');
 
-  return [
-    'Relevant excerpts from the workshop manual:',
+  const context = [
+    'Relevant sections from the workshop manual:',
     '',
     blocks,
     '',
     `Source: ${citationLine}`,
   ].join('\n');
+
+  // ── Structured sources (for the chat UI image panel) ───────────────────────
+  // Deduplicate by manual+page range, collect all images for that page range.
+  const sourceMap = new Map<string, DocsSource>();
+  for (const r of relevant) {
+    const key = `${r.citation.manual_title}::${r.citation.page_start ?? ''}::${r.citation.page_end ?? ''}`;
+    if (!sourceMap.has(key)) {
+      const section = r.section_path?.length
+        ? r.section_path.join(' › ')
+        : (r.heading ?? null);
+      sourceMap.set(key, {
+        manual_title: r.citation.manual_title,
+        manufacturer: r.citation.manufacturer,
+        model: r.citation.model,
+        year: r.citation.year,
+        page_start: r.citation.page_start,
+        page_end: r.citation.page_end,
+        section,
+        images: [],
+      });
+    }
+    // Append any images from this chunk that aren't already listed
+    const src = sourceMap.get(key)!;
+    for (const img of (r.image_refs ?? [])) {
+      if (!src.images.find((i) => i.image_id === img.image_id)) {
+        src.images.push({
+          image_id: img.image_id,
+          page_number: img.page_number,
+          caption: img.caption,
+        });
+      }
+    }
+  }
+
+  const sources = Array.from(sourceMap.values());
+
+  return { context, sources };
 }

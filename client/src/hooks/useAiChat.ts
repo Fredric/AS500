@@ -48,7 +48,18 @@ export function useAiChat({
   // Register/unregister the AI_CHAT_* event handler with useTerminal
   useEffect(() => {
     const handler = (event: AiChatEvent) => {
-      if (event.type === 'AI_CHAT_DELTA') {
+      if (event.type === 'AI_CHAT_SOURCES') {
+        // Attach sources to the current (pending) assistant message, or stash them
+        // to be picked up when the first delta arrives.
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role === 'assistant' && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, sources: event.sources }];
+          }
+          // No streaming message yet — attach to a placeholder that deltas will fill
+          return [...prev, { role: 'assistant', content: '', streaming: true, sources: event.sources }];
+        });
+      } else if (event.type === 'AI_CHAT_DELTA') {
         setMessages(prev => {
           const last = prev[prev.length - 1];
           if (last?.role === 'assistant' && last.streaming) {
