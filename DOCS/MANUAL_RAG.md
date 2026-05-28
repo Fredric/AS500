@@ -100,21 +100,10 @@ If you see it, AS500 is successfully calling the docs API via `http://host.docke
 
 > The `DOCS_API_URL=http://host.docker.internal:8080` is already set in `server/.env.local`. AS500 Docker containers use `host.docker.internal` to reach services running on the Windows host.
 
-### 3 — Set env vars for the CLI
+### 3 — Ingest a manual
 
-Open a separate PowerShell for ingestion work:
-
-```powershell
-$env:DATABASE_URL="postgresql+psycopg://as500_docs:as500_docs@localhost:5434/as500_docs"
-$env:STORAGE_ROOT="C:\Users\fredr\code\as500-docs\storage"
-$env:EMBEDDING_BACKEND="ollama"
-$env:EMBEDDING_MODEL="nomic-embed-text"
-$env:EMBEDDING_DIM="768"
-$env:OLLAMA_BASE_URL="http://localhost:11434"
-$env:USE_VLM="false"
-```
-
-### 4 — Ingest a manual
+No env vars needed — the CLI reads `.env` automatically when run from the `as500-docs` directory.
+That file already sets `USE_VLM=false` (standard RapidOCR pipeline, no GPU required).
 
 ```powershell
 cd C:\Users\fredr\code\as500-docs
@@ -130,6 +119,10 @@ Title [CFMOTO 450 MT Service Manual 2024]:
 ```
 
 Press Enter to accept the suggested title, or type your own.
+
+> **Important:** Always run from `C:\Users\fredr\code\as500-docs` so `.env` is found.
+> The code default is `USE_VLM=true` — without `.env`, it will try to call vLLM and fail.
+> To use the VLM pipeline (higher quality, requires GPU): start vLLM first, then set `$env:USE_VLM="true"`.
 
 Note the `manual_id` printed at the end — you need it for translation.
 
@@ -179,15 +172,7 @@ Manuals are ingested locally (where you have GPU and Ollama), then the resulting
 ```powershell
 cd C:\Users\fredr\code\as500-docs
 
-# Set env (standard pipeline — works for all languages, no GPU needed)
-$env:DATABASE_URL="postgresql+psycopg://as500_docs:as500_docs@localhost:5434/as500_docs"
-$env:STORAGE_ROOT="storage"
-$env:EMBEDDING_BACKEND="ollama"
-$env:EMBEDDING_MODEL="nomic-embed-text"
-$env:EMBEDDING_DIM="768"
-$env:OLLAMA_BASE_URL="http://localhost:11434"
-$env:USE_VLM="false"
-
+# .env is read automatically — USE_VLM=false by default (standard RapidOCR, no GPU needed)
 C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest "path\to\manual.pdf"
 # The CLI prompts for manufacturer, model, year, and title interactively.
 ```
@@ -196,7 +181,6 @@ For the VLM pipeline (higher quality for Western-language PDFs, requires GPU):
 ```powershell
 # First start vLLM: C:\Users\fredr\code\vLLM-5090\run-d.bat
 $env:USE_VLM="true"
-$env:VLM_API_URL="http://localhost:8000/v1"
 C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest "path\to\manual.pdf"
 ```
 
