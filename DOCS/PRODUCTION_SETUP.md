@@ -15,7 +15,14 @@ Internet → Caddy (HTTPS :443) → Node.js app (:3001, WebSocket + static SPA)
                                   /authorize    — OAuth consent page
                                   /token        — OAuth token endpoint
                                   /.well-known  — OAuth discovery
+                              → as500-docs (:8080, internal only)
+                                  /search       — Hybrid vector + keyword RAG search
+                                  /ask          — Full RAG answer generation
+                                  /healthz      — Health check
                               → PostgreSQL (:5432, internal only)
+
+Dev machine (WireGuard VPN)
+  └── Ollama (:11434) ← as500-docs uses for embeddings (nomic-embed-text)
 ```
 
 All services run as Docker containers. Caddy runs on the host and terminates TLS.

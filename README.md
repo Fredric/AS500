@@ -18,6 +18,7 @@ WebSocket
 - **Remote MCP server** — every CRUDTable config can be opened up to AI agents as [Model Context Protocol](https://modelcontextprotocol.io) tools, gated by OAuth 2.1 + DCR and the same RBAC as the UI
 - **REST API** — same CRUDTable configs also served as a conventional REST API (`GET/POST/PUT/DELETE /api/:configId`) with first-party Bearer token login (`POST /api/auth/token`) and token rotation
 - **In-terminal AI chat** — overlay panel backed by a local Python AI agent; streams responses token-by-token over the existing WebSocket with per-request MCP token delegation so tool calls run under the real user's RBAC
+- **Workshop manual RAG** — ingested PDF manuals (e.g. CFMOTO 450 MT service manual) are searched via hybrid vector + keyword search and the most relevant excerpts are automatically injected into the AI chat context; see [DOCS/MANUAL_RAG.md](DOCS/MANUAL_RAG.md)
 - **Secure session management** — 30-day auto-login with 1-hour token rotation
 - **Role-based access control** — Roles (`user`, `superuser`, `aiagent`, `admin`), user groups, and named permission keys with per-operation CRUDTable enforcement
 - **Device tracking** — Multi-device session management with device fingerprinting
