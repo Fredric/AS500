@@ -118,12 +118,18 @@ $env:USE_VLM="false"
 
 ```powershell
 cd C:\Users\fredr\code\as500-docs
-
-C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest `
-  "path\to\manual.pdf" `
-  --manufacturer "CFMOTO" --model "450 MT" --year 2024 `
-  --title "CFMOTO 450 MT Service Manual 2024"
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest "path\to\manual.pdf"
 ```
+
+The CLI will prompt for the missing details:
+```
+Manufacturer (e.g. CFMOTO, Honda, Yamaha): CFMOTO
+Model (e.g. 450 MT, CB500F): 450 MT
+Year (e.g. 2024): 2024
+Title [CFMOTO 450 MT Service Manual 2024]:
+```
+
+Press Enter to accept the suggested title, or type your own.
 
 Note the `manual_id` printed at the end — you need it for translation.
 
@@ -173,29 +179,25 @@ Manuals are ingested locally (where you have GPU and Ollama), then the resulting
 ```powershell
 cd C:\Users\fredr\code\as500-docs
 
-# Set env
+# Set env (standard pipeline — works for all languages, no GPU needed)
 $env:DATABASE_URL="postgresql+psycopg://as500_docs:as500_docs@localhost:5434/as500_docs"
 $env:STORAGE_ROOT="storage"
 $env:EMBEDDING_BACKEND="ollama"
 $env:EMBEDDING_MODEL="nomic-embed-text"
 $env:EMBEDDING_DIM="768"
 $env:OLLAMA_BASE_URL="http://localhost:11434"
-
-# Standard pipeline (RapidOCR — works for all languages, no GPU needed)
 $env:USE_VLM="false"
-C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest `
-  "path\to\manual.pdf" `
-  --manufacturer "CFMOTO" --model "450 MT" --year 2024 `
-  --title "CFMOTO 450 MT Service Manual 2024"
 
-# VLM pipeline (granite-docling-258M via vLLM — higher quality for Western PDFs)
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest "path\to\manual.pdf"
+# The CLI prompts for manufacturer, model, year, and title interactively.
+```
+
+For the VLM pipeline (higher quality for Western-language PDFs, requires GPU):
+```powershell
 # First start vLLM: C:\Users\fredr\code\vLLM-5090\run-d.bat
 $env:USE_VLM="true"
 $env:VLM_API_URL="http://localhost:8000/v1"
-C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest `
-  "path\to\manual.pdf" `
-  --manufacturer "Brand" --model "Model" --year 2024 `
-  --title "Manual Title"
+C:\Users\fredr\AppData\Local\Programs\Python\Python312\python.exe -m as500_docs.cli ingest "path\to\manual.pdf"
 ```
 
 ### Step 2 — For non-English manuals: translate + re-embed
