@@ -20,6 +20,7 @@ import { mintMcpAccessTokenForUser } from '../mcp/mintSessionToken.js';
 import { streamChatCompletion, type ChatMessageParam } from './agentClient.js';
 import { getConfigByScreenId } from '../crudtable/registry.js';
 import { loadContext } from '../crudtable/context.js';
+import { fetchDocsContext } from '../../app/services/docsClient.js';
 
 export interface AiChatMessage {
   role: 'user' | 'assistant';
@@ -168,8 +169,15 @@ export async function* streamChatTurn(
   // This is rebuilt fresh on every turn and never stored in history.
   const screenContext = buildScreenContext(session);
 
+  // Fetch relevant workshop manual excerpts for the question. Runs in parallel
+  // with no await held — if the docs service is down the chat still works.
+  t = Date.now();
+  const docsContext = await fetchDocsContext(userText).catch(() => null);
+  lap('fetchDocsContext', t);
+
   const messages: ChatMessageParam[] = [
     ...(screenContext ? [{ role: 'system' as const, content: screenContext }] : []),
+    ...(docsContext   ? [{ role: 'system' as const, content: docsContext   }] : []),
     ...history.map((m) => ({ role: m.role, content: m.content }) as ChatMessageParam),
     { role: 'user' as const, content: userText },
   ];
@@ -215,3 +223,4 @@ export async function* streamChatTurn(
 export async function getChatHistory(chatId: string): Promise<AiChatMessage[]> {
   return loadHistory(chatId);
 }
+
