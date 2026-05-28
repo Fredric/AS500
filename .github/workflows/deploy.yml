@@ -19,7 +19,12 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # Pull latest as500-docs code
+            cd /var/www/as500-docs
+            git pull
+
+            # Pull latest AS500 code and rebuild app
             cd /var/www/AS500
             git pull
-            docker compose -f docker-compose.prod.yml build app
-            docker compose -f docker-compose.prod.yml up -d app
+            docker compose -f docker-compose.prod.yml build app docs
+            docker compose -f docker-compose.prod.yml up -d app docs
