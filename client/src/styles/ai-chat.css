@@ -343,78 +343,197 @@
 .src-panel-toggle:hover { color: #33ff33; }
 .src-panel-toggle--open { color: #33ff33; }
 
-.src-panel-arrow {
-  font-size: 10px;
-  line-height: 1;
-}
+.src-panel-arrow { font-size: 10px; line-height: 1; }
 
-.src-panel-body {
-  margin-top: 0.4em;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6em;
-}
-
-.src-panel-source {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25em;
-}
-
-.src-panel-citation {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4em;
-  align-items: baseline;
-  font-size: 10px;
-}
-
-.src-panel-manual {
-  color: #00ff00;
-  font-weight: bold;
-}
-.src-panel-page {
-  color: #1a8c1a;
-}
-.src-panel-section {
-  color: #1a8c1a;
-  opacity: 0.8;
-  font-style: italic;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.src-panel-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4em;
-}
-
-.src-panel-img-wrap {
+.src-panel-list {
+  list-style: none;
+  margin: 0.3em 0 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.15em;
+}
+
+.src-panel-item { display: flex; }
+
+.src-panel-link {
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 11px;
+  color: #1a8c1a;
+  cursor: pointer;
+  padding: 0.15em 0.3em;
+  border-radius: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+.src-panel-link:hover {
+  background: #0f2a0f;
+  color: #33ff33;
+}
+
+.src-panel-page-ref {
+  color: #00ff00;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.src-panel-section {
+  color: #1a8c1a;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+.src-panel-img-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #1a3a1a;
+  background: #0f2a0f;
+  border: 1px solid #1a3a1a;
+  border-radius: 2px;
+  padding: 0 0.3em;
+}
+
+/* ── Manual page modal ───────────────────────────────────────────────────── */
+
+.mpmodal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.mpmodal {
+  background: #0a0a0a;
+  border: 1px solid #33ff33;
+  border-radius: 4px;
+  box-shadow: 0 0 40px rgba(51, 255, 51, 0.15), 0 0 80px rgba(0, 0, 0, 0.9);
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  color: #33ff33;
+  width: min(900px, calc(100vw - 3rem));
+  height: min(85vh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mpmodal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: #0f2a0f;
+  border-bottom: 1px solid #33ff33;
+  flex-shrink: 0;
+}
+
+.mpmodal-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.mpmodal-manual {
+  color: #00ff00;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+.mpmodal-page {
+  color: #33ff33;
+  font-size: 11px;
+}
+.mpmodal-section {
+  color: #1a8c1a;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.mpmodal-close {
+  background: none;
+  border: none;
+  color: #33ff33;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 0.2rem;
+  flex-shrink: 0;
+}
+.mpmodal-close:hover { color: #00ff00; }
+
+.mpmodal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: #1a8c1a #0a0a0a;
+}
+.mpmodal-body::-webkit-scrollbar { width: 6px; }
+.mpmodal-body::-webkit-scrollbar-track { background: #0a0a0a; }
+.mpmodal-body::-webkit-scrollbar-thumb { background: #1a8c1a; border-radius: 3px; }
+
+.mpmodal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.mpmodal-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.mpmodal-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
   max-width: 100%;
 }
 
-.src-panel-img {
+.mpmodal-img {
   max-width: 100%;
-  max-height: 280px;
+  max-height: 420px;
   object-fit: contain;
   border: 1px solid #1a3a1a;
-  border-radius: 2px;
+  border-radius: 3px;
   background: #060f06;
   display: block;
 }
 
-.src-panel-img-caption {
-  font-size: 10px;
+.mpmodal-caption {
+  font-size: 11px;
   color: #1a8c1a;
   font-style: italic;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+
+.mpmodal-text {
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #33ff33;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.mpmodal-status {
+  font-size: 12px;
+  color: #1a8c1a;
+  padding: 0.5rem 0;
+}
+.mpmodal-error { color: #ff3333; }

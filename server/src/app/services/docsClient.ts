@@ -15,6 +15,7 @@ export interface DocsImageRef {
 }
 
 export interface DocsSource {
+  manual_id: string;
   manual_title: string;
   manufacturer: string;
   model: string;
@@ -46,6 +47,7 @@ interface DocsSearchResult {
   heading: string | null;
   image_refs: DocsImageRefRaw[];
   citation: {
+    manual_id: string;
     manual_title: string;
     manufacturer: string;
     model: string;
@@ -140,16 +142,30 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
     `Source: ${citationLine}`,
   ].join('\n');
 
-  // ── Structured sources (for the chat UI image panel) ───────────────────────
-  // Deduplicate by manual+page range, collect all images for that page range.
-  const sourceMap = new Map<string, DocsSource>();
+  // ── Structured sources (for the chat UI page-preview panel) ────────────────
+  // Only surface sources from the dominant manual (highest total relevance
+  // score). This prevents a less-relevant manual from polluting the source
+  // panel when the answer clearly comes from one specific manual.
+  const manualScore = new Map<string, number>();
   for (const r of relevant) {
-    const key = `${r.citation.manual_title}::${r.citation.page_start ?? ''}::${r.citation.page_end ?? ''}`;
+    const mid = r.citation.manual_id;
+    manualScore.set(mid, (manualScore.get(mid) ?? 0) + r.score);
+  }
+  const dominantManualId = [...manualScore.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const dominantResults = dominantManualId
+    ? relevant.filter((r) => r.citation.manual_id === dominantManualId)
+    : relevant;
+
+  // Deduplicate by page range, collecting all images for each page.
+  const sourceMap = new Map<string, DocsSource>();
+  for (const r of dominantResults) {
+    const key = `${r.citation.page_start ?? ''}::${r.citation.page_end ?? ''}`;
     if (!sourceMap.has(key)) {
       const section = r.section_path?.length
         ? r.section_path.join(' › ')
         : (r.heading ?? null);
       sourceMap.set(key, {
+        manual_id: r.citation.manual_id,
         manual_title: r.citation.manual_title,
         manufacturer: r.citation.manufacturer,
         model: r.citation.model,
@@ -160,7 +176,6 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
         images: [],
       });
     }
-    // Append any images from this chunk that aren't already listed
     const src = sourceMap.get(key)!;
     for (const img of (r.image_refs ?? [])) {
       if (!src.images.find((i) => i.image_id === img.image_id)) {

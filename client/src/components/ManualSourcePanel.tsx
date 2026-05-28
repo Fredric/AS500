@@ -1,72 +1,78 @@
 /**
- * Collapsible panel showing the workshop manual source pages that were used
- * to answer a question — images with citations.
+ * Collapsible list of source citations from the workshop manual.
+ * Each citation is a clickable link that opens a full ManualPageModal.
  */
 
 import { useState } from 'react';
 import type { DocsSource } from '../types/aiChat';
+import ManualPageModal from './ManualPageModal';
 
 interface Props {
   sources: DocsSource[];
 }
 
+interface ModalTarget {
+  source: DocsSource;
+  pageNumber: number;
+}
+
 export default function ManualSourcePanel({ sources }: Props) {
   const [open, setOpen] = useState(false);
+  const [modal, setModal] = useState<ModalTarget | null>(null);
 
-  // Only show if there are sources with images
-  const withImages = sources.filter((s) => s.images.length > 0);
-  const totalImages = withImages.reduce((n, s) => n + s.images.length, 0);
-  if (withImages.length === 0) return null;
+  if (sources.length === 0) return null;
 
-  const label = `${totalImages} SOURCE IMAGE${totalImages !== 1 ? 'S' : ''}`;
+  const totalPages = sources.length;
 
   return (
-    <div className="src-panel">
-      <button
-        className={`src-panel-toggle${open ? ' src-panel-toggle--open' : ''}`}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="src-panel-arrow">{open ? '▾' : '▸'}</span>
-        {label}
-      </button>
+    <>
+      <div className="src-panel">
+        <button
+          className={`src-panel-toggle${open ? ' src-panel-toggle--open' : ''}`}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <span className="src-panel-arrow">{open ? '▾' : '▸'}</span>
+          {totalPages} SOURCE PAGE{totalPages !== 1 ? 'S' : ''} — {sources[0]?.manual_title}
+        </button>
 
-      {open && (
-        <div className="src-panel-body">
-          {withImages.map((src, si) => (
-            <div key={si} className="src-panel-source">
-              <div className="src-panel-citation">
-                <span className="src-panel-manual">{src.manual_title}</span>
-                {(src.page_start != null) && (
-                  <span className="src-panel-page">
-                    {src.page_start === src.page_end
-                      ? `p.${src.page_start}`
-                      : `pp.${src.page_start}–${src.page_end}`}
-                  </span>
-                )}
-                {src.section && (
-                  <span className="src-panel-section">§ {src.section}</span>
-                )}
-              </div>
-              <div className="src-panel-images">
-                {src.images.map((img) => (
-                  <div key={img.image_id} className="src-panel-img-wrap">
-                    <img
-                      src={`/docs-images/${img.image_id}`}
-                      alt={img.caption ?? `Manual image p.${img.page_number ?? '?'}`}
-                      className="src-panel-img"
-                      loading="lazy"
-                    />
-                    {img.caption && (
-                      <div className="src-panel-img-caption">{img.caption}</div>
+        {open && (
+          <ul className="src-panel-list">
+            {sources.map((src, i) => {
+              const pageNum = src.page_start ?? 0;
+              const pageLabel =
+                src.page_start === src.page_end || src.page_end == null
+                  ? `p.${src.page_start}`
+                  : `pp.${src.page_start}–${src.page_end}`;
+
+              return (
+                <li key={i} className="src-panel-item">
+                  <button
+                    className="src-panel-link"
+                    onClick={() => setModal({ source: src, pageNumber: pageNum })}
+                  >
+                    <span className="src-panel-page-ref">{pageLabel}</span>
+                    {src.section && (
+                      <span className="src-panel-section">§ {src.section}</span>
                     )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+                    {src.images.length > 0 && (
+                      <span className="src-panel-img-badge">{src.images.length} img</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {modal && (
+        <ManualPageModal
+          source={modal.source}
+          pageNumber={modal.pageNumber}
+          onClose={() => setModal(null)}
+        />
       )}
-    </div>
+    </>
   );
 }

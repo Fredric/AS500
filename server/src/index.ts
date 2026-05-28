@@ -147,6 +147,32 @@ async function startServer() {
   const httpServer = createServer(async (req, res) => {
     const url = req.url || '/';
 
+    // Proxy manual page preview from as500-docs.
+    // Route: GET /docs-pages/:manualId/:pageNumber  →  docs:8080/pages/:manualId/:pageNumber
+    const pageMatch = url.match(/^\/docs-pages\/([^/?#]+)\/(\d+)/);
+    if (pageMatch && req.method === 'GET') {
+      if (!DOCS_API_URL_INTERNAL) {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('DOCS_API_URL not configured');
+        return;
+      }
+      try {
+        const proxyRes = await fetch(`${DOCS_API_URL_INTERNAL}/pages/${pageMatch[1]}/${pageMatch[2]}`);
+        if (!proxyRes.ok) {
+          res.writeHead(proxyRes.status);
+          res.end();
+          return;
+        }
+        const json = await proxyRes.json();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(json));
+      } catch {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('Docs service unreachable');
+      }
+      return;
+    }
+
     // Proxy manual page images from as500-docs.
     // Route: GET /docs-images/:imageId  →  docs:8080/images/:imageId
     const imageMatch = url.match(/^\/docs-images\/([^/?#]+)/);

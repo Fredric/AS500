@@ -5,6 +5,7 @@ export interface DocsImageRef {
 }
 
 export interface DocsSource {
+  manual_id: string;
   manual_title: string;
   manufacturer: string;
   model: string;
