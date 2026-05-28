@@ -183,7 +183,7 @@ async function startServer() {
         return;
       }
       try {
-        const proxyRes = await fetch(`${DOCS_API_URL_INTERNAL}/images/${imageMatch[1]}`);
+        const proxyRes = await fetch(`${DOCS_API_URL_INTERNAL}/image-file/${imageMatch[1]}`);
         if (!proxyRes.ok) {
           res.writeHead(proxyRes.status);
           res.end();

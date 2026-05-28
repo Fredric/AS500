@@ -1,9 +1,12 @@
 /**
- * Full-screen modal showing a synthetic preview of one manual page:
- * rendered markdown text + all extracted images from that page.
+ * Manual page preview modal.
+ * Displays extracted images and properly rendered markdown content.
+ * Styled as a clean, white technical document.
  */
 
 import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { DocsSource } from '../types/aiChat';
 
 interface PageData {
@@ -12,6 +15,7 @@ interface PageData {
   model: string;
   year: number | null;
   page_number: number;
+  translated_text: string | null;
   markdown: string | null;
   raw_text: string | null;
   images: { image_id: string; file_path: string | null; caption: string | null }[];
@@ -42,7 +46,6 @@ export default function ManualPageModal({ source, pageNumber, onClose }: Props) 
       .catch((e) => { setError(String(e)); setLoading(false); });
   }, [source.manual_id, pageNumber]);
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -50,61 +53,73 @@ export default function ManualPageModal({ source, pageNumber, onClose }: Props) 
   }, [onClose]);
 
   const pageLabel =
-    source.page_start === source.page_end
-      ? `p.${pageNumber}`
-      : `pp.${source.page_start}–${source.page_end}`;
+    source.page_start === source.page_end || source.page_end == null
+      ? `p. ${pageNumber}`
+      : `pp. ${source.page_start}–${source.page_end}`;
 
-  const text = page?.markdown || page?.raw_text || null;
+  const text = page?.translated_text || page?.markdown || page?.raw_text || null;
 
   return (
-    <div className="mpmodal-overlay" onClick={onClose}>
-      <div className="mpmodal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        {/* Header */}
-        <div className="mpmodal-header">
-          <div className="mpmodal-title">
-            <span className="mpmodal-manual">{source.manual_title}</span>
-            <span className="mpmodal-page">{pageLabel}</span>
+    <div className="mpm-overlay" onClick={onClose}>
+      <div className="mpm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+
+        {/* ── Header bar ──────────────────────────────────────────────────── */}
+        <div className="mpm-header">
+          <div className="mpm-header-meta">
+            <span className="mpm-header-title">{source.manual_title}</span>
+            <span className="mpm-header-divider">·</span>
+            <span className="mpm-header-page">{pageLabel}</span>
             {source.section && (
-              <span className="mpmodal-section">§ {source.section}</span>
+              <>
+                <span className="mpm-header-divider">·</span>
+                <span className="mpm-header-section">{source.section}</span>
+              </>
             )}
           </div>
-          <button className="mpmodal-close" onClick={onClose} aria-label="Close">✕</button>
+          <button className="mpm-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        {/* Body */}
-        <div className="mpmodal-body">
-          {loading && <div className="mpmodal-status">Loading page…</div>}
-          {error && <div className="mpmodal-status mpmodal-error">Error: {error}</div>}
+        {/* ── Document body ───────────────────────────────────────────────── */}
+        <div className="mpm-body">
+          {loading && <div className="mpm-state">Loading…</div>}
+          {error   && <div className="mpm-state mpm-state--error">Could not load page: {error}</div>}
 
           {page && (
-            <div className="mpmodal-content">
-              {/* Images at the top */}
+            <div className="mpm-doc">
+
+              {/* Images */}
               {page.images.length > 0 && (
-                <div className="mpmodal-images">
+                <div className="mpm-images">
                   {page.images.map((img) => (
-                    <figure key={img.image_id} className="mpmodal-figure">
+                    <figure key={img.image_id} className="mpm-figure">
                       <img
                         src={`/docs-images/${img.image_id}`}
-                        alt={img.caption ?? `Page ${pageNumber} image`}
-                        className="mpmodal-img"
+                        alt={img.caption || `Page ${pageNumber} illustration`}
+                        className="mpm-img"
                       />
                       {img.caption && (
-                        <figcaption className="mpmodal-caption">{img.caption}</figcaption>
+                        <figcaption className="mpm-caption">{img.caption}</figcaption>
                       )}
                     </figure>
                   ))}
                 </div>
               )}
 
-              {/* Page text */}
+              {/* Markdown content */}
               {text ? (
-                <pre className="mpmodal-text">{text}</pre>
+                <div className="mpm-markdown">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {text}
+                  </ReactMarkdown>
+                </div>
               ) : (
-                <div className="mpmodal-status">No text content extracted for this page.</div>
+                <div className="mpm-state">No text content available for this page.</div>
               )}
+
             </div>
           )}
         </div>
+
       </div>
     </div>
   );

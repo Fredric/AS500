@@ -7,6 +7,10 @@
 // Configuration (server/.env.local):
 //   DOCS_API_URL=http://host.docker.internal:8080
 //   DOCS_MIN_SCORE=0.25   (optional — chunks below this score are ignored)
+//
+// Manual detection: the query is matched against the list of available manuals.
+// If a specific motorcycle/model is mentioned, the search is scoped to ONLY
+// that manual — preventing cross-contamination between manuals.
 
 export interface DocsImageRef {
   image_id: string;
@@ -40,6 +44,7 @@ interface DocsImageRefRaw {
 }
 
 interface DocsSearchResult {
+  chunk_id: string;
   score: number;
   page_start: number | null;
   page_end: number | null;
@@ -47,6 +52,7 @@ interface DocsSearchResult {
   heading: string | null;
   image_refs: DocsImageRefRaw[];
   citation: {
+    chunk_id: string;
     manual_id: string;
     manual_title: string;
     manufacturer: string;
@@ -73,14 +79,90 @@ interface DocsSearchResponse {
   citations: DocsCitation[];
 }
 
+interface ManualListItem {
+  manual_id: string;
+  title: string;
+  manufacturer: string;
+  model: string;
+  year: number | null;
+  /** Lowercase keywords derived from manufacturer + model words. */
+  keywords: string[];
+}
+
 const DOCS_API_URL = process.env.DOCS_API_URL?.replace(/\/$/, '') ?? '';
 const DOCS_MIN_SCORE = parseFloat(process.env.DOCS_MIN_SCORE ?? '0.25');
-const DOCS_TOP_K = 10;
+const DOCS_TOP_K = 4;  // After reranking, 4 tight results are enough — all of them contributed
 const DOCS_TIMEOUT_MS = 45_000;
+
+// ── Manual list cache ─────────────────────────────────────────────────────────
+// Loaded once on first request and reused thereafter.
+
+let _manualsCache: ManualListItem[] | null = null;
+let _manualsCacheAt = 0;
+const MANUALS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+
+async function getManuals(): Promise<ManualListItem[]> {
+  const now = Date.now();
+  if (_manualsCache && now - _manualsCacheAt < MANUALS_CACHE_TTL_MS) return _manualsCache;
+
+  try {
+    const res = await fetch(`${DOCS_API_URL}/manuals`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return _manualsCache ?? [];
+    const data = (await res.json()) as { manuals: { manual_id: string; title: string; manufacturer: string; model: string; year: number | null }[] };
+
+    _manualsCache = data.manuals.map((m) => ({
+      ...m,
+      keywords: buildKeywords(m.manufacturer, m.model, m.title),
+    }));
+    _manualsCacheAt = now;
+    return _manualsCache;
+  } catch {
+    return _manualsCache ?? [];
+  }
+}
+
+const STOP_WORDS = new Set(['the', 'a', 'an', 'of', 'for', 'and', 'or', 'in', 'on', 'at', 'to', 'de', 'service', 'manual', 'workshop']);
+
+function buildKeywords(manufacturer: string, model: string, title: string): string[] {
+  const raw = `${manufacturer} ${model} ${title}`.toLowerCase();
+  return [...new Set(
+    raw.split(/[\s\-_/]+/).filter((w) => w.length >= 3 && !STOP_WORDS.has(w))
+  )];
+}
+
+/**
+ * Detect which manual the query is about by matching keywords.
+ * Returns the manual_id if exactly one manual matches strongly enough,
+ * otherwise returns null (search all manuals).
+ */
+function detectManualId(query: string, manuals: ManualListItem[]): string | null {
+  if (manuals.length === 0) return null;
+  const q = query.toLowerCase();
+
+  const scored = manuals.map((m) => {
+    const hits = m.keywords.filter((kw) => q.includes(kw));
+    return { manual_id: m.manual_id, title: m.title, hits: hits.length };
+  });
+
+  const best = scored.sort((a, b) => b.hits - a.hits)[0];
+  if (!best || best.hits === 0) return null;
+
+  // Only filter if one manual clearly leads (or is the only one with hits)
+  const tied = scored.filter((s) => s.hits === best.hits);
+  if (tied.length > 1) return null; // ambiguous
+
+  console.log(`[docs] detected manual="${best.title}" (${best.hits} keyword hits)`);
+  return best.manual_id;
+}
 
 /**
  * Query the as500-docs /search endpoint and return both a formatted context
  * string and structured source references for the chat UI.
+ *
+ * The search is automatically scoped to the most relevant manual based on
+ * keywords in the query. Results never mix content from multiple manuals.
  *
  * Returns `{context: null, sources: []}` if:
  *   - DOCS_API_URL is not configured
@@ -91,22 +173,49 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
   const empty: DocsContextResult = { context: null, sources: [] };
   if (!DOCS_API_URL) return empty;
 
+  // Detect which manual to scope the search to
+  const manuals = await getManuals();
+  const manualId = detectManualId(question, manuals);
+
+  // If no manual was detected, skip docs lookup entirely — it's a general chat question
+  if (!manualId) return empty;
+
   let data: DocsSearchResponse;
+  let citationChunkIds: Set<string> | null = null;
 
   try {
-    const res = await fetch(`${DOCS_API_URL}/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: question, top_k: DOCS_TOP_K, rerank: true }),
-      signal: AbortSignal.timeout(DOCS_TIMEOUT_MS),
-    });
+    const searchBody: Record<string, unknown> = { query: question, top_k: DOCS_TOP_K, rerank: true, manual_id: manualId };
+    const citationsBody: Record<string, unknown> = { question, top_k: DOCS_TOP_K, manual_id: manualId, citations_only: true };
 
-    if (!res.ok) {
-      console.warn(`[docs] search returned ${res.status} — skipping context injection`);
+    // Run context search and reranked citation lookup in parallel
+    const [searchRes, citationsRes] = await Promise.all([
+      fetch(`${DOCS_API_URL}/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(searchBody),
+        signal: AbortSignal.timeout(DOCS_TIMEOUT_MS),
+      }),
+      fetch(`${DOCS_API_URL}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(citationsBody),
+        signal: AbortSignal.timeout(DOCS_TIMEOUT_MS),
+      }),
+    ]);
+
+    if (!searchRes.ok) {
+      console.warn(`[docs] search returned ${searchRes.status} — skipping context injection`);
       return empty;
     }
 
-    data = (await res.json()) as DocsSearchResponse;
+    data = (await searchRes.json()) as DocsSearchResponse;
+
+    // Extract chunk_ids from /ask citations to filter the sources panel
+    if (citationsRes.ok) {
+      const citationsData = (await citationsRes.json()) as { citations: { chunk_id: string }[] };
+      citationChunkIds = new Set(citationsData.citations.map((c) => c.chunk_id));
+      console.log(`[docs] citations_only returned ${citationChunkIds.size} chunks`);
+    }
   } catch (err) {
     console.warn('[docs] service unreachable:', (err as Error).message);
     return empty;
@@ -115,10 +224,8 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
   const topScore = data.results[0]?.score ?? 0;
   const relevant = data.results.filter((r) => r.score >= DOCS_MIN_SCORE);
   console.log(
-    `[docs] query="${question.slice(0, 60)}" total=${data.total} topScore=${topScore.toFixed(3)} relevant=${relevant.length} threshold=${DOCS_MIN_SCORE}`,
+    `[docs] query="${question.slice(0, 60)}" manual=${manualId ?? 'all'} total=${data.total} topScore=${topScore.toFixed(3)} relevant=${relevant.length}`,
   );
-
-  if (relevant.length === 0 || data.answer_context_blocks.length === 0) return empty;
 
   // ── Context text (for system message) ──────────────────────────────────────
   const blocks = data.answer_context_blocks
@@ -135,7 +242,10 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
     .join('; ');
 
   const context = [
-    'Relevant sections from the workshop manual:',
+    'WORKSHOP MANUAL CONTEXT — answer ONLY from the sections below.',
+    'If the specific value or procedure is not present in these sections, say:',
+    '"I could not find that in the retrieved manual pages — please check the full manual."',
+    'Do NOT use general knowledge or training data to fill in missing values.',
     '',
     blocks,
     '',
@@ -143,23 +253,15 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
   ].join('\n');
 
   // ── Structured sources (for the chat UI page-preview panel) ────────────────
-  // Only surface sources from the dominant manual (highest total relevance
-  // score). This prevents a less-relevant manual from polluting the source
-  // panel when the answer clearly comes from one specific manual.
-  const manualScore = new Map<string, number>();
-  for (const r of relevant) {
-    const mid = r.citation.manual_id;
-    manualScore.set(mid, (manualScore.get(mid) ?? 0) + r.score);
-  }
-  const dominantManualId = [...manualScore.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const dominantResults = dominantManualId
-    ? relevant.filter((r) => r.citation.manual_id === dominantManualId)
+  // If /ask citations_only returned chunk_ids, restrict sources to only those
+  // chunks (the reranker's top picks). Otherwise fall back to all relevant results.
+  const sourceResults = citationChunkIds
+    ? relevant.filter((r) => citationChunkIds!.has(r.chunk_id))
     : relevant;
 
-  // Deduplicate by page range, collecting all images for each page.
   const sourceMap = new Map<string, DocsSource>();
-  for (const r of dominantResults) {
-    const key = `${r.citation.page_start ?? ''}::${r.citation.page_end ?? ''}`;
+  for (const r of sourceResults) {
+    const key = `${r.citation.manual_id}::${r.citation.page_start ?? ''}::${r.citation.page_end ?? ''}`;
     if (!sourceMap.has(key)) {
       const section = r.section_path?.length
         ? r.section_path.join(' › ')
