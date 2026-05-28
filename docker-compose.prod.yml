@@ -37,6 +37,46 @@ services:
       AI_AGENT_BASE_URL: ${AI_AGENT_BASE_URL}
       AI_AGENT_API_KEY: ${AI_AGENT_API_KEY}
       AI_AGENT_MODEL: ${AI_AGENT_MODEL:-as500-agent}
+      # as500-docs RAG service
+      DOCS_API_URL: ${DOCS_API_URL}
+      DOCS_MIN_SCORE: ${DOCS_MIN_SCORE:-0.25}
+    restart: unless-stopped
+
+  docs:
+    build:
+      context: /var/www/as500-docs
+      network: host
+    # Not exposed externally — only reachable within the compose network as "docs:8080"
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Uses the shared postgres container — asyncpg driver for async SQLAlchemy
+      DATABASE_URL: ${DOCS_DATABASE_URL}
+      STORAGE_ROOT: /app/storage
+      # Embeddings via Ollama on the dev machine over WireGuard VPN
+      EMBEDDING_BACKEND: ollama
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-768}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      # Ingestion disabled in production (happens locally, data is pushed)
+      USE_VLM: "false"
+      TRANSLATE_TO: ""
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Bind-mount the shared storage so images ingested locally are available
+      - /var/www/AS500/storage:/app/storage
+    # Run alembic migrations then start the API server
+    command: >
+      sh -c "alembic upgrade head && uvicorn as500_docs.api.main:app --host 0.0.0.0 --port 8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
 volumes:
