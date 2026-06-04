@@ -148,7 +148,7 @@ async function startServer() {
     const url = req.url || '/';
 
     // Proxy manual page preview from as500-docs.
-    // Route: GET /docs-pages/:manualId/:pageNumber  →  docs:8080/pages/:manualId/:pageNumber
+    // Route: GET /docs-pages/:manualId/:pageNumber  →  ${DOCS_API_URL}/pages/:manualId/:pageNumber
     const pageMatch = url.match(/^\/docs-pages\/([^/?#]+)\/(\d+)/);
     if (pageMatch && req.method === 'GET') {
       if (!DOCS_API_URL_INTERNAL) {
@@ -174,7 +174,7 @@ async function startServer() {
     }
 
     // Proxy manual page images from as500-docs.
-    // Route: GET /docs-images/:imageId  →  docs:8080/images/:imageId
+    // Route: GET /docs-images/:imageId  →  ${DOCS_API_URL}/images/:imageId
     const imageMatch = url.match(/^\/docs-images\/([^/?#]+)/);
     if (imageMatch && req.method === 'GET') {
       if (!DOCS_API_URL_INTERNAL) {

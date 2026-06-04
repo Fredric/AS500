@@ -5,7 +5,7 @@
 //   - Structured source references (page images + citations) for the UI.
 //
 // Configuration (server/.env.local):
-//   DOCS_API_URL=http://host.docker.internal:8080
+//   DOCS_API_URL=http://as500-docs:8080
 //   DOCS_MIN_SCORE=0.25   (optional — chunks below this score are ignored)
 //
 // Manual detection: the query is matched against the list of available manuals.
@@ -157,6 +157,27 @@ function detectManualId(query: string, manuals: ManualListItem[]): string | null
   return best.manual_id;
 }
 
+function isManualInventoryQuestion(query: string): boolean {
+  const q = query.toLowerCase();
+  return /\b(manual|manuals|workshop manual|service manual|docs|documents)\b/.test(q)
+    && /\b(have|available|access|list|which|what|show|know about)\b/.test(q);
+}
+
+function buildManualInventoryContext(manuals: ManualListItem[]): string {
+  const list = manuals
+    .map((m) => `- ${m.title} — ${m.manufacturer} ${m.model}${m.year ? ` (${m.year})` : ''}`)
+    .join('\n');
+
+  return [
+    'WORKSHOP MANUAL AVAILABILITY CONTEXT.',
+    'The following manuals are currently available in the AS500 manual database:',
+    '',
+    list || '- No manuals are currently available.',
+    '',
+    'If the user asks a technical question, ask which motorcycle/model they mean unless they already specified one.',
+  ].join('\n');
+}
+
 /**
  * Query the as500-docs /search endpoint and return both a formatted context
  * string and structured source references for the chat UI.
@@ -177,8 +198,18 @@ export async function fetchDocsContext(question: string): Promise<DocsContextRes
   const manuals = await getManuals();
   const manualId = detectManualId(question, manuals);
 
+  // Questions like "do you have manuals?" should not run vector search; give
+  // the agent an explicit inventory so it does not claim no manuals exist.
+  if (!manualId && isManualInventoryQuestion(question)) {
+    console.log(`[docs] manual inventory question — ${manuals.length} manuals available`);
+    return { context: buildManualInventoryContext(manuals), sources: [] };
+  }
+
   // If no manual was detected, skip docs lookup entirely — it's a general chat question
-  if (!manualId) return empty;
+  if (!manualId) {
+    console.log(`[docs] no manual detected for query="${question.slice(0, 60)}" — skipping docs lookup`);
+    return empty;
+  }
 
   let data: DocsSearchResponse;
   let citationChunkIds: Set<string> | null = null;
