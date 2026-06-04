@@ -29,7 +29,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# Environment
+# Environment.
 .env
 .env.local
 .env.*.local
