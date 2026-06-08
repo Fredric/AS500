@@ -20,8 +20,8 @@ npm test -- --grep "Hierarchical RAG"
 
 | Phase | Name | Repo(s) | Status |
 |-------|------|---------|--------|
-| 0 | Foundations — schema & fixtures | AS500 | ⬜ |
-| 1 | Ingest plumbing — job queue + HTTP trigger | AS500 + as500-docs | ⬜ |
+| 0 | Foundations — schema & fixtures | AS500 | ✅ |
+| 1 | Ingest plumbing — job queue + HTTP trigger | AS500 + as500-docs | 🔄 |
 | 2 | Docling ingest — worker completes one PDF | as500-docs | ⬜ |
 | 3 | End-to-end ingest test (upload → worker → chunks) | AS500 + as500-docs | ⬜ |
 | 4 | Search — hybrid retrieval on `document_chunks` | as500-docs | ⬜ |
@@ -55,25 +55,25 @@ Keep this checklist handy; ingest tests **fail fast** if any item is missing.
 
 ### Tasks
 
-- [ ] **0.1** Confirm `server/src/app/db/schema.ts` exports `documentFolders`, `documentItems`, `documentChunks` with RAG columns (768-dim `embeddingVector`, `ingest_status`, etc.) — already in repo; verify against spec.
-- [ ] **0.2** Generate Drizzle migration `0011_*` from schema diff:
+- [x] **0.1** Confirm `server/src/app/db/schema.ts` exports `documentFolders`, `documentItems`, `documentChunks` with RAG columns (768-dim `embeddingVector`, `ingest_status`, etc.) — already in repo; verify against spec.
+- [x] **0.2** Generate Drizzle migration `0011_*` from schema diff:
   ```bash
   cd server && npm run db:generate && npm run db:migrate
   ```
-- [ ] **0.3** Hand-edit `0011_*.sql`:
+- [x] **0.3** Hand-edit `0011_*.sql`:
   - Prepend `CREATE EXTENSION IF NOT EXISTS vector;`
   - Add HNSW index on `document_chunks.embedding` (see spec § Drizzle schema and migrations)
   - Add `document_chunks` table + RAG columns on folders/items if not emitted cleanly
-- [ ] **0.4** Add `tests/fixtures/simple.pdf` (user-provided minimal PDF).
-- [ ] **0.5** Create `tests/hierarchical-rag-ingest.spec.ts` with:
+- [x] **0.4** Add `tests/fixtures/simple.pdf` (user-provided minimal PDF).
+- [x] **0.5** Create `tests/hierarchical-rag-ingest.spec.ts` with:
   - DB pool helper (reuse pattern from `tests/testSetup.ts`)
   - `seedDocumentItem(userId, pdfPath)` — inserts `document_items` row + copies file to `server/data/documents/{userId}/`
   - Teardown: delete test rows (`document_items`, `document_chunks`, folders) by sentinel name prefix `E2E_RAG_`
 
 ### Done when
 
-- [ ] Server starts; `\d document_chunks` shows `embedding vector(768)`
-- [ ] Test **0.A** passes: `seedDocumentItem` creates row with `ingest_status = 'pending'` and file on disk
+- [x] Server starts; `\d document_chunks` shows `embedding vector(768)`
+- [x] Test **0.A** passes: `seedDocumentItem` creates row with `ingest_status = 'pending'` and file on disk
 
 ### Test cases (file section: `Phase 0 — schema`)
 

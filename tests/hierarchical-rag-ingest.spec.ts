@@ -148,16 +148,23 @@ test.describe('Hierarchical RAG — Phase 0 — schema', () => {
 // ─────────────────────────────────────────────
 
 test.describe('Hierarchical RAG — Phase 1 — job queue', () => {
-  test.skip(true, 'Enable after as500-docs POST /ingest and worker claim are implemented');
+  test.beforeAll(async () => {
+    const apiReachable = await assertIngestPrerequisites();
+    test.skip(!apiReachable, 'as500-docs API not reachable — run: cd ../as500-docs && docker compose up -d');
+    test.skip(!seededItemId, 'Requires Phase 0.A seed to have run first');
+  });
 
   test('1.A POST /ingest enqueues job', async () => {
-    test.skip(!seededItemId, 'Requires Phase 0.A seed');
     const res = await fetch(`${DOCS_API}/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ document_item_id: seededItemId, user_id: userId }),
     });
-    expect(res.ok).toBe(true);
+    expect(res.ok, `POST /ingest failed: ${res.status} ${await res.text().catch(() => '')}`).toBe(true);
+
+    const body = (await res.json()) as { job_id: string; document_item_id: number };
+    expect(typeof body.job_id).toBe('string');
+    expect(body.document_item_id).toBe(seededItemId);
 
     const jobs = await pool.query(
       `SELECT state FROM document_ingestion_jobs WHERE document_item_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -167,14 +174,23 @@ test.describe('Hierarchical RAG — Phase 1 — job queue', () => {
   });
 
   test('1.B worker claims queued job', async () => {
-    test.skip(!seededItemId, 'Requires Phase 0.A seed');
+    test.setTimeout(60_000);
     await expect.poll(async () => {
       const jobs = await pool.query(
         `SELECT state FROM document_ingestion_jobs WHERE document_item_id = $1 ORDER BY created_at DESC LIMIT 1`,
         [seededItemId],
       );
       return jobs.rows[0]?.state as string | undefined;
-    }, { timeout: 30_000 }).toMatch(/completed|processing/);
+    }, { timeout: 30_000, intervals: [1000] }).toMatch(/completed|processing/);
+
+    // ingest_status should have been updated by the worker
+    await expect.poll(async () => {
+      const row = await pool.query(
+        `SELECT ingest_status FROM document_items WHERE id = $1`,
+        [seededItemId],
+      );
+      return row.rows[0]?.ingest_status as string;
+    }, { timeout: 30_000, intervals: [1000] }).toMatch(/processing|ready/);
   });
 });
 

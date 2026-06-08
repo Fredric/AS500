@@ -6,6 +6,9 @@ import { randomUUID } from 'crypto';
 import { db } from '../../core/db/index.js';
 import { documentFolders, documentItems } from '../db/schema.js';
 
+const DOCS_API_URL = (process.env.DOCS_API_URL ?? '').replace(/\/$/, '');
+const DOCS_INGEST_KEY = process.env.DOCS_INGEST_KEY ?? '';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DOCUMENTS_ROOT = join(__dirname, '../../../data/documents');
@@ -481,4 +484,36 @@ export async function saveUploadedFile(params: {
     sizeBytes: item.size_bytes,
     modifiedAt: formatTimestamp(item.updated_at),
   };
+}
+
+/**
+ * Enqueue a document_items file for ingestion by as500-docs worker.
+ * Sets ingest_status to 'processing' on success, leaves 'pending' on failure.
+ * No-op when DOCS_API_URL is not configured.
+ */
+export async function enqueueIngest(params: {
+  documentItemId: number;
+  userId: number;
+}): Promise<void> {
+  if (!DOCS_API_URL) return;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (DOCS_INGEST_KEY) headers['X-Docs-Ingest-Key'] = DOCS_INGEST_KEY;
+
+  const res = await fetch(`${DOCS_API_URL}/ingest`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ document_item_id: params.documentItemId, user_id: params.userId }),
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`as500-docs /ingest returned ${res.status}: ${text}`);
+  }
+
+  await db
+    .update(documentItems)
+    .set({ ingest_status: 'processing', updated_at: sql`now()` })
+    .where(eq(documentItems.id, params.documentItemId));
 }
