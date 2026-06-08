@@ -51,9 +51,9 @@ as500-agent — calls MCP tools under user's RBAC token
 Answer + citations (node path, page, document title)
 ```
 
-### Today (ingestion via CLI only)
+### Today (ingestion via CLI only) For reference on what has worked. 
 
-Until the My Documents upload → `/ingest` trigger is implemented, **all ingestion is done exclusively through the as500-docs CLI** on a dev machine with GPU + vLLM. The operator uploads files into My Documents (or places them on disk), then runs the CLI to ingest against a `document_item_id`.
+Until the My Documents upload → `/ingest` trigger is implemented, **all ingestion is done exclusively through the as500-docs CLI** on a dev machine with GPU + vLLM. The operator uploads files into My Documents (or places them on disk), then runs the CLI to ingest against a `document_item_id`. 
 
 ```
 My Documents upload (AS500) — stores file + document_items row only
@@ -195,7 +195,7 @@ The as500-docs worker container and host CLI both call the same `docling_pipelin
 
 ---
 
-## Ingestion — CLI workflow (current)
+## Ingestion — CLI workflow (current). For reference. 
 
 **Until the My Documents auto-trigger is built, ingestion is exclusively via the as500-docs CLI.** No HTTP `/ingest` call from AS500 exists in production today; the legacy path prompted for manufacturer/model/year and wrote to `manuals`*.
 
@@ -241,7 +241,7 @@ Replace with `ingest --item-id` once as500-docs is retargeted to `document_items
 | `list-documents`                 | List ingested `document_items` (after retarget) |
 
 
-### Worker mode (alternative to blocking CLI)
+### We will use  worker mode instead od cli
 
 ```powershell
 cd C:\Users\fredr\code\as500-docs
