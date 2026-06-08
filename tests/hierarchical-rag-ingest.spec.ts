@@ -160,9 +160,8 @@ test.describe('Hierarchical RAG — Phase 1 — job queue', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ document_item_id: seededItemId, user_id: userId }),
     });
-    expect(res.ok, `POST /ingest failed: ${res.status} ${await res.text().catch(() => '')}`).toBe(true);
-
-    const body = (await res.json()) as { job_id: string; document_item_id: number };
+    const body = (await res.json()) as { job_id: string; document_item_id: number; detail?: string };
+    expect(res.ok, `POST /ingest failed: ${res.status} ${body.detail ?? JSON.stringify(body)}`).toBe(true);
     expect(typeof body.job_id).toBe('string');
     expect(body.document_item_id).toBe(seededItemId);
 
