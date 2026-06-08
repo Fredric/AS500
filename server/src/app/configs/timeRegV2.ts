@@ -87,6 +87,7 @@ export const timeRegV2Config: CRUDTableConfig = {
         hint: '(HH:MM)',
       },
       column: { width: 5 },
+      mcp: { description: 'Start time in 24h HH:MM format, e.g. "08:00".' },
     },
 
     end_hour: {
@@ -98,6 +99,7 @@ export const timeRegV2Config: CRUDTableConfig = {
         hint: '(HH:MM)',
       },
       column: { width: 5 },
+      mcp: { description: 'End time in 24h HH:MM format, e.g. "17:00".' },
     },
 
     rowsum: {
@@ -126,6 +128,7 @@ export const timeRegV2Config: CRUDTableConfig = {
       label: 'Description',
       length: 30,
       column: { width: 30 },
+      mcp: { description: 'Free-text note about the work done (optional, max 30 chars).' },
     },
   },
 
