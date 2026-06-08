@@ -107,9 +107,16 @@ export interface ActionConfig {
 }
 
 // OpenUI config: navigation to another CRUDTable screen
+export interface OpenUIMapResult extends Partial<CRUDContext> {
+  /** When true, Enter/Open does not navigate (e.g. file rows in a browser list). */
+  skipNavigation?: boolean;
+  /** Optional status message when skipNavigation is true. */
+  navigationMessage?: string;
+}
+
 export interface OpenUIConfig {
   id: string;
-  mapContext: (parentContext: CRUDContext) => Partial<CRUDContext>;
+  mapContext: (parentContext: CRUDContext) => OpenUIMapResult;
 }
 
 // Custom F-key handler for list screen
@@ -520,6 +527,17 @@ export interface CRUDTableConfig {
   // Extension points for domain-specific behavior
   listKeys?: Record<string, ListKeyConfig>;
   listHeader?: (context: CRUDContext) => Array<{ row: number; col: number; content: string }>;
+  /** Called before each list render; may mutate `ctx.input` (e.g. breadcrumb text). */
+  onBeforeListRender?: (session: import('../types/index.js').Session, context: CRUDContext) => Promise<void>;
+  /** Extra hint fragments for the list status line (e.g. client-handled `U=Upload`). */
+  listStatusHints?: string[];
+  /** Value sent to the client as `navigation.list.contextKey` for same-screen scope changes. */
+  listContextKey?: (context: CRUDContext) => string;
+  /**
+   * Handle Esc/F12 on the list before popping the screen stack.
+   * Return `'handled'` when the list re-renders in place (e.g. folder-up navigation).
+   */
+  onListBack?: (session: import('../types/index.js').Session, context: CRUDContext) => Promise<'handled' | 'pop'>;
 
   // Keyboard navigation config for the list screen
   navigation?: {

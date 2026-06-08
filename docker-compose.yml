@@ -67,6 +67,8 @@ services:
       - "5173:5173"
     depends_on:
       - server
+    environment:
+      VITE_DEV_API_TARGET: http://server:3001
 
 volumes:
   postgres_data:

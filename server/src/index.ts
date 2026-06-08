@@ -19,6 +19,9 @@ import { initializeDatabase, closeDatabase } from './core/db/index.js';
 // App self-registration: configs + menu items (side effects)
 import './app/index.js';
 
+// Document upload HTTP handler (session-authenticated)
+import { handleDocumentsUpload } from './app/api/documentsUpload.js';
+
 // AI Agent chat integration
 import { streamChatTurn } from './core/ai/chatService.js';
 
@@ -146,6 +149,11 @@ async function startServer() {
   // Create HTTP server for static file serving in production
   const httpServer = createServer(async (req, res) => {
     const url = req.url || '/';
+
+    if (url === '/api/documents/upload' || url.startsWith('/api/documents/upload?')) {
+      handleDocumentsUpload(req, res);
+      return;
+    }
 
     // Proxy manual page preview from as500-docs.
     // Route: GET /docs-pages/:manualId/:pageNumber  →  ${DOCS_API_URL}/pages/:manualId/:pageNumber

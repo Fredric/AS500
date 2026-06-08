@@ -8,6 +8,7 @@ export interface ListNavigation {
   optFieldPrefix: string;
   primaryAction: string;
   shortcuts: Array<{ key: string; option: string; label: string }>;
+  contextKey?: string;
 }
 
 export interface MenuNavigation {

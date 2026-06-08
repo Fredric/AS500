@@ -77,3 +77,33 @@ export const servicesPerformed = pgTable('services_performed', {
 }, (t) => [
   index('idx_services_performed_motorcycle_id').on(t.motorcycle_id),
 ]);
+
+export const documentFolders = pgTable('document_folders', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parent_id: integer('parent_id'),
+  name: text('name').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_document_folders_user_id').on(t.user_id),
+  index('idx_document_folders_parent_id').on(t.parent_id),
+]);
+
+export const documentItems = pgTable('document_items', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  folder_id: integer('folder_id').references(() => documentFolders.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  file_type: text('file_type').notNull(),
+  mime_type: text('mime_type'),
+  extension: text('extension'),
+  storage_path: text('storage_path').notNull(),
+  original_filename: text('original_filename').notNull(),
+  size_bytes: integer('size_bytes').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_document_items_user_id').on(t.user_id),
+  index('idx_document_items_folder_id').on(t.folder_id),
+]);
