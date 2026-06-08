@@ -12,17 +12,15 @@
 import { test, expect } from '@playwright/test';
 import { access, copyFile, mkdir, readFile } from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import pkg from 'pg';
 
 const { Pool } = pkg;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE_PDF = path.join(__dirname, 'fixtures', 'simple.pdf');
+const FIXTURE_PDF = path.join(process.cwd(), 'tests', 'fixtures', 'simple.pdf');
 const DOCS_API = (process.env.DOCS_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
 const DB_URL = process.env.DATABASE_URL ?? 'postgresql://as500:as500@localhost:5433/as500';
 const SENTINEL = 'E2E_RAG_';
-const DOCUMENTS_ROOT = path.join(__dirname, '..', 'server', 'data', 'documents');
+const DOCUMENTS_ROOT = path.join(process.cwd(), 'server', 'data', 'documents');
 
 const FREDRIC = { username: 'FREDRIC', password: 'fredric' };
 
