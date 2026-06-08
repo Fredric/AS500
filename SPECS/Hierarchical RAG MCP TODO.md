@@ -18,6 +18,9 @@ npm test -- --grep "Hierarchical RAG"
 
 ## Status overview
 
+> **Active branch:** `documents` in all three repos (AS500, as500-docs, as500-agent).
+> as500-docs containers must be rebuilt after code changes: `docker compose up -d --build` in `../as500-docs`.
+
 | Phase | Name | Repo(s) | Status |
 |-------|------|---------|--------|
 | 0 | Foundations — schema & fixtures | AS500 | ✅ |
@@ -120,11 +123,24 @@ Keep this checklist handy; ingest tests **fail fast** if any item is missing.
 
 **Goal:** Worker runs real pipeline for one `document_item_id`: Docling (vLLM) → chunk → Ollama embed → Postgres.
 
+### Implementation entry point (critical for agent resumption)
+
+The worker (`worker.py`) already calls `ingest_document_item` via:
+
+```python
+from as500_docs.ingestion import ingest_document_item
+await ingest_document_item(document_item_id=..., user_id=...)
+```
+
+This import currently raises `ImportError` (caught by a try/except stub that marks the item `ready`). **Phase 2 = implement `async def ingest_document_item(document_item_id, user_id)` in `ingestion.py`.** The existing `ingest_pdf()` function is the manual-pipeline reference; adapt it for the document pipeline.
+
+> **Fixture PDF:** `tests/fixtures/simple.pdf` is a minimal hand-crafted 681-byte PDF. Docling's VLM pipeline renders page images — this file likely produces no extractable content. **Replace it with a real 1-2 page PDF** (e.g. copy any small PDF into `tests/fixtures/simple.pdf`) before running Phase 2 tests.
+
 ### Tasks
 
-- [ ] **2.1** `ingestion.py`: read `document_items.storage_path` from shared Postgres (not motorcycle `manuals` path).
+- [ ] **2.1** `ingestion.py`: implement `async def ingest_document_item(document_item_id: int, user_id: int)` — read `document_items.storage_path` from Postgres, run full pipeline.
 - [ ] **2.2** Run `docling_pipeline.py` (`USE_VLM=true`) — pages, images, tables extraction unchanged.
-- [ ] **2.3** `chunker.py` → write `document_chunks` with denormalized fields (`node_path`, `document_title`, `page_number`, …).
+- [ ] **2.3** `chunker.py` → write `document_chunks` with denormalized fields (`node_path`, `document_title`, `page_number`, …). `node_path` = folder breadcrumb (query `document_folders` chain via `folder_id`).
 - [ ] **2.4** `embeddings/ollama.py` — 768-dim vectors into `document_chunks.embedding`.
 - [ ] **2.5** Write auxiliary rows: `document_pages`, `document_images`, `document_tables`.
 - [ ] **2.6** Set `document_items.content_hash` (SHA256), `ai_summary` (Ollama), `ingest_status = 'ready'` on success; `'failed'` + job `error` on failure.
@@ -133,7 +149,7 @@ Keep this checklist handy; ingest tests **fail fast** if any item is missing.
 
 ### Done when
 
-- [ ] Test **2.A** passes against `tests/fixtures/simple.pdf`
+- [ ] Test **2.A** passes against `tests/fixtures/simple.pdf` (replace with real PDF first)
 - [ ] `check-vlm` + Ollama were running during test
 - [ ] At least one `document_chunks` row with non-null `embedding` and `text` containing fixture content
 
@@ -154,6 +170,7 @@ Keep this checklist handy; ingest tests **fail fast** if any item is missing.
 
 ### Tasks
 
+- [ ] **3.0** Add `DOCS_API_URL: http://as500-docs:8080` to the `server` service environment in `docker-compose.yml` — the server container currently has no `DOCS_API_URL`, so `enqueueIngest()` is a silent no-op inside Docker.
 - [ ] **3.1** Wire `documentsUpload.ts` / `saveUploadedFile`: after PDF save, call `enqueueIngest` (PDF + image only).
 - [ ] **3.2** Optional: poll helper in test — wait for `ingest_status = 'ready'` (timeout 120s for simple PDF).
 - [ ] **3.3** Verify `getBreadcrumbPath` metadata lands on chunks (`node_path` matches folder hierarchy).
