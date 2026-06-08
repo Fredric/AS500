@@ -53,7 +53,13 @@
       "Bash(python3 -m json.tool)",
       "Bash(curl -s http://172.30.0.1:3000/control/profile)",
       "Bash(curl *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(.venv/Scripts/python -c \"import agents; print\\(agents.__version__\\)\")",
+      "Bash(.venv/Scripts/python -c \"import importlib.metadata; print\\(importlib.metadata.version\\('openai-agents'\\)\\)\")",
+      "Bash(.venv/Scripts/python -c \"from agents import tracing; import inspect; print\\([x for x in dir\\(tracing\\) if not x.startswith\\('_'\\)]\\)\")",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(.venv/Scripts/python -c \"from as500_agent.trace_log import ConversationTracer, trace_incoming_request, trace_mcp_discovery, trace_final_answer; print\\('imports OK'\\)\")",
+      "Bash(.venv/Scripts/python -c \"from as500_agent.api_app import create_app; print\\('app imports OK'\\)\")"
     ]
   }
 }

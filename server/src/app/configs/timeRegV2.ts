@@ -247,8 +247,10 @@ export const timeRegV2Config: CRUDTableConfig = {
     name: 'timereg',
     description:
       'Time registration entries for the authenticated user on a given workday. ' +
-      'Each record is a single time slot (start_hour, end_hour) optionally tagged ' +
-      'with a Jira task id and description. Hours are computed server-side.',
+      'Each record is a single time slot with fields: start_hour, end_hour (required HH:MM strings), ' +
+      'jiratask (optional Jira task ID string, e.g. "AS-123"), ' +
+      'description (optional free-text description of the work done). ' +
+      'Hours are computed server-side.',
     operations: {
       list: true,
       read: true,
