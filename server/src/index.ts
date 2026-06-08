@@ -469,16 +469,12 @@ async function startServer() {
             return;
           }
 
-          // Stream events back to browser (sources first, then delta chunks)
+          // Stream delta chunks back to browser
           try {
             let fullAnswer = '';
             for await (const event of streamChatTurn(session, chatId, userText)) {
-              if (event.type === 'sources') {
-                ws.send(JSON.stringify({ type: 'AI_CHAT_SOURCES', sources: event.sources, chatId, sessionId: session.id }));
-              } else {
-                ws.send(JSON.stringify({ type: 'AI_CHAT_DELTA', delta: event.delta, chatId, sessionId: session.id }));
-                fullAnswer += event.delta;
-              }
+              ws.send(JSON.stringify({ type: 'AI_CHAT_DELTA', delta: event.delta, chatId, sessionId: session.id }));
+              fullAnswer += event.delta;
             }
             ws.send(JSON.stringify({ type: 'AI_CHAT_DONE', chatId, sessionId: session.id }));
           } catch (err) {

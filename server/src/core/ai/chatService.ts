@@ -20,7 +20,6 @@ import { mintMcpAccessTokenForUser } from '../mcp/mintSessionToken.js';
 import { streamChatCompletion, type ChatMessageParam } from './agentClient.js';
 import { getConfigByScreenId } from '../crudtable/registry.js';
 import { loadContext } from '../crudtable/context.js';
-import { fetchDocsContext, type DocsSource } from '../../app/services/docsClient.js';
 
 export interface AiChatMessage {
   role: 'user' | 'assistant';
@@ -28,9 +27,7 @@ export interface AiChatMessage {
 }
 
 /** Discriminated union yielded by streamChatTurn */
-export type ChatStreamEvent =
-  | { type: 'sources'; sources: DocsSource[] }
-  | { type: 'delta'; delta: string };
+export type ChatStreamEvent = { type: 'delta'; delta: string };
 
 // ============================================
 // History helpers
@@ -174,20 +171,8 @@ export async function* streamChatTurn(
   // This is rebuilt fresh on every turn and never stored in history.
   const screenContext = buildScreenContext(session);
 
-  // Fetch relevant workshop manual excerpts for the question. Runs in parallel
-  // with no await held — if the docs service is down the chat still works.
-  t = Date.now();
-  const docsResult = await fetchDocsContext(userText).catch(() => ({ context: null, sources: [] }));
-  lap('fetchDocsContext', t);
-
-  // Emit sources before streaming so the UI can show them immediately
-  if (docsResult.sources.length > 0) {
-    yield { type: 'sources', sources: docsResult.sources };
-  }
-
   const messages: ChatMessageParam[] = [
-    ...(screenContext         ? [{ role: 'system' as const, content: screenContext            }] : []),
-    ...(docsResult.context    ? [{ role: 'system' as const, content: docsResult.context       }] : []),
+    ...(screenContext ? [{ role: 'system' as const, content: screenContext }] : []),
     ...history.map((m) => ({ role: m.role, content: m.content }) as ChatMessageParam),
     { role: 'user' as const, content: userText },
   ];

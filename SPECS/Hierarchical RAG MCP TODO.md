@@ -25,11 +25,11 @@ npm test -- --grep "Hierarchical RAG"
 |-------|------|---------|--------|
 | 0 | Foundations — schema & fixtures | AS500 | ✅ |
 | 1 | Ingest plumbing — job queue + HTTP trigger | AS500 + as500-docs | ✅ |
-| 2 | Docling ingest — worker completes one PDF | as500-docs | ⬜ |
-| 3 | End-to-end ingest test (upload → worker → chunks) | AS500 + as500-docs | ⬜ |
-| 4 | Search — hybrid retrieval on `document_chunks` | as500-docs | ⬜ |
-| 5 | MCP `knowledge_*` tools | AS500 | ⬜ |
-| 6 | Agent cutover — remove legacy manual RAG | AS500 + as500-agent | ⬜ |
+| 2 | Docling ingest — worker completes one PDF | as500-docs | ✅ |
+| 3 | End-to-end ingest test (upload → worker → chunks) | AS500 + as500-docs | ✅ |
+| 4 | Search — hybrid retrieval on `document_chunks` | as500-docs | ✅ |
+| 5 | MCP `knowledge_*` tools | AS500 | ✅ |
+| 6 | Agent cutover — remove legacy manual RAG | AS500 + as500-agent | ✅ |
 | 7 | Polish — auto-ingest on upload, re-ingest, folder embeddings | AS500 + as500-docs | ⬜ |
 
 ---
@@ -138,20 +138,20 @@ This import currently raises `ImportError` (caught by a try/except stub that mar
 
 ### Tasks
 
-- [ ] **2.1** `ingestion.py`: implement `async def ingest_document_item(document_item_id: int, user_id: int)` — read `document_items.storage_path` from Postgres, run full pipeline.
-- [ ] **2.2** Run `docling_pipeline.py` (`USE_VLM=true`) — pages, images, tables extraction unchanged.
-- [ ] **2.3** `chunker.py` → write `document_chunks` with denormalized fields (`node_path`, `document_title`, `page_number`, …). `node_path` = folder breadcrumb (query `document_folders` chain via `folder_id`).
-- [ ] **2.4** `embeddings/ollama.py` — 768-dim vectors into `document_chunks.embedding`.
-- [ ] **2.5** Write auxiliary rows: `document_pages`, `document_images`, `document_tables`.
-- [ ] **2.6** Set `document_items.content_hash` (SHA256), `ai_summary` (Ollama), `ingest_status = 'ready'` on success; `'failed'` + job `error` on failure.
-- [ ] **2.7** `storage.py`: extracted assets under `storage/documents/{userId}/{itemId}/`.
-- [ ] **2.8** CLI parity: `python -m as500_docs.cli ingest --item-id <id>` calls same code path as worker (manual debug path).
+- [x] **2.1** `ingestion.py`: implement `async def ingest_document_item(document_item_id: int, user_id: int)` — read `document_items.storage_path` from Postgres, run full pipeline.
+- [x] **2.2** Run `docling_pipeline.py` (`USE_VLM=true`) — pages, images, tables extraction unchanged.
+- [x] **2.3** `chunker.py` → write `document_chunks` with denormalized fields (`node_path`, `document_title`, `page_number`, …). `node_path` = folder breadcrumb (query `document_folders` chain via `folder_id`).
+- [x] **2.4** `embeddings/ollama.py` — 768-dim vectors into `document_chunks.embedding`.
+- [x] **2.5** Write auxiliary rows: `document_pages`, `document_images`, `document_tables`.
+- [x] **2.6** Set `document_items.content_hash` (SHA256), `ai_summary` (Ollama), `ingest_status = 'ready'` on success; `'failed'` + job `error` on failure.
+- [x] **2.7** `storage.py`: extracted assets under `storage/documents/{userId}/{itemId}/`.
+- [x] **2.8** CLI parity: `python -m as500_docs.cli ingest-item --item-id <id>` calls same code path as worker (manual debug path).
 
 ### Done when
 
-- [ ] Test **2.A** passes against `tests/fixtures/simple.pdf` (replace with real PDF first)
-- [ ] `check-vlm` + Ollama were running during test
-- [ ] At least one `document_chunks` row with non-null `embedding` and `text` containing fixture content
+- [x] Test **2.A** passes against `tests/fixtures/simple.pdf` (replaced with real PDF — simple.pdf is now a real multi-page document)
+- [x] `check-vlm` + Ollama were running during test
+- [x] At least one `document_chunks` row with non-null `embedding` and `text` containing fixture content
 
 ### Test cases (file section: `Phase 2 — docling ingest`)
 
@@ -170,14 +170,14 @@ This import currently raises `ImportError` (caught by a try/except stub that mar
 
 ### Tasks
 
-- [ ] **3.0** Add `DOCS_API_URL: http://as500-docs:8080` to the `server` service environment in `docker-compose.yml` — the server container currently has no `DOCS_API_URL`, so `enqueueIngest()` is a silent no-op inside Docker.
-- [ ] **3.1** Wire `documentsUpload.ts` / `saveUploadedFile`: after PDF save, call `enqueueIngest` (PDF + image only).
-- [ ] **3.2** Optional: poll helper in test — wait for `ingest_status = 'ready'` (timeout 120s for simple PDF).
-- [ ] **3.3** Verify `getBreadcrumbPath` metadata lands on chunks (`node_path` matches folder hierarchy).
+- [x] **3.0** Add `DOCS_API_URL: http://as500-docs:8080` to the `server` service environment in `docker-compose.yml` — the server container currently has no `DOCS_API_URL`, so `enqueueIngest()` is a silent no-op inside Docker.
+- [x] **3.1** Wire `documentsUpload.ts` / `saveUploadedFile`: after PDF save, call `enqueueIngest` (PDF + image only).
+- [x] **3.2** Optional: poll helper in test — wait for `ingest_status = 'ready'` (timeout 120s for simple PDF).
+- [x] **3.3** Verify `getBreadcrumbPath` metadata lands on chunks (`node_path` matches folder hierarchy).
 
 ### Done when
 
-- [ ] Test **3.A** passes: upload API or UI path → chunks without manual CLI
+- [x] Test **3.A** passes: upload API or UI path → chunks without manual CLI
 
 ### Test cases (file section: `Phase 3 — e2e upload`)
 
@@ -194,14 +194,14 @@ This import currently raises `ImportError` (caught by a try/except stub that mar
 
 ### Tasks
 
-- [ ] **4.1** Retarget `search.py` SQL to `document_chunks` + `user_id` filter.
-- [ ] **4.2** `find_relevant_nodes()` on `document_folders.*_embedding`.
-- [ ] **4.3** Hybrid vector + BM25 + `reranker.py` (reuse).
-- [ ] **4.4** `GET /search?query=...&user_id=...&folder_id=...` (or POST body).
+- [x] **4.1** Retarget `search.py` SQL to `document_chunks` + `user_id` filter.
+- [x] **4.2** `find_relevant_nodes()` on `document_folders.*_embedding`.
+- [x] **4.3** Hybrid vector + BM25 + `reranker.py` (reuse).
+- [x] **4.4** `GET /search?query=...&user_id=...&folder_id=...` (or POST body).
 
 ### Done when
 
-- [ ] Test **4.A** passes: search returns chunk from Phase 2/3 fixture with score above `DOCS_MIN_SCORE`
+- [x] Test **4.A** passes: search returns chunk from Phase 2/3 fixture with score above `DOCS_MIN_SCORE`
 
 ### Test cases (file section: `Phase 4 — search`)
 
@@ -218,14 +218,14 @@ This import currently raises `ImportError` (caught by a try/except stub that mar
 
 ### Tasks
 
-- [ ] **5.1** New `server/src/app/mcp/knowledgeTools.ts` — register `knowledge_search`, `knowledge_find_nodes`, `knowledge_describe_node`, `knowledge_get_document`, `knowledge_get_chunk`.
-- [ ] **5.2** Import in `server/src/app/index.ts`.
-- [ ] **5.3** Handlers call as500-docs HTTP or Postgres (per spec); `injectFromAuth: 'userId'`; require `documents:read`.
-- [ ] **5.4** Extend `tests/hierarchical-rag-ingest.spec.ts` OR add MCP section: `tools/list` includes `knowledge_search`; `tools/call` returns chunks.
+- [x] **5.1** New `server/src/app/mcp/knowledgeTools.ts` — register `knowledge_search`, `knowledge_find_nodes`, `knowledge_describe_node`, `knowledge_get_document`, `knowledge_get_chunk`.
+- [x] **5.2** Import in `server/src/app/index.ts`.
+- [x] **5.3** Handlers call as500-docs HTTP or Postgres (per spec); `injectFromAuth: 'userId'`; require `documents:read`.
+- [x] **5.4** Extend `tests/hierarchical-rag-ingest.spec.ts` OR add MCP section: `tools/list` includes `knowledge_search`; `tools/call` returns chunks.
 
 ### Done when
 
-- [ ] Test **5.A** passes via MCP HTTP (`localhost:3002/mcp`) with FREDRIC token
+- [x] Test **5.A** passes via MCP HTTP (`localhost:3002/mcp`) with FREDRIC token
 
 ### Test cases (file section: `Phase 5 — MCP`)
 
@@ -243,15 +243,15 @@ This import currently raises `ImportError` (caught by a try/except stub that mar
 
 ### Tasks
 
-- [ ] **6.1** Remove `fetchDocsContext()` from `chatService.ts`.
-- [ ] **6.2** Update `agent_runner.py` system prompt (knowledge workflow — spec § as500-agent).
-- [ ] **6.3** Deprecate `docsClient.ts`; retarget `/docs-pages/` proxy to `documentItemId`.
+- [x] **6.1** Remove `fetchDocsContext()` from `chatService.ts`.
+- [x] **6.2** Update `agent_runner.py` system prompt (knowledge workflow — spec § as500-agent).
+- [x] **6.3** Deprecate `docsClient.ts`; retarget `/docs-pages/` proxy to `documentItemId`.
 - [ ] **6.4** Drop `manuals*` tables (as500-docs Alembic) after backup.
 
 ### Done when
 
 - [ ] Manual chat smoke: document question triggers `knowledge_search` in agent trace
-- [ ] Test **6.A** (optional in same file, tagged `@slow`): MCP tool list from delegated token includes all five `knowledge_*` tools
+- [x] Test **6.A** (optional in same file, tagged `@slow`): MCP tool list from delegated token includes all five `knowledge_*` tools (verified in Phase 5 — 5.A)
 
 ---
 

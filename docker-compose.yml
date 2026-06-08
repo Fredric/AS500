@@ -32,6 +32,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://as500:as500@postgres:5432/as500
+      # as500-docs ingest API — triggers Docling pipeline when a PDF/image is uploaded.
+      # Uses host.docker.internal because as500-docs is on a separate Docker network.
+      DOCS_API_URL: http://host.docker.internal:8080
       # Stable JWT secret so MCP access tokens survive `docker-compose restart`.
       # In dev this is fine committed; override in prod via env / secret manager.
       AS500_MCP_JWT_SECRET: dev-secret-do-not-use-in-prod-at-least-32-chars

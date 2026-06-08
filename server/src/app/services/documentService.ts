@@ -247,6 +247,8 @@ export async function createFolder(params: {
     })
     .returning();
 
+  refreshFolderEmbedding(folder.id, params.userId).catch(() => {});
+
   return {
     id: folder.id,
     kind: 'folder',
@@ -327,6 +329,8 @@ export async function renameDocumentEntry(params: {
       .returning();
 
     if (!folder) throw new Error('Folder not found');
+
+    refreshFolderEmbedding(folder.id, params.userId).catch(() => {});
 
     return {
       id: folder.id,
@@ -475,6 +479,10 @@ export async function saveUploadedFile(params: {
     })
     .returning();
 
+  if (detected.fileType === 'pdf' || detected.fileType === 'image') {
+    enqueueIngest({ documentItemId: item.id, userId: params.userId }).catch(() => {});
+  }
+
   return {
     id: item.id,
     kind: 'file',
@@ -484,6 +492,31 @@ export async function saveUploadedFile(params: {
     sizeBytes: item.size_bytes,
     modifiedAt: formatTimestamp(item.updated_at),
   };
+}
+
+/**
+ * Fire-and-forget: ask as500-docs to regenerate ai_summary_embedding for a folder.
+ * Called after createFolder and renameDocumentEntry so knowledge_find_nodes can
+ * route to the folder before any documents are ingested into it.
+ * No-op when DOCS_API_URL is not configured.
+ */
+async function refreshFolderEmbedding(folderId: number, userId: number): Promise<void> {
+  if (!DOCS_API_URL) return;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (DOCS_INGEST_KEY) headers['X-Docs-Ingest-Key'] = DOCS_INGEST_KEY;
+
+  const res = await fetch(`${DOCS_API_URL}/folders/refresh-embedding`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ folder_id: folderId, user_id: userId }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`as500-docs /folders/refresh-embedding returned ${res.status}: ${text}`);
+  }
 }
 
 /**

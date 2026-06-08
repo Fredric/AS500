@@ -20,3 +20,4 @@ import './menus/appMenu.js';
 
 // Standalone MCP tool groups (Option B) — registered after configs
 import './mcp/userTools.js';
+import './mcp/knowledgeTools.js';
