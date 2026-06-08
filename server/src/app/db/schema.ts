@@ -8,8 +8,25 @@ import {
   date,
   unique,
   index,
+  customType,
 } from 'drizzle-orm/pg-core';
 import { users } from '../../core/db/schema.js';
+
+/** pgvector column — dimension defaults to 768 (Ollama nomic-embed-text on VPS). */
+export const embeddingVector = customType<{ data: number[]; driverData: string }>({
+  dataType(config?: unknown) {
+    const dimensions = (config as { dimensions?: number } | undefined)?.dimensions ?? 768;
+    return `vector(${dimensions})`;
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    if (typeof value !== 'string') return [];
+    const trimmed = value.replace(/^\[|\]$/g, '');
+    return trimmed ? trimmed.split(',').map(Number) : [];
+  },
+});
 
 export const days = pgTable('days', {
   id: serial('id').primaryKey(),
@@ -83,6 +100,12 @@ export const documentFolders = pgTable('document_folders', {
   user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   parent_id: integer('parent_id'),
   name: text('name').notNull(),
+  description: text('description'),
+  notes: text('notes'),
+  ai_summary: text('ai_summary'),
+  title_embedding: embeddingVector('title_embedding'),
+  description_embedding: embeddingVector('description_embedding'),
+  ai_summary_embedding: embeddingVector('ai_summary_embedding'),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
@@ -95,15 +118,42 @@ export const documentItems = pgTable('document_items', {
   user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   folder_id: integer('folder_id').references(() => documentFolders.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
+  description: text('description'),
   file_type: text('file_type').notNull(),
   mime_type: text('mime_type'),
   extension: text('extension'),
   storage_path: text('storage_path').notNull(),
   original_filename: text('original_filename').notNull(),
   size_bytes: integer('size_bytes').notNull(),
+  ai_summary: text('ai_summary'),
+  content_hash: text('content_hash'),
+  ingest_status: text('ingest_status').default('pending'),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('idx_document_items_user_id').on(t.user_id),
   index('idx_document_items_folder_id').on(t.folder_id),
+  index('idx_document_items_content_hash').on(t.content_hash),
+]);
+
+export const documentChunks = pgTable('document_chunks', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  document_item_id: integer('document_item_id').notNull().references(() => documentItems.id, { onDelete: 'cascade' }),
+  folder_id: integer('folder_id').references(() => documentFolders.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
+  embedding: embeddingVector('embedding').notNull(),
+  node_path: text('node_path').notNull(),
+  node_description: text('node_description'),
+  document_title: text('document_title').notNull(),
+  document_description: text('document_description'),
+  page_number: integer('page_number'),
+  page_end: integer('page_end'),
+  section_title: text('section_title'),
+  content_type: text('content_type'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_document_chunks_user_id').on(t.user_id),
+  index('idx_document_chunks_folder_id').on(t.folder_id),
+  index('idx_document_chunks_document_item_id').on(t.document_item_id),
 ]);

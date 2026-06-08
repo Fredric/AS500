@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { dirname, extname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -19,6 +19,7 @@ export interface DocumentListEntry {
   id: number | null;
   kind: DocumentEntryKind;
   name: string;
+  description: string;
   entryType: string;
   fileType: string;
   sizeBytes: number | null;
@@ -119,6 +120,7 @@ export async function listFolderContents(params: {
       id: null,
       kind: 'parent',
       name: '..',
+      description: '',
       entryType: 'Parent',
       fileType: '',
       sizeBytes: null,
@@ -145,6 +147,7 @@ export async function listFolderContents(params: {
       id: folder.id,
       kind: 'folder',
       name: folder.name,
+      description: folder.description ?? '',
       entryType: 'Folder',
       fileType: '',
       sizeBytes: null,
@@ -168,6 +171,7 @@ export async function listFolderContents(params: {
       id: item.id,
       kind: 'file',
       name: item.name,
+      description: item.description ?? '',
       entryType: item.file_type.toUpperCase(),
       fileType: item.file_type,
       sizeBytes: item.size_bytes,
@@ -191,6 +195,7 @@ export async function readDocumentEntry(params: {
       id: folder.id,
       kind: 'folder',
       name: folder.name,
+      description: folder.description ?? '',
       entryType: 'Folder',
       fileType: '',
       sizeBytes: null,
@@ -209,6 +214,7 @@ export async function readDocumentEntry(params: {
     id: item.id,
     kind: 'file',
     name: item.name,
+    description: item.description ?? '',
     entryType: item.file_type.toUpperCase(),
     fileType: item.file_type,
     sizeBytes: item.size_bytes,
@@ -249,35 +255,119 @@ export async function createFolder(params: {
   };
 }
 
-export async function updateFolder(params: {
+function validateEntryName(name: string, entryKind: 'folder' | 'file'): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error(entryKind === 'folder' ? 'Folder name is required' : 'File name is required');
+  }
+  if (/[\\/]/.test(trimmed)) {
+    throw new Error('Name cannot contain / or \\');
+  }
+  return trimmed;
+}
+
+function normalizeDescription(description: string | null | undefined): string | null {
+  const trimmed = description?.trim() ?? '';
+  return trimmed || null;
+}
+
+async function assertUniqueFileNameInFolder(params: {
+  userId: number;
+  folderId: number | null;
+  name: string;
+  excludeItemId?: number;
+}): Promise<void> {
+  const folderCondition = params.folderId === null
+    ? isNull(documentItems.folder_id)
+    : eq(documentItems.folder_id, params.folderId);
+
+  const conditions = [
+    eq(documentItems.user_id, params.userId),
+    eq(documentItems.name, params.name),
+    folderCondition,
+  ];
+  if (params.excludeItemId !== undefined) {
+    conditions.push(ne(documentItems.id, params.excludeItemId));
+  }
+
+  const [existing] = await db
+    .select({ id: documentItems.id })
+    .from(documentItems)
+    .where(and(...conditions))
+    .limit(1);
+
+  if (existing) {
+    throw new Error('A file with this name already exists in this folder');
+  }
+}
+
+export async function renameDocumentEntry(params: {
   userId: number;
   kind: DocumentEntryKind;
   id: number;
   name: string;
+  description?: string | null;
 }): Promise<Record<string, unknown>> {
-  if (params.kind !== 'folder') {
-    throw new Error('Only folders can be renamed');
+  if (params.kind === 'parent') {
+    throw new Error('Cannot rename parent navigation row');
   }
 
-  const trimmed = params.name.trim();
-  if (!trimmed) throw new Error('Folder name is required');
+  const description = normalizeDescription(params.description);
 
-  const [folder] = await db
-    .update(documentFolders)
-    .set({ name: trimmed, updated_at: sql`now()` })
-    .where(and(eq(documentFolders.id, params.id), eq(documentFolders.user_id, params.userId)))
+  if (params.kind === 'folder') {
+    const trimmed = validateEntryName(params.name, 'folder');
+
+    const [folder] = await db
+      .update(documentFolders)
+      .set({ name: trimmed, description, updated_at: sql`now()` })
+      .where(and(eq(documentFolders.id, params.id), eq(documentFolders.user_id, params.userId)))
+      .returning();
+
+    if (!folder) throw new Error('Folder not found');
+
+    return {
+      id: folder.id,
+      kind: 'folder',
+      name: folder.name,
+      description: folder.description ?? '',
+      entryType: 'Folder',
+      fileType: '',
+      sizeBytes: null,
+      modifiedAt: formatTimestamp(folder.updated_at),
+    };
+  }
+
+  const trimmed = validateEntryName(params.name, 'file');
+
+  const [existing] = await db
+    .select()
+    .from(documentItems)
+    .where(and(eq(documentItems.id, params.id), eq(documentItems.user_id, params.userId)));
+
+  if (!existing) throw new Error('File not found');
+
+  await assertUniqueFileNameInFolder({
+    userId: params.userId,
+    folderId: existing.folder_id,
+    name: trimmed,
+    excludeItemId: params.id,
+  });
+
+  const [item] = await db
+    .update(documentItems)
+    .set({ name: trimmed, description, updated_at: sql`now()` })
+    .where(and(eq(documentItems.id, params.id), eq(documentItems.user_id, params.userId)))
     .returning();
 
-  if (!folder) throw new Error('Folder not found');
-
   return {
-    id: folder.id,
-    kind: 'folder',
-    name: folder.name,
-    entryType: 'Folder',
-    fileType: '',
-    sizeBytes: null,
-    modifiedAt: formatTimestamp(folder.updated_at),
+    id: item.id,
+    kind: 'file',
+    name: item.name,
+    description: item.description ?? '',
+    entryType: item.file_type.toUpperCase(),
+    fileType: item.file_type,
+    sizeBytes: item.size_bytes,
+    modifiedAt: formatTimestamp(item.updated_at),
   };
 }
 
@@ -352,6 +442,13 @@ export async function saveUploadedFile(params: {
 
   const detected = detectFileType(params.originalFilename);
   const baseName = params.originalFilename.replace(/\.[^.]+$/, '').trim() || 'document';
+
+  await assertUniqueFileNameInFolder({
+    userId: params.userId,
+    folderId: params.folderId,
+    name: baseName,
+  });
+
   const safeBase = baseName.replace(/[^\w.-]+/g, '_').slice(0, 80);
   const storageFileName = `${randomUUID()}-${safeBase}.${detected.extension || 'bin'}`;
   const relativePath = join(String(params.userId), storageFileName);

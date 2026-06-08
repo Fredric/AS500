@@ -53,13 +53,14 @@ export const documentsConfig: CRUDTableConfig = {
     },
     update: {
       service: documentService as unknown as Record<string, Function>,
-      method: 'updateFolder',
+      method: 'renameDocumentEntry',
       requirePermission: PERMISSIONS.DOCUMENTS_WRITE,
       params: (ctx) => ({
         userId: ctx.input.userId as number,
         kind: ctx.editRecord!.kind as documentService.DocumentEntryKind,
         id: ctx.editRecord!.id as number,
         name: ctx.values.name?.trim() || '',
+        description: ctx.values.description?.trim() || null,
       }),
     },
     delete: {
@@ -81,12 +82,24 @@ export const documentsConfig: CRUDTableConfig = {
       length: 40,
       form: {
         required: true,
-        visible: (ctx) => ctx.formMode === 'create' || ctx.editRecord?.kind === 'folder',
-        disabled: (ctx) => ctx.formMode === 'edit' && ctx.editRecord?.kind === 'file',
+        visible: (ctx) =>
+          ctx.formMode === 'create'
+          || ctx.editRecord?.kind === 'folder'
+          || ctx.editRecord?.kind === 'file',
       },
       column: {
         width: 40,
         cellRenderer: displayName,
+      },
+    },
+    description: {
+      field: 'description',
+      label: 'Description',
+      length: 50,
+      form: {
+        visible: (ctx) =>
+          ctx.formMode === 'edit'
+          && (ctx.editRecord?.kind === 'folder' || ctx.editRecord?.kind === 'file'),
       },
     },
     entryType: {
@@ -137,13 +150,14 @@ export const documentsConfig: CRUDTableConfig = {
   },
 
   columnBuilder: ['name', 'entryType', 'sizeBytes', 'modifiedAt'],
-  formBuilder: ['name', 'entryType', 'sizeBytes', 'modifiedAt'],
+  formBuilder: ['name', 'description', 'entryType', 'sizeBytes', 'modifiedAt'],
 
   navigation: {
     primaryAction: 'open',
+    shortcuts: [{ key: 'c', option: '2', label: 'Rename' }],
   },
 
-  listStatusHints: ['U=Upload'],
+  listStatusHints: ['C=Rename', 'U=Upload'],
 
   listContextKey: (ctx) => String(ctx.input.folderId ?? 'root'),
 
@@ -201,11 +215,11 @@ export const documentsConfig: CRUDTableConfig = {
     const atRoot = folderId === null;
     const onlyParentRow = !atRoot && ctx.records.length === 1 && ctx.records[0]?.kind === 'parent';
     const hintLine = onlyParentRow
-      ? 'Folder is empty — U=Upload   N=New folder   Enter=Back (..)'
-      : 'Enter=Open folder/file   U=Upload   N=New folder';
+      ? 'Folder is empty — C=Rename   U=Upload   N=New folder   Enter=Back (..)'
+      : 'Enter=Open   C=Rename   U=Upload   N=New folder';
     return [
       { row: 4, col: 2, content: `Path: ${truncated}` },
-      { row: 5, col: 2, content: hintLine },
+      //{ row: 5, col: 2, content: hintLine },
     ];
   },
 
