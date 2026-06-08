@@ -21,7 +21,7 @@ npm test -- --grep "Hierarchical RAG"
 | Phase | Name | Repo(s) | Status |
 |-------|------|---------|--------|
 | 0 | Foundations — schema & fixtures | AS500 | ✅ |
-| 1 | Ingest plumbing — job queue + HTTP trigger | AS500 + as500-docs | 🔄 |
+| 1 | Ingest plumbing — job queue + HTTP trigger | AS500 + as500-docs | ✅ |
 | 2 | Docling ingest — worker completes one PDF | as500-docs | ⬜ |
 | 3 | End-to-end ingest test (upload → worker → chunks) | AS500 + as500-docs | ⬜ |
 | 4 | Search — hybrid retrieval on `document_chunks` | as500-docs | ⬜ |
@@ -90,22 +90,22 @@ Keep this checklist handy; ingest tests **fail fast** if any item is missing.
 
 ### as500-docs tasks
 
-- [ ] **1.1** Alembic migration: `document_pages`, `document_images`, `document_tables`, `document_ingestion_jobs` (spec data model).
-- [ ] **1.2** ORM models for `document_items`, `document_ingestion_jobs` (read AS500 tables; do not duplicate folder/chunk tables if owned by Drizzle).
-- [ ] **1.3** `POST /ingest` body: `{ document_item_id: number, user_id: number }` — inserts job `state = 'queued'`.
-- [ ] **1.4** `worker.py`: claim job payload `{ document_item_id, user_id }` (replace motorcycle metadata).
-- [ ] **1.5** Service auth: shared secret header (e.g. `X-Docs-Ingest-Key`) — AS500 and as500-docs `.env` must match.
+- [x] **1.1** Alembic migration: `document_pages`, `document_images`, `document_tables`, `document_ingestion_jobs` (spec data model).
+- [x] **1.2** ORM models for `document_items`, `document_ingestion_jobs` (read AS500 tables; do not duplicate folder/chunk tables if owned by Drizzle).
+- [x] **1.3** `POST /ingest` body: `{ document_item_id: number, user_id: number }` — inserts job `state = 'queued'`.
+- [x] **1.4** `worker.py`: claim job payload `{ document_item_id, user_id }` (replace motorcycle metadata).
+- [x] **1.5** Service auth: shared secret header (e.g. `X-Docs-Ingest-Key`) — AS500 and as500-docs `.env` must match.
 
 ### AS500 tasks
 
-- [ ] **1.6** `documentService.enqueueIngest(documentItemId, userId)` — `POST ${DOCS_API_URL}/ingest`.
-- [ ] **1.7** Set `ingest_status = 'processing'` when enqueue succeeds (keep `pending` on failure).
-- [ ] **1.8** `DOCS_API_URL` in `server/.env.local` / `.env.example` (default `http://localhost:8080` for host dev).
+- [x] **1.6** `documentService.enqueueIngest(documentItemId, userId)` — `POST ${DOCS_API_URL}/ingest`.
+- [x] **1.7** Set `ingest_status = 'processing'` when enqueue succeeds (keep `pending` on failure).
+- [x] **1.8** `DOCS_API_URL` in `server/.env.local` / `.env.example` (default `http://localhost:8080` for host dev).
 
 ### Done when
 
-- [ ] Test **1.A** passes: POST /ingest creates `document_ingestion_jobs` row in `queued` state
-- [ ] Test **1.B** passes: worker picks job, sets `state = 'processing'` (stub: immediately `completed` + `ingest_status = 'ready'` without chunks — proves queue only)
+- [x] Test **1.A** passes: POST /ingest creates `document_ingestion_jobs` row in `queued` state
+- [x] Test **1.B** passes: worker picks job, sets `state = 'processing'` (stub: immediately `completed` + `ingest_status = 'ready'` without chunks — proves queue only)
 
 ### Test cases (file section: `Phase 1 — job queue`)
 
