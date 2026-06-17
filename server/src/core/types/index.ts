@@ -49,6 +49,8 @@ export interface ListNavigation {
   optFieldPrefix: string;  // e.g. 'opt' → fields named opt_0, opt_1, ...
   primaryAction: string;   // Option value for Enter (e.g. '2', '9', '')
   shortcuts: Array<{ key: string; option: string; label: string }>;
+  /** Optional key that changes when list scope changes (e.g. folder path). */
+  contextKey?: string;
 }
 
 export interface MenuNavigation {

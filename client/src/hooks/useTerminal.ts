@@ -259,23 +259,30 @@ export function useTerminal() {
           }
 
           screenIdRef.current = response.screenId;
-          setState(prev => ({
-            ...prev,
-            sessionId: response.sessionId,
-            screenId: response.screenId,
-            rows: response.rows,
-            fields: response.fields,
-            cursor: response.cursor,
-            message: response.message,
-            messageType: response.messageType,
-            statusLine: response.statusLine,
-            navigation: response.navigation ?? null,
-            // Use server-provided field values if explicitly provided, otherwise preserve on same screen
-            fieldValues: response.fieldValues !== undefined
-              ? response.fieldValues
-              : (response.screenId !== prev.screenId ? {} : prev.fieldValues),
-            responseCount: prev.responseCount + 1, // Trigger focus on every response
-          }));
+          setState(prev => {
+            const listContextChanged = response.navigation?.list?.contextKey !== undefined
+              && response.navigation.list.contextKey !== prev.navigation?.list?.contextKey;
+            const shouldResetFields = response.fieldValues !== undefined
+              || response.screenId !== prev.screenId
+              || listContextChanged;
+
+            return {
+              ...prev,
+              sessionId: response.sessionId,
+              screenId: response.screenId,
+              rows: response.rows,
+              fields: response.fields,
+              cursor: response.cursor,
+              message: response.message,
+              messageType: response.messageType,
+              statusLine: response.statusLine,
+              navigation: response.navigation ?? null,
+              fieldValues: response.fieldValues !== undefined
+                ? response.fieldValues
+                : (shouldResetFields ? {} : prev.fieldValues),
+              responseCount: prev.responseCount + 1,
+            };
+          });
         } catch (error) {
           console.error('Failed to parse message:', error);
         }

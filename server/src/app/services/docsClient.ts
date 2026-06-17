@@ -1,16 +1,12 @@
-// as500-docs RAG client.
+// DEPRECATED — legacy manual RAG pre-injection.
 //
-// Fetches relevant manual context for a user question and returns both:
-//   - A pre-formatted system-message string for the AI agent.
-//   - Structured source references (page images + citations) for the UI.
+// This file is no longer imported by chatService.ts.  The agent now retrieves
+// document context via MCP knowledge_* tools (Phase 6 cutover).
+// Kept for reference; remove alongside manuals* tables in a future cleanup.
 //
-// Configuration (server/.env.local):
-//   DOCS_API_URL=http://as500-docs:8080
-//   DOCS_MIN_SCORE=0.25   (optional — chunks below this score are ignored)
-//
-// Manual detection: the query is matched against the list of available manuals.
-// If a specific motorcycle/model is mentioned, the search is scoped to ONLY
-// that manual — preventing cross-contamination between manuals.
+// Original purpose: fetch manual excerpts, inject as system message, return
+// DocsSource[] for ManualSourcePanel.  ManualSourcePanel citation phase 2 is
+// tracked in Phase 7.
 
 export interface DocsImageRef {
   image_id: string;

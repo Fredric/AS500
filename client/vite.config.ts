@@ -31,5 +31,11 @@ export default defineConfig({
       usePolling: true,
       interval: 300,
     },
+    proxy: {
+      '/api/documents/upload': {
+        target: process.env.VITE_DEV_API_TARGET ?? 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 });

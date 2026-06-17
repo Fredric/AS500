@@ -2,7 +2,7 @@
 // Builds and handles list + form screens from declarative config
 
 import type { Session, ClientRequest, ScreenResponse, ListNavigation } from '../types/index.js';
-import type { CRUDTableConfig, CRUDContext, BoolExpr, FieldConfig, ServiceCall } from './types.js';
+import type { CRUDTableConfig, CRUDContext, BoolExpr, FieldConfig, ServiceCall, OpenUIMapResult } from './types.js';
 import { listScreenId, formScreenId, deleteConfirmScreenId, getConfig } from './registry.js';
 import { loadContext, saveContext, clearContext } from './context.js';
 import { hasPermission } from '../services/access.js';
@@ -61,6 +61,140 @@ async function loadDatasources(config: CRUDTableConfig, crudCtx: CRUDContext): P
   }
 }
 
+/** A single opt-column selection on the current list page. */
+interface ListSelection {
+  record: Record<string, unknown>;
+  index: number;
+  opt: string;
+  rowIdx: number;
+}
+
+/**
+ * Resolve which row the user selected via opt fields on the current page.
+ * Opt fields are page-relative (`opt_0` …). If multiple are set (stale client
+ * state), the highest row index wins — that matches keyboard row focus.
+ */
+function findListSelection(
+  request: ClientRequest,
+  crudCtx: CRUDContext,
+  optPrefix = 'opt',
+): ListSelection | null {
+  const records = crudCtx.records;
+  const pageStart = crudCtx.pageOffset;
+  let found: ListSelection | null = null;
+
+  for (let rowIdx = 0; rowIdx < LIST_PAGE_SIZE; rowIdx++) {
+    const index = pageStart + rowIdx;
+    if (index >= records.length) break;
+    const opt = request.input[`${optPrefix}_${rowIdx}`]?.trim();
+    if (!opt) continue;
+    found = { record: records[index], index, opt, rowIdx };
+  }
+
+  return found;
+}
+
+/** Persist scope / navigation changes from openUI.mapContext onto a CRUD context. */
+function applyDerivedContext(
+  session: Session,
+  configId: string,
+  derived: OpenUIMapResult,
+  selection: Record<string, unknown>[],
+): CRUDContext {
+  const ctx = loadContext(session, configId);
+  if (derived.input) {
+    ctx.input = { ...ctx.input, ...derived.input };
+  }
+  if (derived.pageOffset !== undefined) {
+    ctx.pageOffset = derived.pageOffset;
+  } else if (derived.input) {
+    // In-place scope changes default to the top of the list.
+    ctx.pageOffset = 0;
+  }
+  if (selection.length > 0) {
+    ctx.selection = selection;
+  }
+  saveContext(session, configId, ctx);
+  return ctx;
+}
+
+async function handleListBackKey(
+  config: CRUDTableConfig,
+  session: Session,
+  crudCtx: CRUDContext,
+  base: { sessionId: string },
+): Promise<ScreenResponse> {
+  if (config.onListBack) {
+    const backAction = await config.onListBack(session, crudCtx);
+    if (backAction === 'handled') {
+      saveContext(session, config.id, crudCtx);
+      return {
+        ...(await buildListScreen(config, session)),
+        ...base,
+        fieldValues: {},
+      };
+    }
+  }
+
+  const prevScreen = session.screenStack.pop() || 'MAIN_MENU';
+  session.currentScreen = prevScreen;
+  clearContext(session, config.id);
+  return { ...(await buildReturnScreen(session)), ...base };
+}
+
+async function executeOpenUINavigation(
+  config: CRUDTableConfig,
+  session: Session,
+  crudCtx: CRUDContext,
+  selection: ListSelection,
+  base: { sessionId: string },
+): Promise<ScreenResponse> {
+  if (!config.openUI) {
+    return {
+      ...(await buildListScreen(config, session, `Invalid option '${selection.opt}'`, 'error')),
+      ...base,
+    };
+  }
+
+  const targetConfig = getConfig(config.openUI.id);
+  if (!targetConfig) {
+    return {
+      ...(await buildListScreen(config, session, `Invalid option '${selection.opt}'`, 'error')),
+      ...base,
+    };
+  }
+
+  crudCtx.selection = [selection.record];
+  const derivedCtx = config.openUI.mapContext(crudCtx);
+
+  if (derivedCtx.skipNavigation) {
+    return {
+      ...(await buildListScreen(
+        config,
+        session,
+        derivedCtx.navigationMessage ?? '',
+        derivedCtx.navigationMessage ? 'info' : null,
+      )),
+      ...base,
+      fieldValues: {},
+    };
+  }
+
+  const sameScreen = targetConfig.id === config.id;
+  if (!sameScreen) {
+    session.screenStack.push(listScreenId(config.id));
+    session.currentScreen = listScreenId(targetConfig.id);
+  }
+
+  applyDerivedContext(session, targetConfig.id, derivedCtx, [selection.record]);
+
+  return {
+    ...(await buildListScreen(targetConfig, session)),
+    ...base,
+    fieldValues: {},
+  };
+}
+
 // ============================================
 // LIST SCREEN
 // ============================================
@@ -72,6 +206,11 @@ export async function buildListScreen(
   messageType?: 'info' | 'warning' | 'error' | null
 ): Promise<Omit<ScreenResponse, 'sessionId'>> {
   const crudCtx = loadContext(session, config.id);
+
+  if (config.onBeforeListRender) {
+    await config.onBeforeListRender(session, crudCtx);
+    saveContext(session, config.id, crudCtx);
+  }
 
   // Load datasources
   await loadDatasources(config, crudCtx);
@@ -194,6 +333,9 @@ export async function buildListScreen(
     shortcutHints.push('Enter=Open');
   }
   if (config.services.delete && checkServicePermission(session, config.services.delete)) shortcutHints.push('D=Delete');
+  if (config.listStatusHints) {
+    shortcutHints.push(...config.listStatusHints);
+  }
   if (config.navigation?.shortcuts) {
     for (const s of config.navigation.shortcuts) {
       shortcutHints.push(`${String(s.key).toUpperCase()}=${s.label}`);
@@ -276,6 +418,7 @@ export async function buildListScreen(
         optFieldPrefix: 'opt',
         primaryAction,
         shortcuts: navShortcuts,
+        contextKey: config.listContextKey?.(crudCtx),
       },
     },
   };
@@ -291,18 +434,12 @@ export async function handleList(
 
   // F3 - Exit to previous screen
   if (request.key === 'F3') {
-    const prevScreen = session.screenStack.pop() || 'MAIN_MENU';
-    session.currentScreen = prevScreen;
-    clearContext(session, config.id);
-    return { ...(await buildReturnScreen(session)), ...base };
+    return handleListBackKey(config, session, crudCtx, base);
   }
 
   // F12 - Cancel (same as F3)
   if (request.key === 'F12') {
-    const prevScreen = session.screenStack.pop() || 'MAIN_MENU';
-    session.currentScreen = prevScreen;
-    clearContext(session, config.id);
-    return { ...(await buildReturnScreen(session)), ...base };
+    return handleListBackKey(config, session, crudCtx, base);
   }
 
   // F6 - Create new record
@@ -364,127 +501,102 @@ export async function handleList(
 
   // ENTER - Process option selections
   if (request.key === 'ENTER') {
-    const records = crudCtx.records;
-    const actionMap = (session.context[`crud_${config.id}_actionMap`] as Record<string, number>) || {};
+    const selection = findListSelection(request, crudCtx);
 
-    // Reverse map: option number -> action key
-    const reverseActionMap: Record<number, string> = {};
-    for (const [actionKey, optNum] of Object.entries(actionMap)) {
-      reverseActionMap[optNum] = actionKey;
+    if (!selection) {
+      return {
+        ...(await buildListScreen(config, session)),
+        ...base,
+        fieldValues: {},
+      };
     }
 
-    for (let i = 0; i < records.length; i++) {
-      const opt = request.input[`opt_${i}`]?.trim();
-      if (!opt || opt === '') continue;
+    const { record, index: i, opt } = selection;
+    const optNum = parseInt(opt, 10);
+    const actionMap = (session.context[`crud_${config.id}_actionMap`] as Record<string, number>) || {};
 
-      const optNum = parseInt(opt, 10);
+    const reverseActionMap: Record<number, string> = {};
+    for (const [actionKey, optNumVal] of Object.entries(actionMap)) {
+      reverseActionMap[optNumVal] = actionKey;
+    }
 
-      // Option 2 - Edit (or view-only detail when no update service but formBuilder is defined)
-      if (opt === '2' && (config.services.update || config.formBuilder.length > 0)) {
-        if (config.services.update && !checkServicePermission(session, config.services.update)) {
-          return {
-            ...(await buildListScreen(config, session, 'Access denied: cannot edit records', 'error')),
-            ...base,
-          };
-        }
-        crudCtx.formMode = 'edit';
-        crudCtx.editRecord = records[i];
-        crudCtx.selection = [records[i]];
-        crudCtx.formPage = 0;
-        saveContext(session, config.id, crudCtx);
+    crudCtx.selection = [record];
 
-        session.screenStack.push(listScreenId(config.id));
-        session.currentScreen = formScreenId(config.id);
-
+    // Option 2 - Edit (or view-only detail when no update service but formBuilder is defined)
+    if (opt === '2' && (config.services.update || config.formBuilder.length > 0)) {
+      if (config.services.update && !checkServicePermission(session, config.services.update)) {
         return {
-          ...(await buildFormScreen(config, session)),
+          ...(await buildListScreen(config, session, 'Access denied: cannot edit records', 'error')),
           ...base,
         };
       }
+      crudCtx.formMode = 'edit';
+      crudCtx.editRecord = record;
+      crudCtx.formPage = 0;
+      saveContext(session, config.id, crudCtx);
 
-      // Option 4 - Delete (navigate to confirmation screen)
-      if (opt === '4' && config.services.delete) {
-        if (!checkServicePermission(session, config.services.delete)) {
-          return {
-            ...(await buildListScreen(config, session, 'Access denied: cannot delete records', 'error')),
-            ...base,
-          };
-        }
-        crudCtx.pendingDeleteRecord = records[i];
-        crudCtx.selection = [records[i]];
-        saveContext(session, config.id, crudCtx);
+      session.screenStack.push(listScreenId(config.id));
+      session.currentScreen = formScreenId(config.id);
 
-        session.screenStack.push(listScreenId(config.id));
-        session.currentScreen = deleteConfirmScreenId(config.id);
-
-        return {
-          ...(await buildDeleteConfirmScreen(config, session)),
-          ...base,
-        };
-      }
-
-      // Option 9 - OpenUI
-      if (opt === '9' && config.openUI) {
-        const targetConfig = getConfig(config.openUI.id);
-        if (targetConfig) {
-          crudCtx.selection = [records[i]];
-          const derivedCtx = config.openUI.mapContext(crudCtx);
-
-          session.screenStack.push(listScreenId(config.id));
-          const targetScreenId = listScreenId(targetConfig.id);
-          session.currentScreen = targetScreenId;
-
-          // Initialize target context with derived values
-          if (derivedCtx.input) {
-            session.context[`crud_${targetConfig.id}_input`] = derivedCtx.input;
-          }
-
-          saveContext(session, config.id, crudCtx);
-
-          return {
-            ...(await buildListScreen(targetConfig, session)),
-            ...base,
-          };
-        }
-      }
-
-      // Custom record actions
-      if (!isNaN(optNum) && reverseActionMap[optNum]) {
-        const actionKey = reverseActionMap[optNum];
-        const action = config.actions![actionKey];
-
-        crudCtx.selection = [records[i]];
-        try {
-          const actionParams = action.params?.(crudCtx);
-          await callService(action.service, action.method, actionParams);
-
-          crudCtx.selection = [];
-          saveContext(session, config.id, crudCtx);
-
-          return {
-            ...(await buildListScreen(config, session, `${action.label} completed`, 'info')),
-            ...base,
-            fieldValues: {},
-          };
-        } catch (error) {
-          console.error(`CRUDTable action '${actionKey}' error:`, error);
-          return {
-            ...(await buildListScreen(config, session, `${action.label} failed`, 'error')),
-            ...base,
-          };
-        }
-      }
-
-      // Invalid option
       return {
-        ...(await buildListScreen(config, session, `Invalid option '${opt}'`, 'error')),
+        ...(await buildFormScreen(config, session)),
         ...base,
       };
     }
 
-    // No option entered - refresh
+    // Option 4 - Delete (navigate to confirmation screen)
+    if (opt === '4' && config.services.delete) {
+      if (!checkServicePermission(session, config.services.delete)) {
+        return {
+          ...(await buildListScreen(config, session, 'Access denied: cannot delete records', 'error')),
+          ...base,
+        };
+      }
+      crudCtx.pendingDeleteRecord = record;
+      saveContext(session, config.id, crudCtx);
+
+      session.screenStack.push(listScreenId(config.id));
+      session.currentScreen = deleteConfirmScreenId(config.id);
+
+      return {
+        ...(await buildDeleteConfirmScreen(config, session)),
+        ...base,
+      };
+    }
+
+    // Option 9 - OpenUI (cross-config or in-place list scope change)
+    if (opt === '9' && config.openUI) {
+      return executeOpenUINavigation(config, session, crudCtx, selection, base);
+    }
+
+    // Custom record actions
+    if (!isNaN(optNum) && reverseActionMap[optNum]) {
+      const actionKey = reverseActionMap[optNum];
+      const action = config.actions![actionKey];
+
+      try {
+        const actionParams = action.params?.(crudCtx);
+        await callService(action.service, action.method, actionParams);
+
+        crudCtx.selection = [];
+        saveContext(session, config.id, crudCtx);
+
+        return {
+          ...(await buildListScreen(config, session, `${action.label} completed`, 'info')),
+          ...base,
+          fieldValues: {},
+        };
+      } catch (error) {
+        console.error(`CRUDTable action '${actionKey}' error:`, error);
+        return {
+          ...(await buildListScreen(config, session, `${action.label} failed`, 'error')),
+          ...base,
+        };
+      }
+    }
+
     return {
-      ...(await buildListScreen(config, session)),
+      ...(await buildListScreen(config, session, `Invalid option '${opt}'`, 'error')),
       ...base,
     };
   }

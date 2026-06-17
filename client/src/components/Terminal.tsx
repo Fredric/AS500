@@ -58,6 +58,7 @@ export default function Terminal() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFocusFrameRef = useRef<number | null>(null);
 
   // Responsive scaling: fit terminal to window while preserving aspect ratio
@@ -140,7 +141,7 @@ export default function Terminal() {
   // Reset row/menu focus when entering a new screen or page
   useEffect(() => {
     const navKey = navigation?.list
-      ? `${screenId}:${navigation.list.pageOffset}`
+      ? `${screenId}:${navigation.list.pageOffset}:${navigation.list.totalRecords}:${navigation.list.contextKey ?? ''}`
       : navigation?.menu
       ? `${screenId}:menu`
       : null;
@@ -225,9 +226,44 @@ export default function Terminal() {
   // Trigger a row action by filling the opt field and sending ENTER
   const triggerRowAction = useCallback((rowIndex: number, option: string) => {
     if (!navigation?.list) return;
-    const { optFieldPrefix } = navigation.list;
-    sendKeyWithInput('ENTER', { [`${optFieldPrefix}_${rowIndex}`]: option });
+    const { optFieldPrefix, dataRowCount } = navigation.list;
+    const cleared: Record<string, string> = {};
+    for (let i = 0; i < dataRowCount; i++) {
+      cleared[`${optFieldPrefix}_${i}`] = '';
+    }
+    sendKeyWithInput('ENTER', {
+      ...cleared,
+      [`${optFieldPrefix}_${rowIndex}`]: option,
+    });
   }, [navigation, sendKeyWithInput]);
+
+  const getDocumentsUploadUrl = useCallback((): string => {
+    // Same-origin in dev (Vite proxy) and prod (Node serves static + API).
+    return '/api/documents/upload';
+  }, []);
+
+  const uploadDocumentFile = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers: Record<string, string> = {};
+    if (sessionId) {
+      headers['X-AS500-Session'] = sessionId;
+    }
+
+    const response = await fetch(getDocumentsUploadUrl(), {
+      method: 'POST',
+      body: formData,
+      headers,
+      credentials: 'include',
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = payload?.error?.message ?? 'Upload failed';
+      throw new Error(message);
+    }
+  }, [getDocumentsUploadUrl, sessionId]);
 
   const hasManualListOption = useCallback(() => {
     if (!navigation?.list) return false;
@@ -326,17 +362,17 @@ export default function Terminal() {
         return;
       }
 
-      // Enter: honor manually typed options before row-level primary action
+      // Enter: row-level primary action beats stale opt-field values
       if (e.key === 'Enter') {
         e.preventDefault();
 
-        if (hasManualListOption()) {
-          sendKey('ENTER');
+        if (focusedDataRowIndex !== null && list.primaryAction) {
+          triggerRowAction(focusedDataRowIndex, list.primaryAction);
           return;
         }
 
-        if (focusedDataRowIndex !== null && list.primaryAction) {
-          triggerRowAction(focusedDataRowIndex, list.primaryAction);
+        if (hasManualListOption()) {
+          sendKey('ENTER');
         }
         return;
       }
@@ -367,6 +403,12 @@ export default function Terminal() {
         if (e.key === 'n' || e.key === 'N') {
           e.preventDefault();
           sendKey('F6');
+          return;
+        }
+        // 'u' → upload file (client opens file picker on My Documents)
+        if ((e.key === 'u' || e.key === 'U') && screenId === 'CRUD_DOCUMENTS') {
+          e.preventDefault();
+          fileInputRef.current?.click();
           return;
         }
       }
@@ -447,7 +489,7 @@ export default function Terminal() {
       sendKey(SPECIAL_KEYS[e.key]);
       return;
     }
-  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, focusedActionIndex, formActions, fields, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction, hasManualListOption]);
+  }, [cursor, navigation, isListMode, isMenuMode, focusedDataRowIndex, focusedActionIndex, formActions, fields, getNextField, getPrevField, focusField, sendKey, sendKeyWithInput, triggerRowAction, hasManualListOption, screenId]);
 
   // Handle keyboard events on input fields
   // In list mode, input fields still use normal field behavior (user can type opt codes directly).
@@ -842,6 +884,24 @@ export default function Terminal() {
 
       {/* AI chat overlay — fixed-position, outside terminal scroll */}
       <AiChatPanel chat={chat} authenticated={authenticated} />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,application/pdf,image/*"
+        style={{ display: 'none' }}
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file || screenId !== 'CRUD_DOCUMENTS') return;
+          try {
+            await uploadDocumentFile(file);
+            sendKey('ENTER');
+          } catch (error) {
+            console.error('Document upload failed:', error);
+          }
+        }}
+      />
     </div>
   );
 }
