@@ -8,6 +8,7 @@
 //   knowledge_find_nodes      — find relevant document folders by semantic similarity
 //   knowledge_describe_node   — full metadata for a single folder
 //   knowledge_get_document    — ingest status + metadata for a document item
+//   knowledge_get_page        — one page's text + extracted reference images
 //   knowledge_get_chunk       — full text + metadata for a single chunk
 
 import { eq, and } from 'drizzle-orm';
@@ -62,7 +63,8 @@ registerMcpTools({
       name: 'search',
       description:
         'Hybrid vector + keyword search across the user\'s ingested document chunks. ' +
-        'Returns ranked chunks with source document title, folder path, page number, and text. ' +
+        'Returns ranked chunks with source document title, folder path, page number, text, ' +
+        'and any extracted reference images on those pages (url field is /docs-images/{id}). ' +
         'Optionally scope to a single folder with folder_id.',
       params: [
         {
@@ -97,12 +99,41 @@ registerMcpTools({
           user_id: userId,
           folder_id: folder_id ?? null,
           top_k: top_k ?? 10,
-        }) as { total: number; answer_context_blocks: string[] };
-        // Return only the formatted context blocks — omitting the raw `results` array
-        // (which duplicates the text with score fields) keeps MCP tool responses lean.
+        }) as {
+          total: number;
+          answer_context_blocks: string[];
+          results: Array<{
+            chunk_id: number;
+            document_item_id: number;
+            document_title: string;
+            page_number: number | null;
+            page_end: number | null;
+            section_title: string | null;
+            node_path: string;
+            images: Array<{ image_id: number; page_number: number | null; caption: string | null }>;
+          }>;
+        };
+
+        const results = (data.results ?? []).map((row) => ({
+          chunk_id: row.chunk_id,
+          document_item_id: row.document_item_id,
+          document_title: row.document_title,
+          page_number: row.page_number,
+          page_end: row.page_end,
+          section_title: row.section_title,
+          node_path: row.node_path,
+          images: (row.images ?? []).map((img) => ({
+            image_id: img.image_id,
+            page_number: img.page_number,
+            caption: img.caption,
+            url: `/docs-images/${img.image_id}`,
+          })),
+        }));
+
         return {
           total: data.total,
           chunks: data.answer_context_blocks,
+          results,
         };
       },
     },
@@ -215,6 +246,59 @@ registerMcpTools({
 
         if (!rows[0]) return { error: 'Document not found.' };
         return { document: rows[0] };
+      },
+    },
+
+    {
+      name: 'get_page',
+      description:
+        'Return one page of an ingested document: markdown/raw text plus all extracted ' +
+        'reference images on that page. Use when the user asks to see diagrams, photos, ' +
+        'or figures from a specific page.',
+      params: [
+        {
+          name: 'userId',
+          type: 'number',
+          required: true,
+          description: 'Injected from auth token — not a tool input.',
+          injectFromAuth: 'userId',
+        },
+        {
+          name: 'document_item_id',
+          type: 'number',
+          required: true,
+          description: 'ID of the document item.',
+        },
+        {
+          name: 'page_number',
+          type: 'number',
+          required: true,
+          description: '1-based page number.',
+        },
+      ],
+      handler: async ({ userId, document_item_id, page_number }) => {
+        const page = await docsGet(
+          `/pages/${document_item_id as number}/${page_number as number}?user_id=${userId as number}`,
+        ) as {
+          document_title: string;
+          page_number: number;
+          markdown: string | null;
+          raw_text: string | null;
+          images: Array<{ image_id: string; caption: string | null }>;
+        };
+
+        return {
+          document_item_id,
+          document_title: page.document_title,
+          page_number: page.page_number,
+          markdown: page.markdown,
+          raw_text: page.raw_text,
+          images: (page.images ?? []).map((img) => ({
+            image_id: Number(img.image_id),
+            caption: img.caption,
+            url: `/docs-images/${img.image_id}`,
+          })),
+        };
       },
     },
 

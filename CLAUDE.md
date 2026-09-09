@@ -415,6 +415,129 @@ Tokens issued this way carry sentinel `client_id = 'as500-direct'` and are other
 
 ---
 
+## Ingest Monitor (admin dashboard)
+
+A standalone admin page at **`http://localhost:5173/ingestmonitor`** that shows every moving part of the document-ingestion / RAG stack on one screen: what is running, what is failing, what is in the queue, and how far along the current document is.
+
+It is deliberately **separate from the terminal app** — its own HTML entry point, its own React tree, its own WebSocket server and its own port. Deleting `server/src/monitor/` and `client/src/monitor/` removes it completely.
+
+### What it shows
+
+| Panel | Content |
+|---|---|
+| Ingestion pipeline | Animated flow: My Documents → docs API → job queue → worker → DOCLING (vLLM) → chunker → Ollama embed → pgvector → `knowledge_*`. Each node is coloured by the health of the service performing that hop; a dead service breaks the chain visibly. |
+| Queue | Counts by job state, `document_items.ingest_status` histogram, chunk/page/image/table totals, 1h and 24h throughput, average duration. |
+| In flight / Failures / Recent jobs | Per-job stage track with one segment per pipeline stage, live counts (pages, chunks, vectors), elapsed time, lock owner and the full error text on failure. |
+| Service cards | as500-docs API + worker, vLLM, Ollama, as500-agent, AS500 server, Postgres, Docker Engine. Each shows health, latency, key facts, container state/uptime/restarts, and the **command to run when it is down**. |
+| Local GPU | Resident models and VRAM. Real telemetry via `nvidia-smi` when the server runs on the GPU host; otherwise inferred from Ollama `/api/ps` and vLLM `/v1/models` (labelled as inferred). |
+| Log console | Live tail of every container plus the as500-agent host log file, with per-source error/warning badges, level filter, text filter and follow mode. |
+| Documents | Every `document_items` row with its folder breadcrumb, ingest status, embedded/total chunk ratio and artefact counts. Filterable, with a **Problems** filter for documents that claim to be `ready` but are missing chunks, vectors or a summary. Click a row to inspect it. |
+
+### Document inspector
+
+The queue panels answer *"did ingestion run?"*. Clicking any document row — or **Inspect** on a job card — opens a full-screen overlay that answers *"is the result any good?"*. This is the only place in AS500 where ingested content is visible; the terminal's My Documents screen shows file metadata only.
+
+| Tab | Content |
+|---|---|
+| Summary | The generated `ai_summary`, plus `storage_path`, `content_hash`, embedding dimensions and total chunk text length. |
+| Chunks | Every chunk with its full text, `node_path`, `section_title`, page range, char count and embedding state. A chunk with no vector is flagged red — it can never be retrieved. One-click copy. |
+| Pages | The per-page markdown Docling emitted, as raw text. Shown unrendered on purpose: when tuning extraction you need what was stored, not a prettified view of it. |
+| Images | The extracted PNGs, actually rendered, with caption, page and linked chunk. |
+| Tables | Extracted table markdown. |
+| Search | Runs a query through the **real** as500-docs hybrid search as the document's owner, showing per-hit `score` / `vec_score` / `kw_score` and marking which hits belong to this document. |
+| Jobs | Full ingestion job history with attempts, duration, lock owner, error text and the stored Python traceback. |
+
+The stored `error` is often useless on its own: Docling wraps every pipeline exception as `RuntimeError("Pipeline VlmPipeline failed")` and the worker persists only `str(exc)`. The `document_ingestion_jobs.traceback` column keeps the full `__cause__` chain, so the Jobs tab shows it behind a collapsible **root cause** line — Python prints causes before the exception that wrapped them, so the first exception line in the traceback is the deepest and most specific one.
+
+Warnings are computed per document and shown above the tabs — missing embeddings, mixed embedding dimensions (the model changed between runs), empty chunk text, `ready` with zero chunks, no summary, unreadable images.
+
+The search tab surfaces one specific trap: if every hit scores `kw 0.000`, retrieval was **vector-only**. as500-docs builds its keyword half with `plainto_tsquery`, which ANDs every query term, so a single word absent from the chunk text silences BM25 entirely. The inspector detects this (`SearchOutcome.keywordDead`) and says so rather than letting you read the zeros as a scoring quirk. Note also that hits arrive in *reranker* order while `score` is the *pre-rerank* hybrid score, so the list can legitimately look mis-sorted.
+
+While a document is ingesting, the browser list and any open inspector re-read themselves whenever the snapshot's artefact totals change, so chunks appear as they land.
+
+### Architecture
+
+```
+Browser /ingestmonitor  ──WS ws://localhost:3005/ws──►  server/src/monitor/
+                                                          ├── probes.ts    HTTP health checks
+                                                          ├── db.ts        read-only queue queries (own 3-conn pool)
+                                                          ├── documents.ts read-only artefact inspection + search probe
+                                                          ├── docker.ts    Docker Engine API over /var/run/docker.sock
+                                                          ├── logs.ts      continuous log tailing + level parsing
+                                                          └── pipeline.ts  stage derivation
+```
+
+The monitor runs on **its own port (3005)**, not on 3001. The terminal's `WebSocketServer` is created without a `path` filter, so it claims every upgrade request on 3001 — a second WS path there would break both. This mirrors how the MCP server runs on 3002.
+
+The server pushes a **full snapshot** every poll interval (default 2.5 s, adjustable from the page) rather than diffs, so the page cannot drift out of sync. Log lines stream separately, only for the source the console is showing.
+
+### Endpoints (port 3005)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/snapshot` | The exact payload the WebSocket pushes — handy for `curl` |
+| `GET` | `/api/logs/:source` | Buffered lines for one log source |
+| `GET` | `/api/documents` | Document browser rows (counts + status per document) |
+| `GET` | `/api/documents/:id` | Full inspection payload: chunks, pages, images, tables, jobs, warnings |
+| `GET` | `/api/image/:id` | One `document_images` PNG, confined to the mounted storage root |
+| `GET` | `/api/original/:id` | The original uploaded file, confined to `MONITOR_UPLOAD_ROOT` |
+| `WS` | `/ws` | Live snapshots + log streaming + `LIST_DOCUMENTS` / `OPEN_DOCUMENT` / `SEARCH` |
+
+Helper scripts:
+
+| Command | Purpose |
+|---|---|
+| `node server/scripts/monitor-snapshot.mjs` | Condensed snapshot as text |
+| `node server/scripts/monitor-ws-check.mjs` | Smoke-tests snapshots + log streaming |
+| `node server/scripts/monitor-inspect-check.mjs [itemId] [query]` | Smoke-tests `LIST_DOCUMENTS` → `OPEN_DOCUMENT` → `SEARCH` |
+| `node server/scripts/inspect-document.mjs <id\|name> [--full] [--pages] [--search "q"]` | Same inspection straight from the CLI, no browser |
+
+### Stage derivation
+
+as500-docs only persists four job states (`queued` / `processing` / `completed` / `failed`), so finer progress is reconstructed from two signals:
+
+1. **Database side effects** — `document_pages` rows appear once Docling has converted the file; `document_chunks` rows appear only after embeddings exist (the column is `NOT NULL`); `ai_summary` lands last.
+2. **Worker structlog output** — each stage names itself (`Running Docling…`, `Building chunks`, `Generating embeddings`, …).
+
+Whichever signal is further along wins, so fast stages that leave no database trace still light up. Log lines carry Docker's real timestamps, so replayed history can never be mistaken for current activity — this is also why a log error only downgrades a component's health for two minutes.
+
+### Configuration
+
+All optional; the defaults match the dev stack.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MONITOR_ENABLED` | `true` | Set `false` to skip booting it |
+| `MONITOR_PORT` | `3005` | HTTP + WebSocket port |
+| `MONITOR_TOKEN` | *(unset)* | When set, required as `?token=…` on `/ws` and `/api/*` |
+| `MONITOR_POLL_MS` | `2500` | Default snapshot interval |
+| `MONITOR_LOG_LINES` | `600` | Ring-buffer size per log source |
+| `MONITOR_DOCKER_SOCKET` | `/var/run/docker.sock` | Engine API socket |
+| `MONITOR_AGENT_LOG` | `/host/as500-agent/agent_err.log` | as500-agent host log file |
+| `MONITOR_DOCS_STORAGE` | `/host/docs-storage` | Mounted as500-docs `storage/` tree, for previewing extracted images |
+| `MONITOR_UPLOAD_ROOT` | `/app/data/documents` | Where original uploads live; served files are confined to this root |
+
+Probe targets reuse the existing vars: `DOCS_API_URL`, `OLLAMA_BASE_URL`, `EMBEDDING_MODEL`, `VLM_API_URL`, `VLM_MODEL`, `AI_AGENT_BASE_URL`, `AI_AGENT_API_KEY`, `LOCK_TIMEOUT_SECONDS`.
+
+**Security:** the dashboard exposes raw service logs **and the full text of every ingested document, for every user, with no per-user authorisation**. It therefore **refuses to start when `NODE_ENV=production` unless `MONITOR_TOKEN` is set**, port 3005 is bound to `127.0.0.1` in `docker-compose.yml`, and it is not published at all in `docker-compose.prod.yml`. File-serving routes resolve every path and reject anything that escapes its configured root, so a malformed database row cannot turn the monitor into an arbitrary-file reader.
+
+### Docker requirements
+
+`docker-compose.yml` gives the server container three extra mounts. All are optional — the dashboard degrades gracefully and tells you what to add if they are missing.
+
+```yaml
+- /var/run/docker.sock:/var/run/docker.sock:ro   # container status + log streaming
+- ../as500-agent:/host/as500-agent:ro            # as500-agent host stderr log
+- ../as500-docs/storage:/host/docs-storage:ro    # extracted page images for the inspector
+```
+
+Adding or changing a mount needs `docker compose up -d server` (a plain `restart` will not apply it).
+
+Server-side code changes need `docker compose restart server` — `tsx watch` does not receive filesystem events through Windows Docker volumes.
+
+---
+
 ## AI Agent Integration
 
 AS500 ships an in-terminal AI chat panel backed by a local Python AI agent (`as500-agent` repo). The user opens the panel with the star button (✦) in the top-right corner; the server streams responses token-by-token over the existing WebSocket.

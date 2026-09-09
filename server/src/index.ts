@@ -21,6 +21,7 @@ import './app/index.js';
 
 // Document upload HTTP handler (session-authenticated)
 import { handleDocumentsUpload } from './app/api/documentsUpload.js';
+import { badGateway, resolveDocsUserId, unauthorized } from './app/api/docsAssets.js';
 
 // AI Agent chat integration
 import { streamChatTurn } from './core/ai/chatService.js';
@@ -32,6 +33,10 @@ import { handleCRUDScreen, buildCRUDScreenForResume } from './core/crudtable/rou
 // Remote MCP server (separate Express app on its own port). Phase 2: boots
 // unauthenticated; see `server/src/core/mcp/index.ts`.
 import { startMcpServer, DEFAULT_MCP_PORT } from './core/mcp/index.js';
+
+// Ingest monitor: standalone admin dashboard backend on its own port. Fully
+// self-contained in `server/src/monitor/` — see that folder's index.ts.
+import { startMonitorServer } from './monitor/index.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 const MCP_PORT = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT) : DEFAULT_MCP_PORT;
@@ -72,8 +77,13 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const url = req.url || '/';
-  let filePath = join(CLIENT_DIST, url === '/' ? 'index.html' : url);
+  const url = (req.url || '/').split('?')[0];
+
+  // The ingest monitor is a second Vite entry point, not a route in the SPA, so
+  // its extensionless path must resolve to its own HTML file rather than falling
+  // through to the terminal's index.html.
+  const isMonitor = url === '/ingestmonitor' || url === '/ingestmonitor/';
+  let filePath = join(CLIENT_DIST, isMonitor ? 'ingestmonitor.html' : url === '/' ? 'index.html' : url);
 
   try {
     const stats = await stat(filePath);
@@ -155,17 +165,24 @@ async function startServer() {
       return;
     }
 
-    // Proxy manual page preview from as500-docs.
-    // Route: GET /docs-pages/:manualId/:pageNumber  →  ${DOCS_API_URL}/pages/:manualId/:pageNumber
-    const pageMatch = url.match(/^\/docs-pages\/([^/?#]+)\/(\d+)/);
+    // Proxy document page preview from as500-docs.
+    // Route: GET /docs-pages/:documentItemId/:pageNumber
+    const pageMatch = url.match(/^\/docs-pages\/(\d+)\/(\d+)/);
     if (pageMatch && req.method === 'GET') {
       if (!DOCS_API_URL_INTERNAL) {
         res.writeHead(503, { 'Content-Type': 'text/plain' });
         res.end('DOCS_API_URL not configured');
         return;
       }
+      const userId = await resolveDocsUserId(req);
+      if (userId == null) {
+        unauthorized(res);
+        return;
+      }
       try {
-        const proxyRes = await fetch(`${DOCS_API_URL_INTERNAL}/pages/${pageMatch[1]}/${pageMatch[2]}`);
+        const proxyRes = await fetch(
+          `${DOCS_API_URL_INTERNAL}/pages/${pageMatch[1]}/${pageMatch[2]}?user_id=${userId}`,
+        );
         if (!proxyRes.ok) {
           res.writeHead(proxyRes.status);
           res.end();
@@ -175,23 +192,29 @@ async function startServer() {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(json));
       } catch {
-        res.writeHead(502, { 'Content-Type': 'text/plain' });
-        res.end('Docs service unreachable');
+        badGateway(res);
       }
       return;
     }
 
-    // Proxy manual page images from as500-docs.
-    // Route: GET /docs-images/:imageId  →  ${DOCS_API_URL}/images/:imageId
-    const imageMatch = url.match(/^\/docs-images\/([^/?#]+)/);
+    // Proxy extracted document images from as500-docs.
+    // Route: GET /docs-images/:imageId
+    const imageMatch = url.match(/^\/docs-images\/(\d+)/);
     if (imageMatch && req.method === 'GET') {
       if (!DOCS_API_URL_INTERNAL) {
         res.writeHead(503, { 'Content-Type': 'text/plain' });
         res.end('DOCS_API_URL not configured');
         return;
       }
+      const userId = await resolveDocsUserId(req);
+      if (userId == null) {
+        unauthorized(res);
+        return;
+      }
       try {
-        const proxyRes = await fetch(`${DOCS_API_URL_INTERNAL}/image-file/${imageMatch[1]}`);
+        const proxyRes = await fetch(
+          `${DOCS_API_URL_INTERNAL}/image-file/${imageMatch[1]}?user_id=${userId}`,
+        );
         if (!proxyRes.ok) {
           res.writeHead(proxyRes.status);
           res.end();
@@ -201,12 +224,11 @@ async function startServer() {
         const ct = proxyRes.headers.get('content-type') ?? 'image/png';
         res.writeHead(200, {
           'Content-Type': ct,
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'private, max-age=3600',
         });
         res.end(Buffer.from(buf));
       } catch {
-        res.writeHead(502, { 'Content-Type': 'text/plain' });
-        res.end('Docs service unreachable');
+        badGateway(res);
       }
       return;
     }
@@ -246,6 +268,14 @@ async function startServer() {
     }
   } else {
     console.log('MCP server disabled via MCP_ENABLED=false');
+  }
+
+  // Ingest monitor dashboard backend. Independent listener so the terminal's
+  // pathless WebSocket server keeps sole ownership of upgrades on PORT.
+  try {
+    startMonitorServer();
+  } catch (err) {
+    console.error('Failed to start ingest monitor:', err);
   }
 
   // Ping/pong keepalive for Heroku (55s idle timeout)

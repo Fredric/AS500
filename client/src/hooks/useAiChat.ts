@@ -14,6 +14,7 @@ export interface UseAiChatReturn {
   streaming: boolean;
   error: string | null;
   isOpen: boolean;
+  sessionId: string | null;
   open: () => void;
   close: () => void;
   toggle: () => void;
@@ -121,5 +122,5 @@ export function useAiChat({
   const toggle = useCallback(() => setIsOpen(v => !v), []);
   const clearError = useCallback(() => setError(null), []);
 
-  return { messages, streaming, error, isOpen, open, close, toggle, sendMessage, clearError };
+  return { messages, streaming, error, isOpen, sessionId, open, close, toggle, sendMessage, clearError };
 }

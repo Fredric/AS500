@@ -5,9 +5,12 @@
  * Styled to match the green-screen terminal aesthetic.
  */
 
+import AuthDocImage from './AuthDocImage';
+
 interface Props {
   content: string;
   streaming?: boolean;
+  sessionId?: string | null;
 }
 
 type Block =
@@ -17,6 +20,7 @@ type Block =
   | { type: 'ul'; items: string[] }
   | { type: 'ol'; items: string[] }
   | { type: 'p'; text: string }
+  | { type: 'img'; alt: string; src: string }
   | { type: 'blank' };
 
 function parseBlocks(markdown: string): Block[] {
@@ -37,6 +41,14 @@ function parseBlocks(markdown: string): Block[] {
         i++;
       }
       blocks.push({ type: 'code', lang, text: codeLines.join('\n') });
+      i++;
+      continue;
+    }
+
+    // Standalone markdown image
+    const img = line.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/);
+    if (img) {
+      blocks.push({ type: 'img', alt: img[1], src: img[2] });
       i++;
       continue;
     }
@@ -107,11 +119,10 @@ function parseBlocks(markdown: string): Block[] {
   return blocks;
 }
 
-/** Render inline markdown: **bold**, *italic*, `code`, [link](url) */
-function InlineText({ text }: { text: string }) {
-  // Split on inline patterns
+/** Render inline markdown: **bold**, *italic*, `code`, ![alt](url) */
+function InlineText({ text, sessionId }: { text: string; sessionId?: string | null }) {
   const parts: React.ReactNode[] = [];
-  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|!\[([^\]]*)\]\(([^)]+)\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
 
@@ -120,6 +131,17 @@ function InlineText({ text }: { text: string }) {
     if (m[2] !== undefined) parts.push(<strong key={m.index} className="md-bold">{m[2]}</strong>);
     else if (m[3] !== undefined) parts.push(<em key={m.index} className="md-em">{m[3]}</em>);
     else if (m[4] !== undefined) parts.push(<code key={m.index} className="md-code-inline">{m[4]}</code>);
+    else if (m[5] !== undefined && m[6] !== undefined) {
+      parts.push(
+        <AuthDocImage
+          key={m.index}
+          src={m[6]}
+          alt={m[5] || 'Document illustration'}
+          className="md-img-inline"
+          sessionId={sessionId ?? null}
+        />,
+      );
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));
@@ -127,7 +149,7 @@ function InlineText({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-export default function MarkdownMessage({ content, streaming }: Props) {
+export default function MarkdownMessage({ content, streaming, sessionId = null }: Props) {
   const blocks = parseBlocks(content);
 
   return (
@@ -139,11 +161,11 @@ export default function MarkdownMessage({ content, streaming }: Props) {
           case 'hr':
             return <hr key={i} className="md-hr" />;
           case 'h1':
-            return <div key={i} className="md-h1"><InlineText text={block.text} /></div>;
+            return <div key={i} className="md-h1"><InlineText text={block.text} sessionId={sessionId} /></div>;
           case 'h2':
-            return <div key={i} className="md-h2"><InlineText text={block.text} /></div>;
+            return <div key={i} className="md-h2"><InlineText text={block.text} sessionId={sessionId} /></div>;
           case 'h3':
-            return <div key={i} className="md-h3"><InlineText text={block.text} /></div>;
+            return <div key={i} className="md-h3"><InlineText text={block.text} sessionId={sessionId} /></div>;
           case 'code':
             return (
               <pre key={i} className="md-code-block">
@@ -155,7 +177,7 @@ export default function MarkdownMessage({ content, streaming }: Props) {
             return (
               <ul key={i} className="md-ul">
                 {block.items.map((item, j) => (
-                  <li key={j} className="md-li"><InlineText text={item} /></li>
+                  <li key={j} className="md-li"><InlineText text={item} sessionId={sessionId} /></li>
                 ))}
               </ul>
             );
@@ -163,18 +185,30 @@ export default function MarkdownMessage({ content, streaming }: Props) {
             return (
               <ol key={i} className="md-ol">
                 {block.items.map((item, j) => (
-                  <li key={j} className="md-li"><InlineText text={item} /></li>
+                  <li key={j} className="md-li"><InlineText text={item} sessionId={sessionId} /></li>
                 ))}
               </ol>
             );
           case 'p':
             return (
               <p key={i} className="md-p">
-                <InlineText text={block.text} />
+                <InlineText text={block.text} sessionId={sessionId} />
                 {streaming && i === blocks.length - 1 && (
                   <span className="ai-chat-cursor">&#x258C;</span>
                 )}
               </p>
+            );
+          case 'img':
+            return (
+              <figure key={i} className="md-figure">
+                <AuthDocImage
+                  src={block.src}
+                  alt={block.alt || 'Document illustration'}
+                  className="md-img"
+                  sessionId={sessionId}
+                />
+                {block.alt && <figcaption className="md-caption">{block.alt}</figcaption>}
+              </figure>
             );
           default:
             return null;

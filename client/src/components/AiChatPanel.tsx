@@ -19,7 +19,7 @@ type ResizeDir = 'n'|'ne'|'e'|'se'|'s'|'sw'|'w'|'nw';
 const RESIZE_DIRS: ResizeDir[] = ['n','ne','e','se','s','sw','w','nw'];
 
 export default function AiChatPanel({ chat, authenticated }: AiChatPanelProps) {
-  const { messages, streaming, error, isOpen, close, sendMessage, clearError } = chat;
+  const { messages, streaming, error, isOpen, sessionId, close, sendMessage, clearError } = chat;
 
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -172,7 +172,7 @@ export default function AiChatPanel({ chat, authenticated }: AiChatPanelProps) {
             <span className="ai-chat-msg-content">
               {msg.role === 'assistant' ? (
                 <>
-                  <MarkdownMessage content={msg.content} streaming={msg.streaming} />
+                  <MarkdownMessage content={msg.content} streaming={msg.streaming} sessionId={sessionId} />
                   {!msg.streaming && msg.sources && msg.sources.length > 0 && (
                     <ManualSourcePanel sources={msg.sources} />
                   )}

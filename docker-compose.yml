@@ -20,6 +20,15 @@ services:
     volumes:
       - ./server:/app
       - server_node_modules:/app/node_modules
+      # Ingest monitor: read container status and stream logs via the Docker
+      # Engine API. Without this the dashboard falls back to HTTP-only probes.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Ingest monitor: as500-agent runs natively on the host and redirects its
+      # stderr to a file, so the log dir is mounted read-only to surface it.
+      - ../as500-agent:/host/as500-agent:ro
+      # Ingest monitor: the document inspector renders the page images Docling
+      # extracted, which as500-docs writes into its own storage/ tree.
+      - ../as500-docs/storage:/host/docs-storage:ro
     command: sh -c "touch .env.local && npm ci && npm run dev"
     ports:
       - "3001:3001"
@@ -27,11 +36,22 @@ services:
       # when MCP_ENABLED is not 'false'. Published on the same port on the host
       # so Claude Code / other MCP clients can connect to http://localhost:3002/mcp.
       - "3002:3002"
+      # Ingest monitor dashboard backend (HTTP + WebSocket). Consumed by the
+      # /ingestmonitor page. See server/src/monitor/. Bound to loopback only:
+      # it exposes raw service logs and has no auth unless MONITOR_TOKEN is set.
+      - "127.0.0.1:3005:3005"
+    extra_hosts:
+      # Ingest monitor probes Ollama, vLLM and as500-agent, all of which run
+      # natively on the host rather than in this Compose project.
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://as500:as500@postgres:5432/as500
+      # Ingest monitor probe targets (host-native services).
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      VLM_API_URL: http://host.docker.internal:8000/v1
       # as500-docs ingest API — triggers Docling pipeline when a PDF/image is uploaded.
       # Uses host.docker.internal because as500-docs is on a separate Docker network.
       DOCS_API_URL: http://host.docker.internal:8080
