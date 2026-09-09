@@ -18,6 +18,8 @@ interface Props {
   onOpenBook: (book: ResolvedBook) => void;
   /** Write a postit/board's text. Only relevant when `thing.type` is one of those. */
   onSetNote: (thingId: number, body: string, color?: string) => void;
+  /** Walk through a door. Only relevant when `thing.door` is set. */
+  onEnterDoor: (spaceKey: string) => void;
 }
 
 const NOTE_COLORS = ['yellow', 'pink', 'blue', 'green'];
@@ -35,11 +37,12 @@ function describeBinding(thing: ResolvedThing): string {
     case 'record':      return `config "${b.configId}", record ${b.recordId}`;
     case 'service':     return `service "${b.serviceKey}"`;
     case 'agent':       return `agent user ${b.userId}`;
+    case 'door':        return `door to "${b.spaceName}"`;
     case 'workstation': return 'a workstation running AS500';
   }
 }
 
-export default function ThingPanel({ thing, onClose, onSelect, onOpenBook, onSetNote }: Props) {
+export default function ThingPanel({ thing, onClose, onSelect, onOpenBook, onSetNote, onEnterDoor }: Props) {
   return (
     <aside className="panel">
       <header className="panel__head">
@@ -107,6 +110,16 @@ export default function ThingPanel({ thing, onClose, onSelect, onOpenBook, onSet
 
       {(thing.type === 'postit' || thing.type === 'board') && thing.access === 'ok' && (
         <NoteEditor thing={thing} onSetNote={onSetNote} />
+      )}
+
+      {thing.door && (
+        <section className="panel__section">
+          <h3>Door</h3>
+          <p className="panel__note">Leads to <strong>{thing.door.spaceName}</strong>.</p>
+          <button type="button" onClick={() => onEnterDoor(thing.door!.spaceKey)}>
+            Go through
+          </button>
+        </section>
       )}
 
       {thing.books !== null && (

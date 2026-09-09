@@ -107,6 +107,10 @@ export const thingsConfig: CRUDTableConfig = {
             ctx.values.type ?? '',
             ctx.values.bindingKind ?? 'none',
           ),
+          (ctx) => worldService.validateDoorBinding(
+            ctx.values.type ?? '',
+            ctx.values.bindingKind ?? 'none',
+          ),
         ],
       },
       column: { width: 11 },
@@ -153,7 +157,7 @@ export const thingsConfig: CRUDTableConfig = {
       staticOptions: THING_BINDING_KINDS.map((k) => ({ value: k, display: k })),
       form: {
         required: true,
-        hint: '(crud=a list, record=one row, service, workstation, agent, none)',
+        hint: '(crud=a list, record=one row, service, workstation, agent, door, none)',
         // Validated here rather than per-field: the rule spans Binds to,
         // Target and Scope together, and this field is always visible so the
         // check always runs.
@@ -258,6 +262,28 @@ export const thingsConfig: CRUDTableConfig = {
         return { input: { id: b.recordId, userId: ctx.input.userId }, pageOffset: 0 };
       }
 
+      // --- walk through a door (same screen, space change) ---
+      //
+      // A door doesn't leave this screen, it re-scopes it — exactly like
+      // descending into a container does, just one level higher (spaces
+      // instead of the furniture tree within one). `spaceStack` remembers
+      // where you came from so Esc (onListBack, below) can climb back out
+      // the same way it already climbs the furniture tree.
+      if (b && b.kind === 'door') {
+        const stack = Array.isArray(ctx.input.spaceStack) ? (ctx.input.spaceStack as unknown[]) : [];
+        return {
+          input: {
+            ...ctx.input,
+            spaceId: b.spaceId,
+            spaceLabel: b.spaceName,
+            parentThingId: null,
+            parentLabel: '',
+            spaceStack: [...stack, { spaceId: ctx.input.spaceId, spaceLabel: ctx.input.spaceLabel }],
+          },
+          pageOffset: 0,
+        };
+      }
+
       // --- descend into contents (same screen, scope change) ---
       return {
         input: {
@@ -270,16 +296,37 @@ export const thingsConfig: CRUDTableConfig = {
     },
   },
 
-  /** Esc walks back up the furniture tree before leaving the screen. */
+  /**
+   * Esc walks back up the furniture tree first, then back out through any
+   * doors walked through to get here, and only then leaves the screen —
+   * the two stacks nest in that order because a door re-scopes the SAME
+   * screen a furniture descent does, one level higher.
+   */
   onListBack: async (_session, ctx) => {
     const parentThingId = (ctx.input.parentThingId as number | null | undefined) ?? null;
-    if (parentThingId === null) return 'pop';
+    if (parentThingId !== null) {
+      const parent = await worldService.getThing(parentThingId);
+      ctx.input.parentThingId = parent?.parentThingId ?? null;
+      ctx.input.parentLabel = '';
+      ctx.pageOffset = 0;
+      return 'handled';
+    }
 
-    const parent = await worldService.getThing(parentThingId);
-    ctx.input.parentThingId = parent?.parentThingId ?? null;
-    ctx.input.parentLabel = '';
-    ctx.pageOffset = 0;
-    return 'handled';
+    const stack = Array.isArray(ctx.input.spaceStack)
+      ? (ctx.input.spaceStack as Array<{ spaceId: number; spaceLabel: string }>)
+      : [];
+    if (stack.length > 0) {
+      const previous = stack[stack.length - 1];
+      ctx.input.spaceId = previous.spaceId;
+      ctx.input.spaceLabel = previous.spaceLabel;
+      ctx.input.spaceStack = stack.slice(0, -1);
+      ctx.input.parentThingId = null;
+      ctx.input.parentLabel = '';
+      ctx.pageOffset = 0;
+      return 'handled';
+    }
+
+    return 'pop';
   },
 
   /** Changes when the caller descends, so the client resets row focus. */
@@ -300,13 +347,16 @@ export const thingsConfig: CRUDTableConfig = {
       'what AS500 data it is a view of: bindingKind "crud" with bindingTarget set to ' +
       'a config id and bindingScope to that list\'s scope (e.g. "folderId=42") makes ' +
       'the object a window onto that list. bindingTarget also carries the service ' +
-      'key for kind "service" and the user id for kind "agent". Objects nest via ' +
-      'parentThingId, which is the furniture tree, NOT the data hierarchy. Placing ' +
-      'an object never copies data. A type "bookshelf" must bind to the ' +
-      '"documents" config — it shows one book per subfolder, derived live, never ' +
-      'stored as separate objects. Types "postit" and "board" are the exception: ' +
-      'they must have bindingKind "none" and instead own their own text via the ' +
-      'world_notes tool, scoped by this object\'s own id as thingId.',
+      'key for kind "service", the user id for kind "agent", and the destination ' +
+      'space\'s key for kind "door". Objects nest via parentThingId, which is the ' +
+      'furniture tree, NOT the data hierarchy. Placing an object never copies data. ' +
+      'A type "bookshelf" must bind to the "documents" config — it shows one book ' +
+      'per subfolder, derived live, never stored as separate objects. Types "postit" ' +
+      'and "board" are the exception: they must have bindingKind "none" and instead ' +
+      'own their own text via the world_notes tool, scoped by this object\'s own id ' +
+      'as thingId. A type "door" must have bindingKind "door" (and only a "door" ' +
+      'may) — entering it re-scopes this same tool\'s spaceId to the target space, ' +
+      'the same way descending into a container re-scopes parentThingId.',
     operations: { list: true, read: true, create: true, update: true, delete: true },
     scope: [
       {

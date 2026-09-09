@@ -17,6 +17,8 @@ interface Props {
   onSelect: (thing: ResolvedThing) => void;
   /** A book spine was clicked directly on a bookshelf. */
   onOpenBook: (book: ResolvedBook) => void;
+  /** A door was clicked directly on its shape. */
+  onEnterDoor: (spaceKey: string) => void;
   onMove: (pose: { x: number; y: number; rot: number }) => void;
 }
 
@@ -38,7 +40,7 @@ function badge(thing: ResolvedThing): string {
   return '';
 }
 
-export default function Floorplan({ things, actors, selectedId, onSelect, onOpenBook, onMove }: Props) {
+export default function Floorplan({ things, actors, selectedId, onSelect, onOpenBook, onEnterDoor, onMove }: Props) {
   const placed = layoutThings(things);
 
   // Click on empty floor walks there. Positions are relayed to other viewers but
@@ -79,6 +81,7 @@ export default function Floorplan({ things, actors, selectedId, onSelect, onOpen
           selected={p.thing.id === selectedId}
           onSelect={onSelect}
           onOpenBook={onOpenBook}
+          onEnterDoor={onEnterDoor}
         />
       ))}
 
@@ -130,17 +133,21 @@ function ThingShape({
   selected,
   onSelect,
   onOpenBook,
+  onEnterDoor,
 }: {
   placed: Placed;
   selected: boolean;
   onSelect: (t: ResolvedThing) => void;
   onOpenBook: (book: ResolvedBook) => void;
+  onEnterDoor: (spaceKey: string) => void;
 }) {
   const { thing, x, y, w, h } = placed;
   const mark = badge(thing);
   const hasSpines = thing.type === 'bookshelf' && thing.books !== null && thing.books.length > 0;
   const isNote = thing.type === 'postit' || thing.type === 'board';
   const noteClass = isNote ? ` note note--${thing.note?.color ?? 'yellow'}` : '';
+  const isDoor = thing.type === 'door' && thing.door !== null;
+  const doorClass = isDoor ? ' thing--door' : '';
 
   const PAD = 0.18;
   const badgeWidth = mark ? mark.length * 0.34 * ADVANCE + 0.22 : 0;
@@ -152,13 +159,22 @@ function ThingShape({
   const noteBody = isNote
     ? fit(thing.note?.body || '(empty)', w - PAD * 2, 0.3, 0.2)
     : null;
+  // The destination is the point of a door — shown in place of the generic
+  // type line, same "primary interaction lives on the shape" precedent notes
+  // and book spines already set.
+  const doorLabel = isDoor ? fit(`→ ${thing.door!.spaceName}`, w - PAD * 2, 0.3, 0.2) : null;
 
   return (
     <g
-      className={`thing ${accessClass(thing)}${noteClass} ${selected ? 'thing--selected' : ''}`}
+      className={`thing ${accessClass(thing)}${noteClass}${doorClass} ${selected ? 'thing--selected' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(thing);
+        // A door's primary interaction is walking through it directly, not
+        // opening the side panel — the panel is still reachable as a
+        // fallback (it has its own "Go through" button) the same way a
+        // bookshelf's panel is a fallback for its spines.
+        if (isDoor) onEnterDoor(thing.door!.spaceKey);
+        else onSelect(thing);
       }}
     >
       <rect x={x} y={y} width={w} height={h} rx="0.15" />
@@ -166,7 +182,11 @@ function ThingShape({
       <text x={x + PAD} y={y + 0.58} className="thing__label" fontSize={label.fontSize}>
         {label.text}
       </text>
-      {noteBody ? (
+      {doorLabel ? (
+        <text x={x + PAD} y={y + h - 0.22} className="thing__door-label" fontSize={doorLabel.fontSize}>
+          {doorLabel.text}
+        </text>
+      ) : noteBody ? (
         <text x={x + PAD} y={y + h - 0.22} className="thing__note-body" fontSize={noteBody.fontSize}>
           {noteBody.text}
         </text>

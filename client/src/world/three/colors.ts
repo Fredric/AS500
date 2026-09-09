@@ -25,6 +25,9 @@ export const NOTE_COLOR: Record<string, THREE.Color> = {
 export const BOOK_COLOR = new THREE.Color('#92400e');
 export const BOOK_OVERFLOW_COLOR = new THREE.Color('#9aa3b2');
 
+/** A door reads as passable, not bound — mirrors `.thing--door` in `world.css`. */
+export const DOOR_COLOR = new THREE.Color('#dcfce7');
+
 export const HUMAN_COLOR = new THREE.Color('#2f6fed');
 export const AGENT_COLOR = new THREE.Color('#d97706');
 

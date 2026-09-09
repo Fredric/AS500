@@ -11,6 +11,7 @@ export type ThingBinding =
   | { kind: 'workstation' }
   | { kind: 'service'; serviceKey: string }
   | { kind: 'agent'; userId: number }
+  | { kind: 'door'; spaceKey: string; spaceId: number; spaceName: string }
   | { kind: 'none' };
 
 export type ResolvedAccess = 'ok' | 'denied' | 'unbound' | 'error';
@@ -62,6 +63,8 @@ export interface ResolvedThing {
   books: ResolvedBook[] | null;
   /** Populated only for `type: 'postit'`/`'board'` things — `null` body means never written. */
   note: ResolvedNote | null;
+  /** Populated for `kind: 'door'` bindings whose target space resolved live. */
+  door: { spaceKey: string; spaceName: string } | null;
   children: ResolvedThing[];
 }
 

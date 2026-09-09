@@ -34,7 +34,7 @@ import type {
   WorldSpaceRow,
   WorldThingRow,
 } from './types.js';
-import { describeBinding } from './services/worldService.js';
+import { describeBinding, getSpaceByKey } from './services/worldService.js';
 import { probeStatusFor } from './serviceStatus.js';
 
 /** How many bound records a Thing shows before it just reports a count. */
@@ -226,6 +226,7 @@ export async function resolveThing(
     service: null,
     books: null,
     note: null,
+    door: null,
     children,
   };
 
@@ -280,6 +281,18 @@ export async function resolveThing(
         // Identity only in Phase 1 — see `serviceStatus.ts` for why live health
         // waits for the monitor snapshot subscription in Phase 3.
         return { ...base, access: 'ok', service: await probeStatusFor(binding.serviceKey) };
+
+      case 'door': {
+        // Live lookup by spaceKey, not the cached spaceId on the binding —
+        // that cache exists only so the terminal's synchronous
+        // openUI.mapContext (thingsConfig.ts) can navigate without a query;
+        // the graphical surfaces always get current data, so a renamed or
+        // deleted target space degrades to access:'error' here, same as any
+        // other dangling binding.
+        const space = await getSpaceByKey(binding.spaceKey);
+        if (!space) return { ...base, access: 'error', reason: `No space '${binding.spaceKey}'` };
+        return { ...base, access: 'ok', door: { spaceKey: binding.spaceKey, spaceName: space.name } };
+      }
     }
   } catch (err) {
     // A binding usually scopes to its owner's data — `userId` is injected from

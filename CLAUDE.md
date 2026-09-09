@@ -770,6 +770,40 @@ correctly releases for it — confirmed with a temporary REST-placed object at
 a known position (pointer lock itself cannot be driven from an automated
 headless browser; mouselook needs a manual check in a real tab).
 
+### Doors between spaces (Phase 5)
+
+`type: 'door'` is bound `{ kind: 'door', spaceKey, spaceId, spaceName }` to
+another `world_spaces` row, and walking into it (2D click, 3D "Press E", or
+Enter in the terminal) moves you there via `enterSpace()` — which already
+existed and needed **no changes at all**: `ENTER_SPACE` already resets the
+avatar to the same default entry pose every space entry uses.
+
+**The one binding kind that caches a DB lookup.** Every other kind resolves
+its target through `getConfig()` — synchronous, in-memory — so the
+terminal's `openUI.mapContext` (`thingsConfig.ts`), which is itself
+synchronous (`OpenUIMapResult`, not a `Promise`, per
+`core/crudtable/types.ts`), can navigate in one step. A door's target is a
+**space**, which only exists in Postgres. Fix: `composeBinding`
+(`worldService.ts`) is `async` for the `door` case only, resolves the target
+once at write time via the existing `getSpaceByKey()`, and caches its
+immutable numeric `id` (plus `name`, for display) on the binding — catching
+a typo'd target space **immediately at create time** as a proper
+`McpToolError('validation_failed', …)`, not a bare 500 (the only case where
+this distinction actually matters: every other kind's Target check already
+runs as a synchronous field validator before the service is ever called,
+so their equivalent thrown-`Error` fallback is normally unreachable — a
+door's space-existence check is the *only* enforcement point, since it
+can't be a field validator). The graphical surfaces (`resolver.ts`) always
+re-resolve `spaceKey` live, never the cached `id`, so a later-renamed target
+space degrades to `access: 'error'`, same as any other dangling binding.
+
+**Esc from inside a doored-into room** — `onListBack` (`thingsConfig.ts`)
+already climbed the furniture tree (`parentThingId`) one level at a time; a
+`spaceStack` in `ctx.input`, pushed alongside the spaceId swap in
+`openUI.mapContext`, extends the exact same nesting one level higher: pop
+the furniture tree first, and only once it's exhausted, pop one space level
+instead of leaving the screen.
+
 ### Spatial model
 
 The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not

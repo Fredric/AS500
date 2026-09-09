@@ -138,6 +138,12 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
 .thing--error rect  { stroke: var(--w-danger); fill: var(--w-danger-bg); }
 .thing--selected rect { stroke-width: 0.11; filter: drop-shadow(0 0 0.2px var(--w-accent)); }
 
+/* A door reads as passable, not as a bound container — its own tint,
+   distinct from the generic access-state outlines above. */
+.thing--door rect { stroke: var(--w-success); fill: rgba(21, 128, 61, 0.08); cursor: pointer; }
+.thing--door:hover rect { fill: rgba(21, 128, 61, 0.16); }
+.thing__door-label { fill: var(--w-success); font-weight: 600; }
+
 .thing__label { fill: var(--w-text); font-weight: 600; }
 .thing__type  { fill: var(--w-text-faint); }
 .thing__note-body { fill: var(--w-text-dim); }

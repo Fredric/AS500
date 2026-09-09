@@ -31,13 +31,24 @@ export type ThingBinding =
   | { kind: 'service'; serviceKey: string }
   /** An agent's seat. */
   | { kind: 'agent'; userId: number }
+  /**
+   * A passage to another space. `spaceId`/`spaceName` are resolved once, at
+   * write time (`composeBinding`) — the one binding kind that needs to,
+   * because its target lives in Postgres, not the in-memory config registry
+   * every other kind resolves through, and the terminal's `openUI.mapContext`
+   * is synchronous. `spaceId` never goes stale (a space's primary key never
+   * changes); `spaceKey` is what the graphical surfaces re-resolve live on
+   * every scene resolve, so a renamed target space degrades to `access:
+   * 'error'` there, same as any other dangling binding.
+   */
+  | { kind: 'door'; spaceKey: string; spaceId: number; spaceName: string }
   /** Owns its own payload (post-it, whiteboard). Phase 2. */
   | { kind: 'none' };
 
 export type ThingBindingKind = ThingBinding['kind'];
 
 export const THING_BINDING_KINDS: ThingBindingKind[] = [
-  'crud', 'record', 'workstation', 'service', 'agent', 'none',
+  'crud', 'record', 'workstation', 'service', 'agent', 'door', 'none',
 ];
 
 /** Object types the renderers know how to draw. Additive — unknown types draw as a crate. */
@@ -149,6 +160,8 @@ export interface ResolvedThing extends WorldThingRow {
   books: ResolvedBook[] | null;
   /** Populated only for `type: 'postit'`/`'board'` things — `null` body means never written. */
   note: ResolvedNote | null;
+  /** Populated for `kind: 'door'` bindings whose target space resolved live — not the cached spaceId. */
+  door: { spaceKey: string; spaceName: string } | null;
   /** Child things (the furniture tree), already resolved. */
   children: ResolvedThing[];
 }

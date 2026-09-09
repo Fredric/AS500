@@ -30,10 +30,11 @@ interface Props {
   things: ResolvedThing[];
   onSelect: (thing: ResolvedThing) => void;
   onOpenBook: (book: ResolvedBook) => void;
+  onEnterDoor: (spaceKey: string) => void;
   onHitChange: (hit: Hit | null) => void;
 }
 
-export default function InteractionHUD({ things, onSelect, onOpenBook, onHitChange }: Props) {
+export default function InteractionHUD({ things, onSelect, onOpenBook, onEnterDoor, onHitChange }: Props) {
   const { camera, scene } = useThree();
   const raycaster = useRef(new THREE.Raycaster());
   const hitRef = useRef<Hit | null>(null);
@@ -60,7 +61,11 @@ export default function InteractionHUD({ things, onSelect, onOpenBook, onHitChan
         if (book) { next = { kind: 'book', label: book.label, book }; break; }
       } else if (data.thingId != null) {
         const thing = things.find((t) => t.id === data.thingId);
-        if (thing) { next = { kind: 'thing', label: thing.label, thing }; break; }
+        if (thing) {
+          const label = thing.type === 'door' && thing.door ? `Enter ${thing.door.spaceName}` : thing.label;
+          next = { kind: 'thing', label, thing };
+          break;
+        }
       }
     }
 
@@ -76,11 +81,12 @@ export default function InteractionHUD({ things, onSelect, onOpenBook, onHitChan
       const current = hitRef.current;
       if (!current) return;
       if (current.kind === 'book' && current.book) onOpenBook(current.book);
+      else if (current.kind === 'thing' && current.thing?.type === 'door' && current.thing.door) onEnterDoor(current.thing.door.spaceKey);
       else if (current.kind === 'thing' && current.thing) onSelect(current.thing);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onSelect, onOpenBook]);
+  }, [onSelect, onOpenBook, onEnterDoor]);
 
   return null;
 }

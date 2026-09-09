@@ -15,6 +15,7 @@ const { Pool } = pkg;
  */
 
 const SPACE_KEY = 'e2e_office';
+const SPACE_KEY_2 = 'e2e_office_annex';
 const CONN = process.env.DATABASE_URL || 'postgresql://as500:as500@localhost:5433/as500';
 
 /** Root of the bookshelf test tree — E2E Books / Fiction / Sci-Fi, plus a loose file. */
@@ -103,6 +104,24 @@ async function seedOffice(): Promise<void> {
        VALUES ($1, 'postit', 'E2E Postit', 'south', $2, '{"kind":"none"}'::jsonb)`,
       [space.id, user.id],
     );
+
+    // A second space, and a door in the first bound to it — Phase 5. The
+    // binding caches spaceId/spaceName (composeBinding, worldService.ts) as
+    // well as spaceKey, exactly as a real placement would.
+    const { rows: [annex] } = await pool.query(
+      `INSERT INTO world_spaces (key, name, kind, owner_user_id) VALUES ($1, 'E2E Annex', 'office', $2) RETURNING id`,
+      [SPACE_KEY_2, user.id],
+    );
+    await pool.query(
+      `INSERT INTO world_things (space_id, type, label, zone, owner_user_id, binding)
+       VALUES ($1, 'desk', 'E2E Annex Desk', 'north_east', $2, '{"kind":"none"}'::jsonb)`,
+      [annex.id, user.id],
+    );
+    await pool.query(
+      `INSERT INTO world_things (space_id, type, label, zone, owner_user_id, binding)
+       VALUES ($1, 'door', 'E2E Door', 'south_east', $2, $3::jsonb)`,
+      [space.id, user.id, JSON.stringify({ kind: 'door', spaceKey: SPACE_KEY_2, spaceId: annex.id, spaceName: 'E2E Annex' })],
+    );
   } finally {
     await pool.end();
   }
@@ -116,7 +135,7 @@ async function cleanOffice(pool?: InstanceType<typeof Pool>): Promise<void> {
     // their folder via FK. document_folders.parent_id is a plain column with
     // no FK (documentService walks it recursively at the app layer instead —
     // see deleteFolderRecursive), so every folder level must be named here.
-    await p.query(`DELETE FROM world_spaces WHERE key = $1`, [SPACE_KEY]);
+    await p.query(`DELETE FROM world_spaces WHERE key = ANY($1::text[])`, [[SPACE_KEY, SPACE_KEY_2]]);
     await p.query(
       `DELETE FROM document_folders WHERE name = ANY($1::text[])`,
       [['E2E Office Folder', BOOKSHELF_ROOT_FOLDER, BOOKSHELF_SUBFOLDER_A, BOOKSHELF_SUBFOLDER_B, BOOKSHELF_NESTED_FOLDER]],
@@ -306,5 +325,30 @@ test.describe('Notes — postits/boards own their own text', () => {
     await expect(reopened).toBeVisible({ timeout: 15000 });
     await reopened.locator('rect').first().click({ position: { x: 5, y: 5 } });
     await expect(page.locator('.note-editor__body')).toHaveValue('Hello from Playwright', { timeout: 10000 });
+  });
+});
+
+test.describe('Doors — walking between spaces', () => {
+  test.beforeAll(async () => { await seedOffice(); });
+  test.afterAll(async () => { await cleanOffice(); });
+
+  test('clicking a door switches spaces and shows the target\'s own objects', async ({ page }) => {
+    await signIn(page, 'FREDRIC', 'fredric');
+    await page.goto(`http://localhost:5173/office?space=${SPACE_KEY}`, { waitUntil: 'domcontentloaded' });
+
+    const door = page.locator('.thing', { hasText: 'E2E Door' });
+    await expect(door).toBeVisible({ timeout: 15000 });
+    await expect(door).toHaveClass(/thing--door/);
+
+    // The primary interaction is walking through directly — no panel step,
+    // same "primary interaction lives on the shape" pattern as book spines.
+    await expect(page.locator('.panel')).toHaveCount(0);
+    await door.locator('rect').first().click({ position: { x: 5, y: 5 } });
+
+    // Landed in the target space, showing ITS objects (the annex desk),
+    // not the room the door was standing in.
+    await expect(page.locator('.topbar__space select')).toHaveValue(SPACE_KEY_2, { timeout: 15000 });
+    await expect(page.locator('.thing', { hasText: 'E2E Annex Desk' })).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.thing', { hasText: 'E2E Door' })).toHaveCount(0);
   });
 });

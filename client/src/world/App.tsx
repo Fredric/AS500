@@ -71,6 +71,14 @@ export default function App() {
     setOpenBook({ folderId: book.id, label: book.label });
   }
 
+  function enterDoor(spaceKey: string) {
+    // Leaving the room — nothing from it stays open. ENTER_SPACE itself
+    // already resets the avatar to the same default entry pose every space
+    // entry uses, so no extra pose bookkeeping is needed here.
+    setOpenBook(null);
+    enterSpace(spaceKey);
+  }
+
   if (!authed) {
     return (
       <div className="shell shell--empty">
@@ -132,6 +140,7 @@ export default function App() {
               selectedId={selected?.id ?? null}
               onSelect={select}
               onOpenBook={openBookModal}
+              onEnterDoor={enterDoor}
               onMove={move}
             />
           ) : (
@@ -141,6 +150,7 @@ export default function App() {
               selectedId={selected?.id ?? null}
               onSelect={select}
               onOpenBook={openBookModal}
+              onEnterDoor={enterDoor}
               onMove={move}
               overlayOpen={Boolean(selected) || Boolean(openBook)}
             />
@@ -157,6 +167,7 @@ export default function App() {
             onSelect={select}
             onOpenBook={openBookModal}
             onSetNote={setNote}
+            onEnterDoor={enterDoor}
           />
         )}
       </main>

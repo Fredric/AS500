@@ -12,6 +12,7 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../core/db/index.js';
 import { getAllConfigs } from '../../core/crudtable/registry.js';
+import { McpToolError } from '../../core/mcp/errors.js';
 import { worldSpaces, worldThings } from '../db/schema.js';
 import {
   BOOKSHELF_CONFIG_ID,
@@ -95,6 +96,7 @@ export function bindingTargetOf(b: ThingBinding | null): string {
     case 'record':  return b.configId;
     case 'service': return b.serviceKey;
     case 'agent':   return String(b.userId);
+    case 'door':    return b.spaceKey;
     default:        return '';
   }
 }
@@ -118,6 +120,7 @@ export function describeBinding(b: ThingBinding | null): string {
     case 'record':      return `${b.configId}#${b.recordId}`;
     case 'service':     return `svc:${b.serviceKey}`;
     case 'agent':       return `agent:${b.userId}`;
+    case 'door':        return `door:${b.spaceKey}`;
     case 'workstation': return 'workstation';
   }
 }
@@ -223,6 +226,10 @@ export function validateBinding(f: BindingFields): string | null {
       return null;
     }
 
+    case 'door':
+      if (!target) return 'A door binding needs a Target (the destination space\'s key)';
+      return null;
+
     default:
       return null;
   }
@@ -261,8 +268,33 @@ export function validateNoteBinding(type: string, bindingKind: string): string |
   return null;
 }
 
-/** Build a {@link ThingBinding} from the two form fields, validating as it goes. */
-export function composeBinding(f: BindingFields): ThingBinding {
+/**
+ * A `type: 'door'` object is a passage to another space, so it may only
+ * carry a `door` binding — and, unlike bookshelf/note, the constraint runs
+ * the other way too: a `door` binding only makes sense on a door-typed
+ * object (nothing else knows to walk through it). Same convention as
+ * {@link validateShelfBinding}.
+ */
+export function validateDoorBinding(type: string, bindingKind: string): string | null {
+  if (type === 'door' && bindingKind !== 'door') {
+    return `A door must bind to a space — set Binds to=door, Target=<space key>`;
+  }
+  if (type !== 'door' && bindingKind === 'door') {
+    return `A door binding only makes sense on a door — set Type=door`;
+  }
+  return null;
+}
+
+/**
+ * Build a {@link ThingBinding} from the two form fields, validating as it goes.
+ *
+ * `async` only because of the `door` case: its target is a space, which
+ * lives in Postgres rather than the in-memory config registry every other
+ * kind resolves through, so resolving it (and catching a typo'd target
+ * immediately, not silently) needs a query. `createThing`/`updateThing`,
+ * this function's only callers, are already `async`.
+ */
+export async function composeBinding(f: BindingFields): Promise<ThingBinding> {
   const problem = validateBinding(f);
   if (problem) throw new Error(problem);
 
@@ -286,6 +318,26 @@ export function composeBinding(f: BindingFields): ThingBinding {
 
     case 'agent':
       return { kind, userId: Number(target) };
+
+    case 'door': {
+      const space = await getSpaceByKey(target);
+      if (!space) {
+        // A field validator can't make this check — it needs a DB query,
+        // and validators run synchronously (core/crudtable/runtime.ts) — so
+        // this is the ONLY enforcement point, unlike every other kind's
+        // Target check, which validateBinding's field validator already
+        // catches before a service call is ever made. A plain thrown Error
+        // here would map to a bare 500 internal_error over REST/MCP
+        // (core/api/handlers.ts's apiResultFromThrown); McpToolError gets
+        // the same clean 400 validation_failed every other rejected field
+        // already gets. The terminal's own error handling (runtime.ts)
+        // catches any Error identically either way.
+        throw new McpToolError('validation_failed', `No space '${target}'`, [
+          { name: 'bindingTarget', message: `No space '${target}'` },
+        ]);
+      }
+      return { kind, spaceKey: target, spaceId: space.id, spaceName: space.name };
+    }
   }
 }
 
@@ -451,7 +503,7 @@ export interface ThingWriteParams extends BindingFields {
 }
 
 export async function createThing(p: ThingWriteParams): Promise<Record<string, unknown>> {
-  const values = buildThingValues(p);
+  const values = await buildThingValues(p);
   const [row] = await db
     .insert(worldThings)
     .values({
@@ -465,7 +517,7 @@ export async function createThing(p: ThingWriteParams): Promise<Record<string, u
 }
 
 export async function updateThing(p: ThingWriteParams & { id: number }): Promise<Record<string, unknown>> {
-  const values = buildThingValues(p);
+  const values = await buildThingValues(p);
   const [row] = await db
     .update(worldThings)
     .set({ ...values, updated_at: new Date() })
@@ -490,20 +542,23 @@ export async function deleteThing(p: { id: number }): Promise<void> {
   if (res.length === 0) throw new Error('Object not found');
 }
 
-function buildThingValues(p: ThingWriteParams) {
+async function buildThingValues(p: ThingWriteParams) {
   const type = (p.type || '').trim().toLowerCase();
   if (!type) throw new Error('Type is required');
   if (!(THING_TYPES as readonly string[]).includes(type)) {
     throw new Error(`Unknown type '${type}'. One of: ${THING_TYPES.join(', ')}`);
   }
 
-  const binding = composeBinding(p);
+  const binding = await composeBinding(p);
 
   const shelfProblem = validateShelfBinding(type, p.bindingKind || 'none', p.bindingTarget ?? '');
   if (shelfProblem) throw new Error(shelfProblem);
 
   const noteProblem = validateNoteBinding(type, p.bindingKind || 'none');
   if (noteProblem) throw new Error(noteProblem);
+
+  const doorProblem = validateDoorBinding(type, p.bindingKind || 'none');
+  if (doorProblem) throw new Error(doorProblem);
 
   const transform = buildTransform(p.x, p.y);
 

@@ -23,6 +23,7 @@ interface Props {
   selectedId: number | null;
   onSelect: (thing: ResolvedThing) => void;
   onOpenBook: (book: ResolvedBook) => void;
+  onEnterDoor: (spaceKey: string) => void;
   onMove: (pose: { x: number; y: number; rot: number }) => void;
   /** True while a DOM overlay (side panel, book modal) is open — releases pointer lock. */
   overlayOpen: boolean;
@@ -30,7 +31,7 @@ interface Props {
 
 const DEFAULT_ENTRY_POSE = { x: 12, y: 8, rot: 0 };
 
-export default function Scene3D({ things, actors, selectedId, onSelect, onOpenBook, onMove, overlayOpen }: Props) {
+export default function Scene3D({ things, actors, selectedId, onSelect, onOpenBook, onEnterDoor, onMove, overlayOpen }: Props) {
   const placed = layoutThings(things);
   const controllerRef = useRef<PlayerControllerHandle>(null);
   const [hit, setHit] = useState<Hit | null>(null);
@@ -63,6 +64,7 @@ export default function Scene3D({ things, actors, selectedId, onSelect, onOpenBo
             selected={p.thing.id === selectedId}
             onSelect={onSelect}
             onOpenBook={onOpenBook}
+            onEnterDoor={onEnterDoor}
           />
         ))}
 
@@ -71,7 +73,13 @@ export default function Scene3D({ things, actors, selectedId, onSelect, onOpenBo
         ))}
 
         <PlayerController ref={controllerRef} placed={placed} startPose={DEFAULT_ENTRY_POSE} onMove={onMove} />
-        <InteractionHUD things={things} onSelect={onSelect} onOpenBook={onOpenBook} onHitChange={setHit} />
+        <InteractionHUD
+          things={things}
+          onSelect={onSelect}
+          onOpenBook={onOpenBook}
+          onEnterDoor={onEnterDoor}
+          onHitChange={setHit}
+        />
       </Canvas>
 
       <div className="hud">

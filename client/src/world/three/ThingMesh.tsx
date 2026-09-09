@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { Billboard, Text } from '@react-three/drei';
 import type { Placed } from '../layout';
 import type { ResolvedBook, ResolvedThing } from '../types';
-import { ACCESS_COLOR, BOOK_COLOR, BOOK_OVERFLOW_COLOR, EDGE_COLOR, NOTE_COLOR, SELECTED_EMISSIVE } from './colors';
+import { ACCESS_COLOR, BOOK_COLOR, BOOK_OVERFLOW_COLOR, DOOR_COLOR, EDGE_COLOR, NOTE_COLOR, SELECTED_EMISSIVE } from './colors';
 import { heightFor, MODEL_FOR_TYPE } from './heights';
 
 interface Props {
@@ -22,6 +22,7 @@ interface Props {
   selected: boolean;
   onSelect: (thing: ResolvedThing) => void;
   onOpenBook: (book: ResolvedBook) => void;
+  onEnterDoor: (spaceKey: string) => void;
 }
 
 function accessKey(thing: ResolvedThing): keyof typeof ACCESS_COLOR {
@@ -31,16 +32,18 @@ function accessKey(thing: ResolvedThing): keyof typeof ACCESS_COLOR {
   return thing.contents ? 'ok_bound' : 'ok_open';
 }
 
-export default function ThingMesh({ placed, selected, onSelect, onOpenBook }: Props) {
+export default function ThingMesh({ placed, selected, onSelect, onOpenBook, onEnterDoor }: Props) {
   const { thing, x, y, w, h } = placed;
   const height = heightFor(thing.type);
   const isNote = thing.type === 'postit' || thing.type === 'board';
+  const isDoor = thing.type === 'door' && thing.door !== null;
   const hasSpines = thing.type === 'bookshelf' && thing.books !== null && thing.books.length > 0;
 
   const color = useMemo(() => {
     if (isNote) return NOTE_COLOR[thing.note?.color ?? 'yellow'];
+    if (isDoor) return DOOR_COLOR;
     return ACCESS_COLOR[accessKey(thing)];
-  }, [thing, isNote]);
+  }, [thing, isNote, isDoor]);
 
   // Model swap seam — a real model per type is a later increment (primitives
   // now, per the plan). Reserved so that future work touches this lookup,
@@ -51,7 +54,9 @@ export default function ThingMesh({ placed, selected, onSelect, onOpenBook }: Pr
   const cx = x + w / 2;
   const cz = y + h / 2;
 
-  const label = isNote ? (thing.note?.body || '(empty)') : thing.label;
+  const label = isNote
+    ? (thing.note?.body || '(empty)')
+    : isDoor ? `→ ${thing.door!.spaceName}` : thing.label;
   const labelText = label.length > 40 ? `${label.slice(0, 39)}…` : label;
 
   const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(w, height, h)), [w, height, h]);
@@ -61,7 +66,11 @@ export default function ThingMesh({ placed, selected, onSelect, onOpenBook }: Pr
       <mesh
         position={[cx, height / 2, cz]}
         userData={{ thingId: thing.id }}
-        onClick={(e) => { e.stopPropagation(); onSelect(thing); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isDoor) onEnterDoor(thing.door!.spaceKey);
+          else onSelect(thing);
+        }}
       >
         <boxGeometry args={[w, height, h]} />
         <meshStandardMaterial
