@@ -28,6 +28,19 @@ export interface ResolvedContents {
   truncated: boolean;
 }
 
+/** One subfolder of a bookshelf's bound folder, rendered as a book. */
+export interface ResolvedBook {
+  id: number;
+  label: string;
+}
+
+/** The payload of a `type: 'postit'`/`'board'` thing. `null` body = never written. */
+export interface ResolvedNote {
+  body: string;
+  color: string;
+  updatedAt: string;
+}
+
 export interface ResolvedThing {
   id: number;
   spaceId: number;
@@ -45,6 +58,10 @@ export interface ResolvedThing {
   reason: string | null;
   contents: ResolvedContents | null;
   service: { status: string; detail: string | null } | null;
+  /** Populated only for `type: 'bookshelf'` things whose binding resolved ok. */
+  books: ResolvedBook[] | null;
+  /** Populated only for `type: 'postit'`/`'board'` things — `null` body means never written. */
+  note: ResolvedNote | null;
   children: ResolvedThing[];
 }
 
@@ -74,11 +91,23 @@ export interface Presence {
   since: string;
 }
 
+/** One row in a bookshelf's file-explorer modal — a folder or a file. */
+export interface DocumentsBrowseEntry {
+  id: number;
+  kind: 'folder' | 'file';
+  name: string;
+  fileType: string;
+  sizeBytes: number | null;
+  modifiedAt: string;
+}
+
 export type WorldClientMessage =
   | { type: 'ENTER_SPACE'; spaceKey: string }
   | { type: 'LEAVE_SPACE' }
   | { type: 'MOVE'; pose: { x: number; y: number; rot: number }; atThingId?: number | null }
   | { type: 'OPEN_THING'; thingId: number }
+  | { type: 'BROWSE_DOCUMENTS_FOLDER'; folderId: number | null }
+  | { type: 'SET_NOTE'; thingId: number; body: string; color?: string }
   | { type: 'REFRESH' }
   | { type: 'PING' };
 
@@ -87,5 +116,6 @@ export type WorldServerMessage =
   | { type: 'THING_CHANGED'; thing: ResolvedThing }
   | { type: 'PRESENCE'; spaceKey: string; actors: Presence[] }
   | { type: 'THING_OPENED'; thing: ResolvedThing }
+  | { type: 'DOCUMENTS_FOLDER'; folderId: number | null; breadcrumb: string; entries: DocumentsBrowseEntry[] }
   | { type: 'ERROR'; message: string }
   | { type: 'PONG' };

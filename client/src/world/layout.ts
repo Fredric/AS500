@@ -30,6 +30,7 @@ const FOOTPRINT: Record<string, [number, number]> = {
   cabinet: [2.8, 3],
   drawer: [2, 1.2],
   shelf: [4, 1.2],
+  bookshelf: [5, 2.4],
   rack: [2.8, 3.2],
   box: [1.6, 1.6],
   board: [4.4, 1],

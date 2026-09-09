@@ -14,6 +14,7 @@ import { db } from '../../core/db/index.js';
 import { getAllConfigs } from '../../core/crudtable/registry.js';
 import { worldSpaces, worldThings } from '../db/schema.js';
 import {
+  BOOKSHELF_CONFIG_ID,
   THING_BINDING_KINDS,
   THING_TYPES,
   type ThingBinding,
@@ -225,6 +226,39 @@ export function validateBinding(f: BindingFields): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * A `type: 'bookshelf'` object shows one book per subfolder of a My Documents
+ * folder, so it may only be bound to that config. Returns an error message,
+ * same convention as {@link validateBinding}, so it can back both a form
+ * validator and the create/update service call.
+ */
+export function validateShelfBinding(
+  type: string,
+  bindingKind: string,
+  bindingTarget: string,
+): string | null {
+  if (type !== 'bookshelf') return null;
+  if (bindingKind !== 'crud' || bindingTarget.trim() !== BOOKSHELF_CONFIG_ID) {
+    return `A bookshelf must bind to '${BOOKSHELF_CONFIG_ID}' — set Binds to=crud, Target=${BOOKSHELF_CONFIG_ID}`;
+  }
+  return null;
+}
+
+/**
+ * A `type: 'postit'`/`'board'` thing owns its own payload (Phase 2 — see
+ * `notes.ts`) rather than binding to a config: its scope is its own thing id,
+ * which doesn't exist yet at placement time, so no binding kind fits. Same
+ * convention as {@link validateShelfBinding}: an error message, not a throw,
+ * so it backs both a form validator and the create/update service call.
+ */
+export function validateNoteBinding(type: string, bindingKind: string): string | null {
+  if (type !== 'postit' && type !== 'board') return null;
+  if (bindingKind !== 'none') {
+    return `A ${type} owns its own text and cannot bind to anything — set Binds to=none`;
+  }
+  return null;
 }
 
 /** Build a {@link ThingBinding} from the two form fields, validating as it goes. */
@@ -444,6 +478,13 @@ function buildThingValues(p: ThingWriteParams) {
   }
 
   const binding = composeBinding(p);
+
+  const shelfProblem = validateShelfBinding(type, p.bindingKind || 'none', p.bindingTarget ?? '');
+  if (shelfProblem) throw new Error(shelfProblem);
+
+  const noteProblem = validateNoteBinding(type, p.bindingKind || 'none');
+  if (noteProblem) throw new Error(noteProblem);
+
   const transform = buildTransform(p.x, p.y);
 
   return {

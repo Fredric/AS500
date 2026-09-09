@@ -9,12 +9,20 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  DocumentsBrowseEntry,
   Presence,
   ResolvedScene,
   ResolvedThing,
   WorldClientMessage,
   WorldServerMessage,
 } from './types';
+
+/** One resolved level of a bookshelf's file-explorer modal. */
+export interface DocumentsBrowseLevel {
+  folderId: number | null;
+  breadcrumb: string;
+  entries: DocumentsBrowseEntry[];
+}
 
 const ACCESS_TOKEN_COOKIE = 'as500_access_token';
 
@@ -57,9 +65,15 @@ export interface WorldConnection {
   scene: ResolvedScene | null;
   actors: Presence[];
   opened: ResolvedThing | null;
+  /** The current level of an open bookshelf modal, or null while none is open. */
+  browse: DocumentsBrowseLevel | null;
   enterSpace: (spaceKey: string) => void;
   openThing: (thingId: number) => void;
   closeThing: () => void;
+  /** Ask the server to resolve one folder level for the bookshelf modal. */
+  browseFolder: (folderId: number | null) => void;
+  /** Write a postit/board's text. Not CRUDTable-driven — see server/src/world/index.ts's SET_NOTE case. */
+  setNote: (thingId: number, body: string, color?: string) => void;
   move: (pose: { x: number; y: number; rot: number }) => void;
   refresh: () => void;
 }
@@ -70,6 +84,7 @@ export function useWorldSocket(initialSpaceKey: string | null): WorldConnection 
   const [scene, setScene] = useState<ResolvedScene | null>(null);
   const [actors, setActors] = useState<Presence[]>([]);
   const [opened, setOpened] = useState<ResolvedThing | null>(null);
+  const [browse, setBrowse] = useState<DocumentsBrowseLevel | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const authed = accessToken() != null;
@@ -138,6 +153,9 @@ export function useWorldSocket(initialSpaceKey: string | null): WorldConnection 
           case 'THING_CHANGED':
             setOpened((prev) => (prev && prev.id === msg.thing.id ? msg.thing : prev));
             break;
+          case 'DOCUMENTS_FOLDER':
+            setBrowse({ folderId: msg.folderId, breadcrumb: msg.breadcrumb, entries: msg.entries });
+            break;
           case 'ERROR':
             setError(msg.message);
             break;
@@ -180,13 +198,24 @@ export function useWorldSocket(initialSpaceKey: string | null): WorldConnection 
 
   const openThing = useCallback((thingId: number) => send({ type: 'OPEN_THING', thingId }), [send]);
   const closeThing = useCallback(() => setOpened(null), []);
+  const browseFolder = useCallback(
+    (folderId: number | null) => send({ type: 'BROWSE_DOCUMENTS_FOLDER', folderId }),
+    [send],
+  );
+  const setNote = useCallback(
+    (thingId: number, body: string, color?: string) => send({ type: 'SET_NOTE', thingId, body, color }),
+    [send],
+  );
   const move = useCallback(
     (pose: { x: number; y: number; rot: number }) => send({ type: 'MOVE', pose }),
     [send],
   );
   const refresh = useCallback(() => send({ type: 'REFRESH' }), [send]);
 
-  return { connected, authed, error, scene, actors, opened, enterSpace, openThing, closeThing, move, refresh };
+  return {
+    connected, authed, error, scene, actors, opened, browse,
+    enterSpace, openThing, closeThing, browseFolder, setNote, move, refresh,
+  };
 }
 
 /** Depth-first lookup through the furniture tree. */

@@ -42,11 +42,19 @@ export const THING_BINDING_KINDS: ThingBindingKind[] = [
 
 /** Object types the renderers know how to draw. Additive — unknown types draw as a crate. */
 export const THING_TYPES = [
-  'desk', 'cabinet', 'drawer', 'shelf', 'box', 'workstation',
+  'desk', 'cabinet', 'drawer', 'shelf', 'bookshelf', 'box', 'workstation',
   'board', 'postit', 'album', 'rack', 'door', 'plant',
 ] as const;
 
 export type ThingType = (typeof THING_TYPES)[number];
+
+/**
+ * The one config a `'bookshelf'` may bind to. `'bookshelf'` is a distinct type
+ * from the generic `'shelf'` specifically so this constraint is new furniture,
+ * not a retroactive rule on furniture that already existed with no such limit
+ * (`seedOffice.ts` places a plain `type:'shelf'` bound to `motorcycles`).
+ */
+export const BOOKSHELF_CONFIG_ID = 'documents';
 
 // ============================================
 // Persisted shape
@@ -106,6 +114,29 @@ export interface ResolvedContents {
   truncated: boolean;
 }
 
+/**
+ * One subfolder of a bookshelf's bound folder, rendered as a book.
+ *
+ * Never a `world_things` row: derived live from `document_folders` on every
+ * resolve, exactly like `ResolvedContents.preview` — a bookshelf is a lens,
+ * not a cache. See `documentsShelf.ts`.
+ */
+export interface ResolvedBook {
+  id: number;
+  label: string;
+}
+
+/**
+ * The payload of a `type: 'postit'`/`'board'` thing — Phase 2's "objects that
+ * own data" class. `null` means the thing has never been written to yet (a
+ * blank post-it), not an error.
+ */
+export interface ResolvedNote {
+  body: string;
+  color: string;
+  updatedAt: string;
+}
+
 export interface ResolvedThing extends WorldThingRow {
   access: ResolvedAccess;
   /** Human-readable reason when `access` is not `ok`. Safe to show in a UI. */
@@ -114,6 +145,10 @@ export interface ResolvedThing extends WorldThingRow {
   contents: ResolvedContents | null;
   /** Populated for `kind: 'service'` bindings — health from the ingest monitor probes. */
   service: { status: string; detail: string | null } | null;
+  /** Populated only for `type: 'bookshelf'` things whose binding resolved `ok`. */
+  books: ResolvedBook[] | null;
+  /** Populated only for `type: 'postit'`/`'board'` things — `null` body means never written. */
+  note: ResolvedNote | null;
   /** Child things (the furniture tree), already resolved. */
   children: ResolvedThing[];
 }
@@ -145,11 +180,25 @@ export interface Presence {
 // Wire protocol (:3006 /ws)
 // ============================================
 
+/** One row in a bookshelf's file-explorer modal — a folder or a file. */
+export interface DocumentsBrowseEntry {
+  id: number;
+  kind: 'folder' | 'file';
+  name: string;
+  fileType: string;
+  sizeBytes: number | null;
+  modifiedAt: string;
+}
+
 export type WorldClientMessage =
   | { type: 'ENTER_SPACE'; spaceKey: string }
   | { type: 'LEAVE_SPACE' }
   | { type: 'MOVE'; pose: { x: number; y: number; rot: number }; atThingId?: number | null }
   | { type: 'OPEN_THING'; thingId: number }
+  /** A book (or a folder inside one) was clicked in the file-explorer modal. */
+  | { type: 'BROWSE_DOCUMENTS_FOLDER'; folderId: number | null }
+  /** The graphical client's textarea for a postit/board is not CRUDTable-driven. */
+  | { type: 'SET_NOTE'; thingId: number; body: string; color?: string }
   | { type: 'REFRESH' }
   | { type: 'PING' };
 
@@ -162,5 +211,7 @@ export type WorldServerMessage =
   | { type: 'PRESENCE'; spaceKey: string; actors: Presence[] }
   /** Reply to OPEN_THING — the resolved object on its own. */
   | { type: 'THING_OPENED'; thing: ResolvedThing }
+  /** Reply to BROWSE_DOCUMENTS_FOLDER — one level of the file-explorer modal. */
+  | { type: 'DOCUMENTS_FOLDER'; folderId: number | null; breadcrumb: string; entries: DocumentsBrowseEntry[] }
   | { type: 'ERROR'; message: string }
   | { type: 'PONG' };

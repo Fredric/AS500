@@ -83,3 +83,24 @@ export const worldThings = pgTable('world_things', {
     .on(t.parent_thing_id, t.slot)
     .where(sql`${t.parent_thing_id} IS NOT NULL AND ${t.slot} IS NOT NULL`),
 ]);
+
+/**
+ * The payload of a `type: 'postit'` or `'board'` thing — Phase 2's "objects
+ * that own data" class. Unlike a bound thing (a lens onto another table),
+ * these things ARE the data: one row per thing, `thing_id` unique.
+ *
+ * Deliberately a real FK with `onDelete: 'cascade'` — unlike
+ * `document_folders.parent_id`, this is a strict one-owner relationship (a
+ * note belongs to exactly one thing, never shared, never a tree), so a
+ * database-level cascade is correct here and needs no app-layer cleanup.
+ */
+export const worldNotes = pgTable('world_notes', {
+  id: serial('id').primaryKey(),
+  thing_id: integer('thing_id').notNull().unique()
+    .references(() => worldThings.id, { onDelete: 'cascade' }),
+  body: text('body').notNull().default(''),
+  /** Renderer hint only: 'yellow' | 'pink' | 'blue' | 'green'. */
+  color: varchar('color', { length: 16 }).default('yellow').notNull(),
+  updated_by_user_id: integer('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});

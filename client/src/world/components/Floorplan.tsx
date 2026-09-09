@@ -7,7 +7,7 @@
  * The 3D renderer swaps in against the same protocol.
  */
 
-import type { Presence, ResolvedThing } from '../types';
+import type { Presence, ResolvedBook, ResolvedThing } from '../types';
 import { layoutThings, ROOM_H, ROOM_W, type Placed } from '../layout';
 
 interface Props {
@@ -15,6 +15,8 @@ interface Props {
   actors: Presence[];
   selectedId: number | null;
   onSelect: (thing: ResolvedThing) => void;
+  /** A book spine was clicked directly on a bookshelf. */
+  onOpenBook: (book: ResolvedBook) => void;
   onMove: (pose: { x: number; y: number; rot: number }) => void;
 }
 
@@ -36,7 +38,7 @@ function badge(thing: ResolvedThing): string {
   return '';
 }
 
-export default function Floorplan({ things, actors, selectedId, onSelect, onMove }: Props) {
+export default function Floorplan({ things, actors, selectedId, onSelect, onOpenBook, onMove }: Props) {
   const placed = layoutThings(things);
 
   // Click on empty floor walks there. Positions are relayed to other viewers but
@@ -60,14 +62,14 @@ export default function Floorplan({ things, actors, selectedId, onSelect, onMove
     >
       <defs>
         <pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse">
-          <path d="M 1 0 L 0 0 0 1" fill="none" stroke="rgba(51,255,51,0.08)" strokeWidth="0.02" />
+          <path d="M 1 0 L 0 0 0 1" fill="none" className="floorplan__grid-line" strokeWidth="0.02" />
         </pattern>
       </defs>
 
       <rect x="0" y="0" width={ROOM_W} height={ROOM_H} fill="url(#grid)" />
       <rect
         x="0.1" y="0.1" width={ROOM_W - 0.2} height={ROOM_H - 0.2}
-        fill="none" stroke="rgba(51,255,51,0.35)" strokeWidth="0.08"
+        fill="none" className="floorplan__border" strokeWidth="0.08"
       />
 
       {placed.map((p) => (
@@ -76,6 +78,7 @@ export default function Floorplan({ things, actors, selectedId, onSelect, onMove
           placed={p}
           selected={p.thing.id === selectedId}
           onSelect={onSelect}
+          onOpenBook={onOpenBook}
         />
       ))}
 
@@ -126,22 +129,33 @@ function ThingShape({
   placed,
   selected,
   onSelect,
+  onOpenBook,
 }: {
   placed: Placed;
   selected: boolean;
   onSelect: (t: ResolvedThing) => void;
+  onOpenBook: (book: ResolvedBook) => void;
 }) {
   const { thing, x, y, w, h } = placed;
   const mark = badge(thing);
+  const hasSpines = thing.type === 'bookshelf' && thing.books !== null && thing.books.length > 0;
+  const isNote = thing.type === 'postit' || thing.type === 'board';
+  const noteClass = isNote ? ` note note--${thing.note?.color ?? 'yellow'}` : '';
 
   const PAD = 0.18;
   const badgeWidth = mark ? mark.length * 0.34 * ADVANCE + 0.22 : 0;
   const label = fit(thing.label, w - PAD * 2, 0.42, 0.26);
   const type = fit(thing.type, w - PAD * 2 - badgeWidth, 0.32, 0.2);
+  // A note's own text is the point of the object — shown right on the
+  // floorplan, same "primary interaction lives on the shape" precedent the
+  // bookshelf's spines set, in place of the generic type line.
+  const noteBody = isNote
+    ? fit(thing.note?.body || '(empty)', w - PAD * 2, 0.3, 0.2)
+    : null;
 
   return (
     <g
-      className={`thing ${accessClass(thing)} ${selected ? 'thing--selected' : ''}`}
+      className={`thing ${accessClass(thing)}${noteClass} ${selected ? 'thing--selected' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(thing);
@@ -152,14 +166,110 @@ function ThingShape({
       <text x={x + PAD} y={y + 0.58} className="thing__label" fontSize={label.fontSize}>
         {label.text}
       </text>
-      <text x={x + PAD} y={y + h - 0.22} className="thing__type" fontSize={type.fontSize}>
-        {type.text}
-      </text>
+      {noteBody ? (
+        <text x={x + PAD} y={y + h - 0.22} className="thing__note-body" fontSize={noteBody.fontSize}>
+          {noteBody.text}
+        </text>
+      ) : (
+        <text x={x + PAD} y={y + h - 0.22} className="thing__type" fontSize={type.fontSize}>
+          {type.text}
+        </text>
+      )}
       {mark && (
         <text x={x + w - PAD} y={y + h - 0.22} textAnchor="end" className="thing__badge">
           {mark}
         </text>
       )}
+      {hasSpines && (
+        <BookSpines
+          books={thing.books as ResolvedBook[]}
+          x={x} y={y} w={w} h={h}
+          onOpenBook={onOpenBook}
+          onOverflow={() => onSelect(thing)}
+        />
+      )}
     </g>
+  );
+}
+
+/** Book spines rendered too small or too numerous to click individually. */
+const MAX_SPINES = 8;
+/** Below this, a spine stops being a reliable click target. */
+const MIN_SPINE_WIDTH = 0.28;
+const SPINE_GAP = 0.06;
+
+/**
+ * The primary way into a bookshelf's books: one clickable spine per subfolder,
+ * drawn directly on the floorplan shape. Capped at {@link MAX_SPINES} with a
+ * trailing "+N" tab that opens the side panel instead — where the full list
+ * always renders regardless of count (`ThingPanel`'s "Books" section) — so a
+ * shelf with many subfolders stays usable rather than drawing slivers no one
+ * can reliably click.
+ */
+function BookSpines({
+  books,
+  x, y, w, h,
+  onOpenBook,
+  onOverflow,
+}: {
+  books: ResolvedBook[];
+  x: number; y: number; w: number; h: number;
+  onOpenBook: (book: ResolvedBook) => void;
+  onOverflow: () => void;
+}) {
+  const overflow = books.length > MAX_SPINES;
+  const shown = overflow ? books.slice(0, MAX_SPINES) : books;
+  const slots = shown.length + (overflow ? 1 : 0);
+
+  const PAD = 0.18;
+  const innerWidth = w - PAD * 2;
+  const spineWidth = Math.max(MIN_SPINE_WIDTH, (innerWidth - SPINE_GAP * (slots - 1)) / slots);
+
+  const top = y + 0.85;
+  const bottom = y + h - 0.55;
+  const spineHeight = Math.max(0.4, bottom - top);
+
+  let cursorX = x + PAD;
+
+  return (
+    <>
+      {shown.map((book) => {
+        const spineX = cursorX;
+        cursorX += spineWidth + SPINE_GAP;
+        return (
+          <g
+            key={book.id}
+            className="book-spine"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenBook(book);
+            }}
+          >
+            <rect x={spineX} y={top} width={spineWidth} height={spineHeight} rx="0.03" />
+            <title>{book.label}</title>
+          </g>
+        );
+      })}
+      {overflow && (
+        <g
+          className="book-spine book-spine--overflow"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOverflow();
+          }}
+        >
+          <rect x={cursorX} y={top} width={spineWidth} height={spineHeight} rx="0.03" />
+          <title>{`${books.length - shown.length} more — click to see all in the panel`}</title>
+          <text
+            x={cursorX + spineWidth / 2}
+            y={top + spineHeight / 2 + 0.08}
+            textAnchor="middle"
+            className="book-spine__overflow-label"
+          >
+            +{books.length - shown.length}
+          </text>
+        </g>
+      )}
+    </>
   );
 }

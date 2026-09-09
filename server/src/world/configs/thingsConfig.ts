@@ -91,7 +91,24 @@ export const thingsConfig: CRUDTableConfig = {
       label: 'Type',
       length: 14,
       staticOptions: THING_TYPES.map((t) => ({ value: t, display: t })),
-      form: { required: true, hint: `(${THING_TYPES.slice(0, 6).join(', ')}, ...)` },
+      form: {
+        required: true,
+        hint: `(${THING_TYPES.slice(0, 6).join(', ')}, ...)`,
+        // A 'bookshelf' may only bind to documents — cross-field, so it lives
+        // here rather than on bindingKind, and it always runs because Type is
+        // always visible.
+        validators: [
+          (ctx) => worldService.validateShelfBinding(
+            ctx.values.type ?? '',
+            ctx.values.bindingKind ?? 'none',
+            ctx.values.bindingTarget ?? '',
+          ),
+          (ctx) => worldService.validateNoteBinding(
+            ctx.values.type ?? '',
+            ctx.values.bindingKind ?? 'none',
+          ),
+        ],
+      },
       column: { width: 11 },
     },
     zone: {
@@ -209,8 +226,13 @@ export const thingsConfig: CRUDTableConfig = {
    */
   openUI: {
     id: (ctx) => {
-      const b = bindingOf(ctx.selection[0]);
+      const rec = ctx.selection[0];
+      const b = bindingOf(rec);
       if (b && (b.kind === 'crud' || b.kind === 'record')) return b.configId;
+      // A postit/board owns its own text (Phase 2) rather than binding to a
+      // config — it has no children to descend into either, so it opens its
+      // note record directly instead of falling through to "descend".
+      if (rec && (rec.type === 'postit' || rec.type === 'board')) return 'world_notes';
       return 'world_things';
     },
 
@@ -219,6 +241,11 @@ export const thingsConfig: CRUDTableConfig = {
       if (!rec) return { input: ctx.input, skipNavigation: true };
 
       const b = bindingOf(rec);
+
+      // --- open the owned note ---
+      if (rec.type === 'postit' || rec.type === 'board') {
+        return { input: { thingId: rec.id, userId: ctx.input.userId }, pageOffset: 0 };
+      }
 
       // --- open the binding ---
       if (b && b.kind === 'crud') {
@@ -275,7 +302,11 @@ export const thingsConfig: CRUDTableConfig = {
       'the object a window onto that list. bindingTarget also carries the service ' +
       'key for kind "service" and the user id for kind "agent". Objects nest via ' +
       'parentThingId, which is the furniture tree, NOT the data hierarchy. Placing ' +
-      'an object never copies data.',
+      'an object never copies data. A type "bookshelf" must bind to the ' +
+      '"documents" config — it shows one book per subfolder, derived live, never ' +
+      'stored as separate objects. Types "postit" and "board" are the exception: ' +
+      'they must have bindingKind "none" and instead own their own text via the ' +
+      'world_notes tool, scoped by this object\'s own id as thingId.',
     operations: { list: true, read: true, create: true, update: true, delete: true },
     scope: [
       {

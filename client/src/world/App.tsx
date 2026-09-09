@@ -10,8 +10,9 @@
 import { useEffect, useState } from 'react';
 import Floorplan from './components/Floorplan';
 import ThingPanel from './components/ThingPanel';
+import DocumentsBrowserModal from './components/DocumentsBrowserModal';
 import { findThing, useWorldSocket, worldApiUrl } from './useWorldSocket';
-import type { ResolvedThing, WorldSpace } from './types';
+import type { ResolvedBook, ResolvedThing, WorldSpace } from './types';
 
 /** `?space=main_office` overrides; otherwise the first space is entered. */
 function requestedSpace(): string | null {
@@ -22,7 +23,15 @@ export default function App() {
   const [spaces, setSpaces] = useState<WorldSpace[]>([]);
   const [spacesError, setSpacesError] = useState<string | null>(null);
   const world = useWorldSocket(requestedSpace());
-  const { authed, connected, error, scene, actors, opened, enterSpace, openThing, closeThing, move, refresh } = world;
+  const {
+    authed, connected, error, scene, actors, opened, browse,
+    enterSpace, openThing, closeThing, browseFolder, setNote, move, refresh,
+  } = world;
+
+  // Independent of `opened`/the side panel — a book and the panel can be open
+  // at once, mirroring how the furniture tree and the data tree are kept
+  // separate everywhere else in this feature.
+  const [openBook, setOpenBook] = useState<{ folderId: number; label: string } | null>(null);
 
   // The space list comes over HTTP rather than the socket: it is needed to pick
   // a room before entering one, and it never changes while you are standing in it.
@@ -50,6 +59,10 @@ export default function App() {
     // Ask the server to resolve it fresh rather than reusing the scene copy, so
     // the panel shows current contents and the actor's presence marks them here.
     openThing(thing.id);
+  }
+
+  function openBookModal(book: ResolvedBook) {
+    setOpenBook({ folderId: book.id, label: book.label });
   }
 
   if (!authed) {
@@ -108,6 +121,7 @@ export default function App() {
             actors={actors}
             selectedId={selected?.id ?? null}
             onSelect={select}
+            onOpenBook={openBookModal}
             onMove={move}
           />
         ) : (
@@ -116,12 +130,27 @@ export default function App() {
 
         {selected && (
           <ThingPanel
+            key={selected.id}
             thing={scene ? findThing(scene.things, selected.id) ?? selected : selected}
             onClose={closeThing}
             onSelect={select}
+            onOpenBook={openBookModal}
+            onSetNote={setNote}
           />
         )}
       </main>
+
+      {openBook && (
+        <DocumentsBrowserModal
+          key={openBook.folderId}
+          rootFolderId={openBook.folderId}
+          rootLabel={openBook.label}
+          browse={browse}
+          error={error}
+          onNavigate={browseFolder}
+          onClose={() => setOpenBook(null)}
+        />
+      )}
     </div>
   );
 }

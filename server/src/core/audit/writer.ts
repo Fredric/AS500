@@ -22,7 +22,7 @@ import { auditLog } from '../db/schema.js';
 // ---------------------------------------------------------------------------
 
 export type AuditEventType = 'auth' | 'crud' | 'mcp' | 'api' | 'session';
-export type AuditSource = 'terminal' | 'mcp' | 'api';
+export type AuditSource = 'terminal' | 'mcp' | 'api' | 'world';
 
 export interface AuditEventArgs {
   event_type: AuditEventType;

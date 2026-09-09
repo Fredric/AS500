@@ -630,6 +630,60 @@ Both Office Layout screens are ordinary CRUDTable configs, so they also carry
 `mcp` and `api` blocks: **an agent can rearrange the office**, audited like
 everything else.
 
+### Bookshelves — browsing My Documents folders as furniture
+
+`type: 'bookshelf'` is a distinct furniture type (not the generic `'shelf'`,
+which stays a plain label — see `seedOffice.ts`'s unrelated `motorcycles`-bound
+"Garage Shelf") that must bind to `documents` (`BOOKSHELF_CONFIG_ID` in
+`world/types.ts`) — enforced on every write path via
+`validateShelfBinding()`. Its books are one per direct subfolder, **derived
+live** on every resolve (`documentsShelf.ts`), never stored as separate
+`world_things` — the same "no copied data" rule as everything else here.
+
+Books render as clickable spines directly on the floorplan shape (capped, with
+an overflow tab), and the side panel always lists the complete set as a
+fallback. Clicking a book opens a modal (`DocumentsBrowserModal.tsx`) that can
+descend to arbitrary depth via a client-side breadcrumb stack — the server is
+only ever asked for folder ids the client already saw, never to go "up" past
+the book it was opened from. New WS pair: `BROWSE_DOCUMENTS_FOLDER` →
+`DOCUMENTS_FOLDER`.
+
+The office's own visual language is a plain, ordinary light UI
+(`client/src/world/world.css`) — not the terminal's green phosphor theme,
+which stays confined to `client/src/styles/terminal.css`.
+
+### Notes — objects that own their own text (Phase 2)
+
+`type: 'postit'`/`'board'` are the roadmap's second Thing class: instead of
+binding to existing data, they own it. They still bind `kind: 'none'` — a
+note's scope is its own thing id, which doesn't exist yet at placement time,
+so no ordinary binding fits — and `validateNoteBinding()` enforces that on
+every write path exactly like `validateShelfBinding()` does for bookshelves.
+
+The payload is still a real, registered `CRUDTableConfig` (`world_notes`,
+`configs/notesConfig.ts`), scoped by `thingId` the same way `documentsConfig`
+is scoped by `folderId` — **not** a special-cased table only the resolver
+knows about, so RBAC/MCP/REST all work unchanged. `resolver.ts` resolves it
+through the identical config-registry path every other binding uses
+(`notes.ts`, parallel to `documentsShelf.ts`), keyed by `thing.id` rather than
+a stored scope. A never-written note resolves `access: 'ok', note: null` — an
+empty post-it is a normal state, not an error.
+
+The floorplan's own textarea (not CRUDTable-driven — the floorplan has no
+form renderer) writes through one new WS message, `SET_NOTE`, replying with
+the existing `THING_CHANGED` message. It audits itself
+(`source: 'world'`, a new `AuditSource` variant) so the existing
+`onAuditEvent()` → dirty-room → rebuild pipeline broadcasts the change to
+every other viewer with no bespoke fan-out code. The terminal's own form
+(reached the same way a bookshelf's books aren't — via `openUI` on the
+`postit`/`board` row) stays the short, single-line version; the graphical
+panel's textarea is the ceiling, same split the bookshelf modal makes for
+depth the green screen can't show. Because a note already exists after
+seeding/placement, `world_notes`'s `create` operation deliberately calls the
+same upsert-by-`thingId` function `update` does — a strict insert there would
+hit the `thing_id` unique constraint the first time a user presses F6 on a
+postit that isn't blank.
+
 ### Spatial model
 
 The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not
@@ -679,7 +733,11 @@ credential, no new session type.
 | Office Layout configs | `server/src/world/configs/` |
 | Registration (configs + menu) | `server/src/world/bootstrap.ts` |
 | Demo room seeder (`npm run seed:office`) | `server/src/world/seedOffice.ts` |
+| Bookshelf books + browse | `server/src/world/documentsShelf.ts` |
+| Note payload service + config | `server/src/world/services/notesService.ts`, `configs/notesConfig.ts` |
+| Note resolution (`resolver.ts` support) | `server/src/world/notes.ts` |
 | 2D floorplan client | `client/src/world/`, `client/office.html` |
+| File-explorer modal | `client/src/world/components/DocumentsBrowserModal.tsx` |
 | Audit change feed | `server/src/core/audit/writer.ts` (`onAuditEvent`) |
 
 ### Verification

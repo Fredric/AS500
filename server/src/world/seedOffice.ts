@@ -24,6 +24,7 @@ import {
   deleteSpace,
   getSpaceByKey,
 } from './services/worldService.js';
+import { createNote } from './services/notesService.js';
 
 function arg(name: string, fallback: string): string {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -114,6 +115,24 @@ async function main(): Promise<void> {
       `Create one under My Documents, then re-run with --reset.`,
     );
   }
+
+  // A bookshelf at the root of My Documents — one book per top-level folder,
+  // derived live. Bound to root (no scope), so it works even with zero
+  // folders (an empty shelf) rather than needing the same real-folder lookup
+  // the drawer above does.
+  await place({
+    label: 'Documents Shelf', type: 'bookshelf', zone: 'north_east',
+    bindingKind: 'crud', bindingTarget: 'documents',
+  });
+  console.log(`Put a bookshelf at the root of My Documents.`);
+
+  // A post-it — Phase 2's "objects that own data" class. Bound kind:'none'
+  // (the seed's own default), it owns a world_notes row keyed by its own
+  // thing id rather than binding to anything, so its text is written after
+  // placement, not at create time.
+  const welcomeNote = await place({ label: 'Welcome Note', type: 'postit', zone: 'north_east' });
+  await createNote({ userId: user.id, thingId: welcomeNote.id as number, body: 'Welcome to the office!', color: 'yellow' });
+  console.log(`Pinned a welcome post-it.`);
 
   const total = await db.select({ id: worldSpaces.id }).from(worldSpaces);
   console.log(`\nDone. ${total.length} space(s). Open http://localhost:5173/office`);

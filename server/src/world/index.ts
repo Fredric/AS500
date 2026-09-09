@@ -22,8 +22,11 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { IS_PRODUCTION, PRESENCE_TICK_MS, PRESENCE_TIMEOUT_MS, WORLD_ENABLED, WORLD_PORT } from './config.js';
 import { validateAccessToken } from '../core/services/auth.js';
 import { loadUserPermissions } from '../core/services/access.js';
-import { onAuditEvent } from '../core/audit/writer.js';
-import { resolveScene, resolveThing, type WorldActor } from './resolver.js';
+import { onAuditEvent, writeAuditEvent } from '../core/audit/writer.js';
+import { PERMISSIONS } from '../core/services/access.js';
+import { actorHasPermission, resolveScene, resolveThing, type WorldActor } from './resolver.js';
+import { browseDocumentsFolder } from './documentsShelf.js';
+import { updateNote } from './services/notesService.js';
 import * as presence from './presence.js';
 import {
   getSpaceByKey,
@@ -314,6 +317,49 @@ async function handleClientMessage(client: Client, raw: string): Promise<void> {
       }
       presence.update(client.conn, { atThingId: row.id, activity: 'reading' });
       send(client.ws, { type: 'THING_OPENED', thing: await resolveThing(row, client.actor) });
+      return;
+    }
+
+    case 'BROWSE_DOCUMENTS_FOLDER': {
+      // Any exception (permission revoked mid-session, folder deleted, …)
+      // is caught by drain()'s wrapper around handleClientMessage and sent
+      // as a generic ERROR — no bespoke error handling needed here.
+      const { breadcrumb, entries } = await browseDocumentsFolder(client.actor, msg.folderId);
+      send(client.ws, { type: 'DOCUMENTS_FOLDER', folderId: msg.folderId, breadcrumb, entries });
+      return;
+    }
+
+    case 'SET_NOTE': {
+      // The floorplan is not CRUDTable-driven, so a postit/board's textarea
+      // writes through this one message instead of the terminal's form flow.
+      // It still funnels through the identical service (updateNote) the
+      // world_notes CRUDTableConfig uses, and audits itself the same way the
+      // CRUDTable runtime would — so the existing onAuditEvent → dirty-room
+      // pipeline broadcasts the change to every other viewer with no
+      // bespoke fan-out code here.
+      if (!actorHasPermission(client.actor, PERMISSIONS.WORLD_WRITE)) {
+        send(client.ws, { type: 'ERROR', message: `Requires ${PERMISSIONS.WORLD_WRITE}` });
+        return;
+      }
+      const row = await getThing(msg.thingId);
+      if (!row || (row.type !== 'postit' && row.type !== 'board')) {
+        send(client.ws, { type: 'ERROR', message: `No postit/board ${msg.thingId}` });
+        return;
+      }
+
+      await updateNote({ userId: client.actor.userId, thingId: msg.thingId, body: msg.body, color: msg.color });
+      await writeAuditEvent({
+        event_type: 'crud',
+        action: 'update',
+        source: 'world',
+        user_id: client.actor.userId,
+        username: client.actor.username,
+        config_id: 'world_notes',
+        record_id: String(msg.thingId),
+        ok: true,
+      });
+
+      send(client.ws, { type: 'THING_CHANGED', thing: await resolveThing(row, client.actor) });
       return;
     }
 

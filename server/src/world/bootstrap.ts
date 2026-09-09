@@ -12,12 +12,14 @@ import { PERMISSIONS } from '../core/services/access.js';
 import { WORLD_ENABLED } from './config.js';
 import { initSpacesContext, spacesConfig } from './configs/spacesConfig.js';
 import { thingsConfig } from './configs/thingsConfig.js';
+import { notesConfig } from './configs/notesConfig.js';
 
 export function bootstrapWorld(): void {
   if (!WORLD_ENABLED) return;
 
   registerConfig(spacesConfig);
   registerConfig(thingsConfig);
+  registerConfig(notesConfig);
 
   // Objects are reached by pressing T on a space, never directly: the objects
   // list is meaningless until a space scopes it, so it gets no menu entry of
