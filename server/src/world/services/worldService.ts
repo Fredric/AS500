@@ -408,6 +408,26 @@ export async function getThing(id: number): Promise<WorldThingRow | null> {
   return r ? toThingRow(r) : null;
 }
 
+/**
+ * Every thing bound `{ kind: 'agent', userId }` to one user, across every
+ * space — an agent presence entry (`agentPresence.ts`) needs to know where to
+ * seat the agent before anyone has entered that space to trigger a scoped
+ * lookup. Resolves-then-filters in application code rather than a jsonb
+ * operator in SQL, matching this codebase's existing convention (e.g.
+ * `resolver.ts`'s `contentRows()`) — there's no jsonb-in-SQL precedent here
+ * to break with, and this table is small.
+ */
+export async function findAgentThings(userId: number): Promise<Array<WorldThingRow & { spaceKey: string }>> {
+  const rows = await db
+    .select({ thing: worldThings, spaceKey: worldSpaces.key })
+    .from(worldThings)
+    .innerJoin(worldSpaces, eq(worldThings.space_id, worldSpaces.id));
+
+  return rows
+    .map((r) => ({ ...toThingRow(r.thing), spaceKey: r.spaceKey }))
+    .filter((t) => t.binding?.kind === 'agent' && t.binding.userId === userId);
+}
+
 async function countChildren(ids: number[]): Promise<Map<number, number>> {
   if (ids.length === 0) return new Map();
   const rows = await db

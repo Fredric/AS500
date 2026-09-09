@@ -23,10 +23,12 @@ import { IS_PRODUCTION, PRESENCE_TICK_MS, PRESENCE_TIMEOUT_MS, WORLD_ENABLED, WO
 import { validateAccessToken } from '../core/services/auth.js';
 import { loadUserPermissions } from '../core/services/access.js';
 import { onAuditEvent, writeAuditEvent } from '../core/audit/writer.js';
+import { onSnapshot } from '../monitor/index.js';
 import { PERMISSIONS } from '../core/services/access.js';
 import { actorHasPermission, resolveScene, resolveThing, type WorldActor } from './resolver.js';
 import { browseDocumentsFolder } from './documentsShelf.js';
 import { updateNote } from './services/notesService.js';
+import { startAgentPresenceTracking, sweepStaleAgents } from './agentPresence.js';
 import * as presence from './presence.js';
 import {
   getSpaceByKey,
@@ -49,6 +51,8 @@ const clients = new Set<Client>();
 
 let presenceTimer: NodeJS.Timeout | null = null;
 let unsubscribeAudit: (() => void) | null = null;
+let unsubscribeSnapshot: (() => void) | null = null;
+let unsubscribeAgentPresence: (() => void) | null = null;
 
 /**
  * Space keys whose scene needs rebuilding on the next tick.
@@ -117,6 +121,9 @@ async function tick(): Promise<void> {
       dropClient(client, 'timeout');
     }
   }
+  // Same timeout for a synthetic agent presence — it has no socket to drop,
+  // only a last-activity timestamp from the audit feed.
+  sweepStaleAgents(PRESENCE_TIMEOUT_MS);
 
   for (const spaceKey of presence.occupiedSpaces()) {
     broadcastPresence(spaceKey);
@@ -446,6 +453,14 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
   });
 
   unsubscribeAudit = onAuditEvent(onSystemChange);
+  // Real component health for `{ kind: 'service' }` bindings — same coarse
+  // "mark every occupied room dirty" handler the audit feed already uses,
+  // for the same reason: resolving precisely would mean resolving every
+  // binding just to decide whether it needs to.
+  unsubscribeSnapshot = onSnapshot(onSystemChange);
+  // Agents appear as occupants purely from their own MCP tool-call activity —
+  // no new connection type, see agentPresence.ts.
+  unsubscribeAgentPresence = startAgentPresenceTracking();
 
   httpServer.listen(WORLD_PORT, IS_PRODUCTION ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`AS500 world listening on port ${WORLD_PORT} (ws://localhost:${WORLD_PORT}/ws)`);
@@ -454,6 +469,10 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
   httpServer.on('close', () => {
     unsubscribeAudit?.();
     unsubscribeAudit = null;
+    unsubscribeSnapshot?.();
+    unsubscribeSnapshot = null;
+    unsubscribeAgentPresence?.();
+    unsubscribeAgentPresence = null;
     stopTicking();
   });
 

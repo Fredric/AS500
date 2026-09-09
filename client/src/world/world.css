@@ -207,6 +207,15 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
 .access--error { color: var(--w-danger); }
 .access--unbound { color: var(--w-text-faint); }
 
+/* Real component health (Phase 3), same palette as .access--*. */
+.service { font-weight: 600; }
+.service--up { color: var(--w-success); }
+.service--degraded { color: var(--w-warning); }
+.service--down { color: var(--w-danger); }
+.service--unknown,
+.service--unprobed { color: var(--w-text-faint); }
+.service--disabled { color: var(--w-text-faint); font-style: italic; }
+
 .panel__section { padding: 12px 18px; border-top: 1px solid var(--w-line); }
 .panel__section h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--w-text-dim); font-weight: 600; }
 .panel__note { margin: 0; color: var(--w-text-faint); line-height: 1.6; font-size: 13px; }

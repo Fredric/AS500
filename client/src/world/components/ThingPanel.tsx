@@ -68,7 +68,7 @@ export default function ThingPanel({ thing, onClose, onSelect, onOpenBook, onSet
         <section className="panel__section">
           <h3>Service</h3>
           <p className="panel__note">
-            {thing.service.status}
+            <span className={`service service--${thing.service.status}`}>{thing.service.status}</span>
             {thing.service.detail ? ` — ${thing.service.detail}` : ''}
           </p>
         </section>

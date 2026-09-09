@@ -1,18 +1,20 @@
 /**
  * Service bindings — a rack in the server room bound to as500-docs or vLLM.
  *
- * Phase 1 resolves the *identity* of the service only: it validates the key
+ * Phase 1 resolved the *identity* of the service only: it validated the key
  * against the ingest monitor's own component registry so a typo in a binding
- * surfaces immediately, and reports the component's label.
+ * surfaces immediately, and reported the component's label.
  *
- * Live health is deliberately not probed here. `monitor/probes.ts` exposes
- * `probeAll()`, which health-checks every component at once and needs a queue
- * snapshot — far too heavy to run per object, per resolve, per connected
- * client. Phase 3 subscribes the world to the monitor's existing 2.5s snapshot
- * broadcast instead, which is where that telemetry already lives.
+ * Phase 3 adds real health, by reading `monitor/index.ts`'s own snapshot
+ * (`getLastSnapshot()`) rather than probing here — `monitor/probes.ts`'s
+ * `probeAll()` health-checks every component at once and needs a queue
+ * snapshot, far too heavy to run per object, per resolve, per connected
+ * client. The monitor already does that work once, on its own timer, for its
+ * own WebSocket clients; this just reads the result.
  */
 
 import { COMPONENTS } from '../monitor/config.js';
+import { getLastSnapshot } from '../monitor/index.js';
 
 export interface ServiceStatus {
   status: string;
@@ -29,5 +31,16 @@ export async function probeStatusFor(serviceKey: string): Promise<ServiceStatus>
   if (!component) {
     return { status: 'unknown', detail: `No such service '${serviceKey}'` };
   }
-  return { status: 'unprobed', detail: `${component.label} — ${component.subtitle}` };
+
+  // No snapshot yet — MONITOR_ENABLED=false, or the world booted before the
+  // monitor's first poll completed. WORLD_ENABLED and MONITOR_ENABLED are
+  // independent flags, so this must degrade to identity-only, not error.
+  const snapshot = getLastSnapshot();
+  const live = snapshot?.components.find((c) => c.id === serviceKey);
+  if (!live) {
+    return { status: 'unprobed', detail: `${component.label} — ${component.subtitle}` };
+  }
+
+  const latency = live.latencyMs != null ? ` (${live.latencyMs}ms)` : '';
+  return { status: live.health, detail: `${live.detail}${latency}` };
 }

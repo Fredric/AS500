@@ -684,6 +684,47 @@ same upsert-by-`thingId` function `update` does — a strict insert there would
 hit the `thing_id` unique constraint the first time a user presses F6 on a
 postit that isn't blank.
 
+### Live service health + agent presence (Phase 3)
+
+**Service racks.** `{ kind: 'service' }` bindings resolved *identity* only
+through Phase 2 — `serviceStatus.ts` said probing per object/per resolve/per
+client was too heavy, and that the fix was subscribing to the ingest
+monitor's own snapshot rather than probing again. That subscription is
+`server/src/monitor/index.ts`'s `getLastSnapshot()`/`onSnapshot()`, mirroring
+`core/audit/writer.ts`'s `onAuditEvent` pub/sub exactly. One wrinkle: the
+monitor's own polling is normally **lazy** — it only runs while a dashboard
+WebSocket client is connected, so nobody pays for probes when no one is
+watching (`server/src/monitor/index.ts`'s `clients.size` gate). A subscriber
+wants live data for as long as it's subscribed regardless of whether the
+dashboard happens to be open, so `onSnapshot()` starts polling immediately
+and `stopIfIdle()` only stops it once *both* the dashboard clients and the
+in-process subscribers are gone — the world subscribing at boot keeps
+component health flowing for its whole lifetime, dashboard or not. No
+snapshot yet (`MONITOR_ENABLED=false`, or the world booted before the first
+poll) degrades to exactly the old identity-only response, since the two
+`_ENABLED` flags are independent.
+
+**Agents as occupants.** `{ kind: 'agent' }` bindings resolved to `access:
+'ok'` and nothing else through Phase 2 — the agent never actually appeared
+in the room. `agentPresence.ts` derives an avatar purely from the audit
+feed, with **no new connection type**: `presence.ts`'s `byConnection` map is
+keyed by an opaque `symbol`, not a real WebSocket, so a synthetic per-agent
+symbol behaves exactly like a real connection's, and the existing tick loop
+already rebroadcasts every occupied space's presence list every 250ms
+regardless of why it changed — nothing needs to actively push an update.
+Every audit event is checked for `client_id === AI_AGENT_CLIENT_ID`
+(`core/mcp/mintSessionToken.ts` — the same constant every agent-driven MCP
+call already carries) before `findAgentThings(userId)`
+(`worldService.ts`) looks up where to seat it; a local last-activity map is
+swept from `world/index.ts`'s existing `tick()` using the same
+`PRESENCE_TIMEOUT_MS` real connections already expire on — one new line, not
+a second timer.
+
+Verified against a real MCP tool call made with a JWT minted the identical
+way `chatService.ts` mints one for a live agent turn — not a simulated audit
+row — confirming the whole path from a genuine `as500-ai` tool call through
+to an amber avatar in the room, and its disappearance after the timeout.
+
 ### Spatial model
 
 The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not
@@ -736,6 +777,8 @@ credential, no new session type.
 | Bookshelf books + browse | `server/src/world/documentsShelf.ts` |
 | Note payload service + config | `server/src/world/services/notesService.ts`, `configs/notesConfig.ts` |
 | Note resolution (`resolver.ts` support) | `server/src/world/notes.ts` |
+| Agent presence from the audit feed | `server/src/world/agentPresence.ts` |
+| Live service health subscription | `server/src/monitor/index.ts` (`getLastSnapshot`/`onSnapshot`), `server/src/world/serviceStatus.ts` |
 | 2D floorplan client | `client/src/world/`, `client/office.html` |
 | File-explorer modal | `client/src/world/components/DocumentsBrowserModal.tsx` |
 | Audit change feed | `server/src/core/audit/writer.ts` (`onAuditEvent`) |
