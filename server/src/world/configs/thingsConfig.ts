@@ -19,7 +19,6 @@ import type { CRUDContext, CRUDTableConfig } from '../../core/crudtable/types.js
 import type { Session } from '../../core/types/index.js';
 import { PERMISSIONS } from '../../core/services/access.js';
 import * as worldService from '../services/worldService.js';
-import { knownServiceKeys } from '../serviceStatus.js';
 import { THING_BINDING_KINDS, THING_TYPES, type ThingBinding } from '../types.js';
 
 const svc = worldService as unknown as Record<string, Function>;
@@ -28,10 +27,6 @@ const svc = worldService as unknown as Record<string, Function>;
 function bindingOf(record: Record<string, unknown> | undefined): ThingBinding | null {
   if (!record) return null;
   return (record.binding as ThingBinding | null) ?? null;
-}
-
-function bindingKindOf(ctx: CRUDContext): string {
-  return (ctx.values.bindingKind ?? 'none').trim();
 }
 
 export const thingsConfig: CRUDTableConfig = {
@@ -128,6 +123,12 @@ export const thingsConfig: CRUDTableConfig = {
     },
 
     // ---- binding ----
+    //
+    // Three always-visible fields, never conditionally hidden. `form.visible`
+    // cannot work here: the terminal only re-evaluates visibility on a server
+    // round trip, so a field revealed by the value you are currently typing can
+    // never appear. `Target` therefore carries whichever identifier the chosen
+    // kind needs, and the hints say which.
     bindingKind: {
       field: 'bindingKind',
       label: 'Binds to',
@@ -135,12 +136,22 @@ export const thingsConfig: CRUDTableConfig = {
       staticOptions: THING_BINDING_KINDS.map((k) => ({ value: k, display: k })),
       form: {
         required: true,
-        hint: '(crud=a list, record=one row, service, workstation, none)',
+        hint: '(crud=a list, record=one row, service, workstation, agent, none)',
+        // Validated here rather than per-field: the rule spans Binds to,
+        // Target and Scope together, and this field is always visible so the
+        // check always runs.
+        validators: [
+          (ctx) => worldService.validateBinding({
+            bindingKind: ctx.values.bindingKind ?? 'none',
+            bindingTarget: ctx.values.bindingTarget ?? '',
+            bindingScope: ctx.values.bindingScope ?? '',
+          }),
+        ],
       },
     },
-    bindingConfigId: {
-      field: 'bindingConfigId',
-      label: 'Config Id',
+    bindingTarget: {
+      field: 'bindingTarget',
+      label: 'Target',
       length: 24,
       datasource: {
         service: svc,
@@ -149,9 +160,7 @@ export const thingsConfig: CRUDTableConfig = {
         displayField: 'title',
       },
       form: {
-        hint: '(which AS500 screen this object is a view of)',
-        visible: (ctx) => ['crud', 'record'].includes(bindingKindOf(ctx)),
-        required: (ctx) => ['crud', 'record'].includes(bindingKindOf(ctx)),
+        hint: '(crud/record: config id | service: service key | agent: user id)',
       },
     },
     bindingScope: {
@@ -159,40 +168,7 @@ export const thingsConfig: CRUDTableConfig = {
       label: 'Scope',
       length: 44,
       form: {
-        hint: '(folderId=42  or  {"folderId":42})',
-        visible: (ctx) => bindingKindOf(ctx) === 'crud',
-      },
-    },
-    bindingRecordId: {
-      field: 'bindingRecordId',
-      label: 'Record Id',
-      length: 16,
-      form: {
-        hint: '(primary key of the single bound record)',
-        visible: (ctx) => bindingKindOf(ctx) === 'record',
-        required: (ctx) => bindingKindOf(ctx) === 'record',
-      },
-    },
-    bindingServiceKey: {
-      field: 'bindingServiceKey',
-      label: 'Service',
-      length: 20,
-      staticOptions: knownServiceKeys().map((k) => ({ value: k, display: k })),
-      form: {
-        hint: '(a machine in the server room)',
-        visible: (ctx) => bindingKindOf(ctx) === 'service',
-        required: (ctx) => bindingKindOf(ctx) === 'service',
-      },
-    },
-    bindingAgentUserId: {
-      field: 'bindingAgentUserId',
-      label: 'Agent User Id',
-      length: 8,
-      type: 'numeric',
-      form: {
-        hint: '(the aiagent user seated here)',
-        visible: (ctx) => bindingKindOf(ctx) === 'agent',
-        required: (ctx) => bindingKindOf(ctx) === 'agent',
+        hint: '(crud: folderId=42 | record: the record id | else blank)',
       },
     },
 
@@ -214,10 +190,8 @@ export const thingsConfig: CRUDTableConfig = {
   columnBuilder: ['label', 'type', 'zone', 'boundTo', 'childCount'],
   formBuilder: [
     'label', 'type', 'zone', 'slot', 'x', 'y',
-    'bindingKind', 'bindingConfigId', 'bindingScope',
-    'bindingRecordId', 'bindingServiceKey', 'bindingAgentUserId',
+    'bindingKind', 'bindingTarget', 'bindingScope',
   ],
-  formPageSize: 8,
 
   getInitialValues: () => ({ type: 'box', bindingKind: 'none' }),
 
@@ -296,10 +270,12 @@ export const thingsConfig: CRUDTableConfig = {
     description:
       'Objects placed in a room of the AS500 virtual office — desks, cabinets, ' +
       'drawers, boxes, racks, boards. Each object may carry a binding saying ' +
-      'what AS500 data it is a view of: bindingKind "crud" plus a bindingConfigId ' +
-      'and bindingScope (e.g. "folderId=42") makes the object a window onto that ' +
-      'list. Objects nest via parentThingId, which is the furniture tree, NOT the ' +
-      'data hierarchy. Placing an object never copies data.',
+      'what AS500 data it is a view of: bindingKind "crud" with bindingTarget set to ' +
+      'a config id and bindingScope to that list\'s scope (e.g. "folderId=42") makes ' +
+      'the object a window onto that list. bindingTarget also carries the service ' +
+      'key for kind "service" and the user id for kind "agent". Objects nest via ' +
+      'parentThingId, which is the furniture tree, NOT the data hierarchy. Placing ' +
+      'an object never copies data.',
     operations: { list: true, read: true, create: true, update: true, delete: true },
     scope: [
       {
@@ -363,11 +339,8 @@ function formToThingParams(ctx: CRUDContext) {
     x: ctx.values.x ?? '',
     y: ctx.values.y ?? '',
     bindingKind: ctx.values.bindingKind ?? 'none',
-    bindingConfigId: ctx.values.bindingConfigId ?? '',
+    bindingTarget: ctx.values.bindingTarget ?? '',
     bindingScope: ctx.values.bindingScope ?? '',
-    bindingRecordId: ctx.values.bindingRecordId ?? '',
-    bindingServiceKey: ctx.values.bindingServiceKey ?? '',
-    bindingAgentUserId: ctx.values.bindingAgentUserId ?? '',
   };
 }
 

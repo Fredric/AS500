@@ -16,8 +16,9 @@ Run from the **project root** unless noted:
 
 ```bash
 # Development (Docker recommended)
-docker-compose up                          # Start all services
-docker-compose exec server npm run seed    # Seed database
+docker-compose up                                 # Start all services
+docker-compose exec server npm run seed           # Seed database
+docker-compose exec server npm run seed:office    # Build a demo virtual office
 
 # Testing (Playwright E2E)
 npm test                                   # All tests, headless
@@ -598,11 +599,32 @@ opened drawer climbs out of the data tree first, and only then returns to the ro
 MAIN MENU → Virtual Office → Spaces
   F6                create a space
   Enter (opt 2)     edit it, then T = its objects
-  F6                place an object; pick a Type and a "Binds to"
+  F6                place an object
   Enter on a row    bound object  → opens the config it names, scoped
                     container     → descends into its contents, in place
   Esc               back up the furniture tree, then out
 ```
+
+Or skip the typing: **`cd server && npm run seed:office`** builds a demo room
+(desk, workstation, shelf, rack, and a drawer bound to a folder the user already
+owns). `--user KALLE --space my_office --reset` to vary it. It goes through
+`worldService`, so the objects are validated exactly as the terminal validates
+them.
+
+The binding is **three always-visible fields**, never conditionally shown:
+
+| Field | Meaning |
+|---|---|
+| `Binds to` | `none` · `crud` · `record` · `service` · `workstation` · `agent` |
+| `Target` | config id (crud/record) · service key (service) · user id (agent) |
+| `Scope` | `folderId=42` for crud · the record id for record · else blank |
+
+> **Do not put `form.visible` on a field whose expression reads another field's
+> current value.** The terminal only re-evaluates visibility on a server round
+> trip, so a field revealed by what the user is typing can never appear — the
+> first version of this form hid `Config Id` behind `bindingKind === 'crud'` and
+> was impossible to complete. `Target` is deliberately overloaded across kinds
+> instead, the way AS/400 qualifier fields have always worked.
 
 Both Office Layout screens are ordinary CRUDTable configs, so they also carry
 `mcp` and `api` blocks: **an agent can rearrange the office**, audited like
@@ -656,6 +678,7 @@ credential, no new session type.
 | Placement service | `server/src/world/services/worldService.ts` |
 | Office Layout configs | `server/src/world/configs/` |
 | Registration (configs + menu) | `server/src/world/bootstrap.ts` |
+| Demo room seeder (`npm run seed:office`) | `server/src/world/seedOffice.ts` |
 | 2D floorplan client | `client/src/world/`, `client/office.html` |
 | Audit change feed | `server/src/core/audit/writer.ts` (`onAuditEvent`) |
 

@@ -6,6 +6,11 @@
  * from the green screen, into that config's list scoped exactly as the binding
  * says — and the world server resolves the identical binding over HTTP.
  *
+ * Everything it asserts, it first CREATES through the terminal — F6, fill the
+ * form, Enter. An earlier version seeded over REST and only navigated in the
+ * terminal, which is exactly how a create form that could never be completed
+ * shipped: no test ever typed into it.
+ *
  * Three clients, one binding, one getConfig() call. If the terminal and the
  * world server ever disagree, this test is what says so.
  *
@@ -23,6 +28,10 @@ const API_URL = process.env.API_URL ?? 'http://127.0.0.1:3002';
 const USER = process.env.AS500_USER ?? 'FREDRIC';
 const PASS = process.env.AS500_PASS ?? 'fredric';
 const SPACE_KEY = process.env.WORLD_SPACE ?? 'main_office';
+const DESK_LABEL = 'Fredrics Desk';
+const DRAWER_LABEL = 'Invoices 2024';
+/** document_folders row the drawer binds to. Must belong to AS500_USER. */
+const FOLDER_ID = Number(process.env.WORLD_FOLDER_ID ?? '1');
 
 let failures = 0;
 
@@ -114,10 +123,24 @@ async function main() {
   term.send({ sessionId, screenId: screen.screenId, key: 'ENTER', input: { selection: spacesOpt } });
   screen = await term.next();
   check('opened the Spaces list', screen.screenId === 'CRUD_WORLD_SPACES', screen.screenId);
-  check('the space is listed', text(screen).includes('main_office'));
+
+  // --- create the space from the green screen ---------------------------
+  if (!text(screen).includes(SPACE_KEY)) {
+    term.send({ sessionId, screenId: screen.screenId, key: 'F6' });
+    screen = await term.next();
+    check('F6 opened the create-space form', screen.screenId === 'CRUD_WORLD_SPACES_FORM', screen.screenId);
+
+    term.send({
+      sessionId, screenId: screen.screenId, key: 'ENTER',
+      input: { key: SPACE_KEY, name: 'Main Office', kind: 'office' },
+    });
+    screen = await term.next();
+    check('the space was created', screen.screenId === 'CRUD_WORLD_SPACES', screen.screenId);
+  }
+  check('the space is listed', text(screen).includes(SPACE_KEY));
 
   // Edit the space, then press T for its objects (RelationConfig).
-  const spaceRow = listRow(screen, 'main_office');
+  const spaceRow = listRow(screen, SPACE_KEY);
   term.send({ sessionId, screenId: screen.screenId, key: 'ENTER', input: { [`opt_${spaceRow}`]: '2' } });
   screen = await term.next();
   check('opened the space form', screen.screenId === 'CRUD_WORLD_SPACES_FORM', screen.screenId);
@@ -125,17 +148,70 @@ async function main() {
   term.send({ sessionId, screenId: screen.screenId, key: 'T' });
   screen = await term.next();
   check('T descended into objects', screen.screenId === 'CRUD_WORLD_THINGS', screen.screenId);
-  check('the desk is on the floor', text(screen).includes('Fredrics Desk'));
+
+  // --- place the desk from the green screen ------------------------------
+  if (!text(screen).includes(DESK_LABEL)) {
+    term.send({ sessionId, screenId: screen.screenId, key: 'F6' });
+    screen = await term.next();
+    check('F6 opened the create-object form', screen.screenId === 'CRUD_WORLD_THINGS_FORM', screen.screenId);
+
+    term.send({
+      sessionId, screenId: screen.screenId, key: 'ENTER',
+      input: { label: DESK_LABEL, type: 'desk', zone: 'north_east', bindingKind: 'none' },
+    });
+    screen = await term.next();
+    check('the desk was placed', screen.screenId === 'CRUD_WORLD_THINGS', screen.screenId);
+  }
+  check('the desk is on the floor', text(screen).includes(DESK_LABEL));
 
   // Enter on an unbound container descends the FURNITURE tree, in place.
-  const deskRow = listRow(screen, 'Fredrics Desk');
+  const deskRow = listRow(screen, DESK_LABEL);
   term.send({ sessionId, screenId: screen.screenId, key: 'ENTER', input: { [`opt_${deskRow}`]: '9' } });
   screen = await term.next();
   check('still on the objects list after descending', screen.screenId === 'CRUD_WORLD_THINGS', screen.screenId);
-  check('the drawer is inside the desk', text(screen).includes('Invoices 2024'));
+
+  // --- place a BOUND drawer from the green screen ------------------------
+  //
+  // This is the case that shipped broken. The binding is entered as two
+  // always-visible fields; nothing is revealed by what you type, because the
+  // terminal cannot re-evaluate visibility without a round trip.
+  if (!text(screen).includes(DRAWER_LABEL)) {
+    term.send({ sessionId, screenId: screen.screenId, key: 'F6' });
+    screen = await term.next();
+    check('F6 opened the create-object form', screen.screenId === 'CRUD_WORLD_THINGS_FORM', screen.screenId);
+
+    const form = text(screen);
+    check('Target is on the create form', /Target/.test(form), 'binding fields must never be hidden');
+    check('Scope is on the create form', /Scope/.test(form));
+
+    // A crud binding with no Target must be refused — AND the form must come
+    // back holding what was typed. Losing it is what made this form a dead end.
+    term.send({
+      sessionId, screenId: screen.screenId, key: 'ENTER',
+      input: { label: DRAWER_LABEL, type: 'drawer', slot: 'drawer_1', bindingKind: 'crud', bindingTarget: '', bindingScope: '' },
+    });
+    screen = await term.next();
+    check('an incomplete binding is refused', screen.messageType === 'error', screen.message ?? 'no message');
+    check('the refusal names the problem', /Target/i.test(screen.message ?? ''), screen.message ?? '');
+    check('the form kept what was typed', (screen.fieldValues?.label ?? '') === DRAWER_LABEL,
+      `label came back as "${screen.fieldValues?.label ?? ''}"`);
+    check('and kept the chosen binding kind', (screen.fieldValues?.bindingKind ?? '') === 'crud',
+      `bindingKind came back as "${screen.fieldValues?.bindingKind ?? ''}"`);
+
+    term.send({
+      sessionId, screenId: screen.screenId, key: 'ENTER',
+      input: {
+        label: DRAWER_LABEL, type: 'drawer', slot: 'drawer_1',
+        bindingKind: 'crud', bindingTarget: 'documents', bindingScope: `folderId=${FOLDER_ID}`,
+      },
+    });
+    screen = await term.next();
+    check('the bound drawer was placed', screen.screenId === 'CRUD_WORLD_THINGS', screen.screenId);
+  }
+  check('the drawer is inside the desk', text(screen).includes(DRAWER_LABEL));
 
   // Enter on a BOUND object leaves the world entirely and opens what it names.
-  const drawerRow = listRow(screen, 'Invoices 2024');
+  const drawerRow = listRow(screen, DRAWER_LABEL);
   term.send({ sessionId, screenId: screen.screenId, key: 'ENTER', input: { [`opt_${drawerRow}`]: '9' } });
   screen = await term.next();
   check('the drawer opened My Documents', screen.screenId === 'CRUD_DOCUMENTS', screen.screenId);
@@ -170,8 +246,8 @@ async function main() {
   check('world server resolved the scene', sceneRes.ok, `HTTP ${sceneRes.status}`);
   const scene = await sceneRes.json();
 
-  const desk = scene.things.find((t) => t.label === 'Fredrics Desk');
-  const drawer = desk?.children.find((t) => t.label === 'Invoices 2024');
+  const desk = scene.things.find((t) => t.label === DESK_LABEL);
+  const drawer = desk?.children.find((t) => t.label === DRAWER_LABEL);
   check('the same furniture tree over HTTP', Boolean(drawer), 'drawer inside desk');
   check('the same binding resolved', drawer?.access === 'ok', drawer?.reason ?? drawer?.access);
   check(
@@ -229,7 +305,7 @@ async function presenceChecks(token) {
   // Opening an object over the socket resolves the same binding as everywhere else.
   const drawerId = scene?.scene.things
     .flatMap((t) => t.children)
-    .find((c) => c.label === 'Invoices 2024')?.id;
+    .find((c) => c.label === DRAWER_LABEL)?.id;
   b.send({ type: 'OPEN_THING', thingId: drawerId });
   await sleep(600);
   const opened = b.latest('THING_OPENED');

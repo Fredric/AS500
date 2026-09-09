@@ -68,16 +68,42 @@ function toThingDisplay(r: typeof worldThings.$inferSelect): Record<string, unkn
     ...row,
     id: row.id,
     bindingKind: b?.kind ?? 'none',
-    bindingConfigId: b && (b.kind === 'crud' || b.kind === 'record') ? b.configId : '',
-    bindingScope: b && b.kind === 'crud' && b.scope ? stringifyScope(b.scope) : '',
-    bindingRecordId: b && b.kind === 'record' ? String(b.recordId) : '',
-    bindingServiceKey: b && b.kind === 'service' ? b.serviceKey : '',
-    bindingAgentUserId: b && b.kind === 'agent' ? String(b.userId) : '',
+    bindingTarget: bindingTargetOf(b),
+    bindingScope: bindingScopeOf(b),
     x: t?.x != null ? String(t.x) : '',
     y: t?.y != null ? String(t.y) : '',
     // Display-only summary column.
     boundTo: describeBinding(b),
   };
+}
+
+/**
+ * The `Target` column of a binding, as one editable string.
+ *
+ * Six binding fields collapse to two on the form because a dumb terminal cannot
+ * show and hide fields as you type — visibility is only re-evaluated on a server
+ * round trip, so a field revealed by the value you are currently entering can
+ * never appear. Rather than five permanently-visible fields of which four are
+ * always irrelevant, `Target` carries whichever single identifier the chosen
+ * kind needs. This is how AS/400 qualifier fields have always worked.
+ */
+export function bindingTargetOf(b: ThingBinding | null): string {
+  if (!b) return '';
+  switch (b.kind) {
+    case 'crud':
+    case 'record':  return b.configId;
+    case 'service': return b.serviceKey;
+    case 'agent':   return String(b.userId);
+    default:        return '';
+  }
+}
+
+/** The `Scope` column: list scope for crud, the primary key for record. */
+export function bindingScopeOf(b: ThingBinding | null): string {
+  if (!b) return '';
+  if (b.kind === 'crud') return b.scope ? stringifyScope(b.scope) : '';
+  if (b.kind === 'record') return String(b.recordId);
+  return '';
 }
 
 /** One-line description of a binding, for the list screen and the floorplan. */
@@ -151,53 +177,81 @@ export function stringifyScope(scope: Record<string, unknown>): string {
 
 export interface BindingFields {
   bindingKind: string;
-  bindingConfigId?: string;
+  /** Config id, service key, or agent user id — whichever the kind needs. */
+  bindingTarget?: string;
+  /** List scope (`folderId=42`) for crud; the primary key for record. */
   bindingScope?: string;
-  bindingRecordId?: string;
-  bindingServiceKey?: string;
-  bindingAgentUserId?: string;
 }
 
-/** Build a {@link ThingBinding} from the discrete form fields, validating as it goes. */
-export function composeBinding(f: BindingFields): ThingBinding {
-  const kind = (f.bindingKind || 'none').trim() as ThingBindingKind;
-  if (!THING_BINDING_KINDS.includes(kind)) {
-    throw new Error(`Unknown binding kind '${kind}'`);
+/**
+ * Build a {@link ThingBinding} from the two form fields.
+ *
+ * Returns an error message rather than throwing so the same rules can back both
+ * a form validator (which shows the message against the field) and the service
+ * call (which must still refuse a bad binding arriving over MCP or REST).
+ */
+export function validateBinding(f: BindingFields): string | null {
+  const kind = (f.bindingKind || 'none').trim();
+  if (!(THING_BINDING_KINDS as string[]).includes(kind)) {
+    return `Binds to must be one of: ${THING_BINDING_KINDS.join(', ')}`;
   }
+
+  const target = (f.bindingTarget ?? '').trim();
+  const scope = (f.bindingScope ?? '').trim();
+
+  switch (kind as ThingBindingKind) {
+    case 'crud':
+      if (!target) return 'A crud binding needs a Target (the config id, e.g. documents)';
+      try { parseScope(scope); } catch (err) { return `Scope: ${(err as Error).message}`; }
+      return null;
+
+    case 'record':
+      if (!target) return 'A record binding needs a Target (the config id)';
+      if (!scope) return 'A record binding needs the record id in Scope';
+      return null;
+
+    case 'service':
+      if (!target) return 'A service binding needs a Target (the service key, e.g. docs-api)';
+      return null;
+
+    case 'agent': {
+      const userId = Number(target);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return 'An agent binding needs a numeric user id in Target';
+      }
+      return null;
+    }
+
+    default:
+      return null;
+  }
+}
+
+/** Build a {@link ThingBinding} from the two form fields, validating as it goes. */
+export function composeBinding(f: BindingFields): ThingBinding {
+  const problem = validateBinding(f);
+  if (problem) throw new Error(problem);
+
+  const kind = (f.bindingKind || 'none').trim() as ThingBindingKind;
+  const target = (f.bindingTarget ?? '').trim();
+  const scope = (f.bindingScope ?? '').trim();
 
   switch (kind) {
     case 'none':
     case 'workstation':
       return { kind };
 
-    case 'crud': {
-      const configId = (f.bindingConfigId ?? '').trim();
-      if (!configId) throw new Error('A crud binding needs a Config Id');
-      return { kind, configId, scope: parseScope(f.bindingScope ?? '') };
-    }
+    case 'crud':
+      return { kind, configId: target, scope: parseScope(scope) };
 
-    case 'record': {
-      const configId = (f.bindingConfigId ?? '').trim();
-      const recordId = (f.bindingRecordId ?? '').trim();
-      if (!configId) throw new Error('A record binding needs a Config Id');
-      if (!recordId) throw new Error('A record binding needs a Record Id');
-      return { kind, configId, recordId: /^-?\d+$/.test(recordId) ? Number(recordId) : recordId };
-    }
+    case 'record':
+      return { kind, configId: target, recordId: /^-?\d+$/.test(scope) ? Number(scope) : scope };
 
-    case 'service': {
-      const serviceKey = (f.bindingServiceKey ?? '').trim();
-      if (!serviceKey) throw new Error('A service binding needs a Service Key');
-      return { kind, serviceKey };
-    }
+    case 'service':
+      return { kind, serviceKey: target };
 
-    case 'agent': {
-      const raw = (f.bindingAgentUserId ?? '').trim();
-      const userId = Number(raw);
-      if (!Number.isInteger(userId) || userId <= 0) {
-        throw new Error('An agent binding needs a numeric User Id');
-      }
-      return { kind, userId };
-    }
+    case 'agent':
+      return { kind, userId: Number(target) };
   }
 }
 
