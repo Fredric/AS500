@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import Floorplan from './components/Floorplan';
 import ThingPanel from './components/ThingPanel';
 import DocumentsBrowserModal from './components/DocumentsBrowserModal';
+import Scene3D from './three/Scene3D';
 import { findThing, useWorldSocket, worldApiUrl } from './useWorldSocket';
 import type { ResolvedBook, ResolvedThing, WorldSpace } from './types';
 
@@ -32,6 +33,11 @@ export default function App() {
   // at once, mirroring how the furniture tree and the data tree are kept
   // separate everywhere else in this feature.
   const [openBook, setOpenBook] = useState<{ folderId: number; label: string } | null>(null);
+
+  // Default stays 2D for this pass — zero regression risk to the working
+  // view. The 2D floorplan remains the world's debug tool either way, per
+  // the roadmap; this toggle is how you get to the first-person one.
+  const [view, setView] = useState<'2d' | '3d'>('2d');
 
   // The space list comes over HTTP rather than the socket: it is needed to pick
   // a room before entering one, and it never changes while you are standing in it.
@@ -101,6 +107,9 @@ export default function App() {
           {actors.length} here{actors.length > 0 ? `: ${actors.map((a) => a.username).join(', ')}` : ''}
         </span>
 
+        <button type="button" onClick={() => setView(view === '2d' ? '3d' : '2d')}>
+          {view === '2d' ? 'Enter 3D' : 'Back to 2D'}
+        </button>
         <button type="button" onClick={refresh}>Refresh</button>
         <span className={`dot ${connected ? 'dot--on' : 'dot--off'}`} title={connected ? 'connected' : 'reconnecting'} />
       </header>
@@ -116,14 +125,26 @@ export default function App() {
 
       <main className="stage">
         {scene ? (
-          <Floorplan
-            things={scene.things}
-            actors={actors}
-            selectedId={selected?.id ?? null}
-            onSelect={select}
-            onOpenBook={openBookModal}
-            onMove={move}
-          />
+          view === '2d' ? (
+            <Floorplan
+              things={scene.things}
+              actors={actors}
+              selectedId={selected?.id ?? null}
+              onSelect={select}
+              onOpenBook={openBookModal}
+              onMove={move}
+            />
+          ) : (
+            <Scene3D
+              things={scene.things}
+              actors={actors}
+              selectedId={selected?.id ?? null}
+              onSelect={select}
+              onOpenBook={openBookModal}
+              onMove={move}
+              overlayOpen={Boolean(selected) || Boolean(openBook)}
+            />
+          )
         ) : (
           <p className="stage__empty">Entering…</p>
         )}

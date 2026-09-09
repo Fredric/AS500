@@ -725,6 +725,51 @@ way `chatService.ts` mints one for a live agent turn — not a simulated audit
 row — confirming the whole path from a genuine `as500-ai` tool call through
 to an amber avatar in the room, and its disappearance after the timeout.
 
+### First-person 3D (Phase 4)
+
+`client/src/world/three/` is a second renderer for the *same* state
+`Floorplan.tsx` already consumes (`scene`, `actors`, `opened`, `browse`) —
+zero changes to the server, the WS protocol, or `resolver.ts`, per the
+roadmap's own framing of Phase 4 as a renderer swap. A topbar toggle in
+`App.tsx` (`view: '2d' | '3d'`) switches which one renders; **2D stays the
+default** for now — zero regression risk to the working view.
+
+**No protocol change was needed for movement.** `Presence.pose` was already
+`{x, y, rot}`; 3D reinterprets the same ground-plane pair as `(x, z)` with
+`y` as height computed client-side and never sent, and reuses `rot` as yaw
+directly. `layout.ts`'s `layoutThings()`/`FOOTPRINT` are reused verbatim for
+both 3D placement and collision boxes — `PlayerController.tsx` does simple
+per-axis AABB sliding collision, sub-stepped (`MAX_STEP`) so a frame hitch
+can never let a single step tunnel through a thin object.
+
+**Assets are primitives for now** (boxes, `MeshStandardMaterial`, no GLTF
+pipeline) — `heights.ts`'s `MODEL_FOR_TYPE` lookup returns `null` for every
+type today, read but unused, so a future model swap touches one table, not
+`ThingMesh.tsx`'s structure.
+
+**Interaction**: `InteractionHUD.tsx` raycasts forward from camera center
+each frame (not the mouse pointer, which is locked/hidden) and E triggers
+the *same* `onSelect`/`onOpenBook` callbacks `Floorplan.tsx`'s click handler
+already uses — a new input trigger for an existing interaction, not a new
+one. One real bug worth remembering if this file is touched again: a
+thing's `<lineSegments>` edge overlay is a *child* of the tagged `<mesh>`
+and is very often the nearer of the two raycast hits, but isn't itself
+tagged — the hit-resolution loop must fall back to `object.parent.userData`,
+not just `object.userData`, or every raycast against an edge silently
+misses.
+
+**Pointer lock lifecycle**: opening `ThingPanel`/`DocumentsBrowserModal`
+must release pointer lock so normal DOM interaction works, and re-acquire on
+close — `Scene3D.tsx`'s `overlayOpen` prop (`Boolean(selected) ||
+Boolean(openBook)` in `App.tsx`) is the only place the two render trees need
+to know about each other's state, for this one reason.
+
+Verified against the real server: walking into a bound object shows "Press
+E", E opens the identical `ThingPanel` the 2D view opens, and pointer lock
+correctly releases for it — confirmed with a temporary REST-placed object at
+a known position (pointer lock itself cannot be driven from an automated
+headless browser; mouselook needs a manual check in a real tab).
+
 ### Spatial model
 
 The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not
@@ -780,6 +825,7 @@ credential, no new session type.
 | Agent presence from the audit feed | `server/src/world/agentPresence.ts` |
 | Live service health subscription | `server/src/monitor/index.ts` (`getLastSnapshot`/`onSnapshot`), `server/src/world/serviceStatus.ts` |
 | 2D floorplan client | `client/src/world/`, `client/office.html` |
+| First-person 3D client | `client/src/world/three/` |
 | File-explorer modal | `client/src/world/components/DocumentsBrowserModal.tsx` |
 | Audit change feed | `server/src/core/audit/writer.ts` (`onAuditEvent`) |
 
