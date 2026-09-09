@@ -37,7 +37,7 @@ npm run backup-db   # pg_dump backup
 npm run restore-db <file>   # Restore from SQL dump
 ```
 
-**Ports**: PostgreSQL `5433`, Server WebSocket `ws://localhost:3001`, Client `http://localhost:5173`  
+**Ports**: PostgreSQL `5433`, Server WebSocket `ws://localhost:3001`, MCP/REST `http://localhost:3002`, Ingest monitor `http://localhost:3005`, Virtual office `http://localhost:3006`, Client `http://localhost:5173`  
 **Default login**: `FREDRIC` / `fredric`
 
 ---
@@ -538,6 +538,144 @@ Server-side code changes need `docker compose restart server` — `tsx watch` do
 
 ---
 
+## Virtual Office (spatial projection)
+
+A **fourth projection surface** for AS500, alongside the terminal, MCP and REST.
+The same `CRUDTableConfig` that renders as an 80×24 list and as MCP tools also
+becomes an object in a room: a drawer bound to `documents` **is** that folder, a
+rack bound to `docs-api` **is** that service.
+
+Runs on its own port (**3006**) with its own Vite entry point (`/office`), the
+same arrangement as the ingest monitor. Deleting `server/src/world/` and
+`client/src/world/` removes the feature completely.
+
+### The binding — the one idea everything rests on
+
+An object stores a **binding**, never a copy of the data:
+
+```typescript
+type ThingBinding =
+  | { kind: 'crud';   configId: string; scope?: Record<string, unknown> }
+  | { kind: 'record'; configId: string; recordId: string | number }
+  | { kind: 'workstation' }
+  | { kind: 'service'; serviceKey: string }   // reuses monitor/probes.ts
+  | { kind: 'agent';  userId: number }
+  | { kind: 'none' };                          // owns its own payload
+```
+
+**The world server never queries app tables.** `resolver.ts` resolves
+`binding.configId` through `getConfig()` and calls the config's own
+`services.list.params(ctx)` — the identical path the terminal, MCP and REST
+take. Therefore:
+
+- No copied data, no drift, one source of truth.
+- **RBAC is not reimplemented.** `config.requirePermission` and
+  `ServiceCall.requirePermission` already gate every object.
+- Every CRUDTableConfig registered in future is immediately placeable, with no
+  world-side work.
+- `userId` is injected from the *viewer*, never read from the binding, so a
+  binding can never widen access.
+
+A refused object is returned **visible but closed** (`access: 'denied'`), never
+omitted — otherwise the room's furniture would change depending on who is
+looking, which leaks the object's existence.
+
+### Two hierarchies that must never be merged
+
+| Tree | Column | Changed by |
+|---|---|---|
+| **Furniture** — desk ▸ drawer ▸ tray | `world_things.parent_thing_id` | people arranging the office |
+| **Data** — folder ▸ subfolder ▸ file | `document_folders.parent_id` | people using the system |
+
+A binding is a **mount point**, exactly like a Unix mount. Navigating deeper
+into folders moves through the *data* tree while you stand still in the
+*furniture* tree. This is visible from the keyboard: pressing Esc inside an
+opened drawer climbs out of the data tree first, and only then returns to the room.
+
+### Furnishing the office (terminal)
+
+```
+MAIN MENU → Virtual Office → Spaces
+  F6                create a space
+  Enter (opt 2)     edit it, then T = its objects
+  F6                place an object; pick a Type and a "Binds to"
+  Enter on a row    bound object  → opens the config it names, scoped
+                    container     → descends into its contents, in place
+  Esc               back up the furniture tree, then out
+```
+
+Both Office Layout screens are ordinary CRUDTable configs, so they also carry
+`mcp` and `api` blocks: **an agent can rearrange the office**, audited like
+everything else.
+
+### Spatial model
+
+The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not
+physics. Avatar poses are relayed between clients but never validated and never
+persisted — no tick loop, no collision, no reconciliation. `transform` is a
+renderer *hint*; objects without one are auto-placed by `zone`, so placing
+furniture is a one-field operation.
+
+### Live updates
+
+`writeAuditEvent()` already fires on every mutation from every surface, so
+`onAuditEvent()` (added alongside its two writes) gives the world a complete
+change feed for free. Occupied rooms are marked dirty and rebuilt on the next
+presence tick — filing a document in the green screen updates the drawer in
+everyone's browser.
+
+### Endpoints (port 3006)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/spaces` | Every space, for a picker |
+| `GET` | `/api/space/:key` | The resolved scene — curl-testable |
+| `WS` | `/ws` | `ENTER_SPACE` / `MOVE` / `OPEN_THING` → `SCENE` / `PRESENCE` / `THING_OPENED` |
+
+Auth is the terminal's own access token (`?token=` or `Bearer`) — no new
+credential, no new session type.
+
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WORLD_ENABLED` | `true` | `false` skips booting it and hides the menu entry |
+| `WORLD_PORT` | `3006` | HTTP + WebSocket port |
+| `WORLD_PRESENCE_MS` | `250` | Presence broadcast / dirty-scene tick |
+| `WORLD_PRESENCE_TIMEOUT_MS` | `30000` | Drop an actor whose socket went quiet |
+
+### Key files
+
+| Purpose | Path |
+|---|---|
+| **Binding resolver** | `server/src/world/resolver.ts` |
+| World runtime (:3006) | `server/src/world/index.ts` |
+| World types (incl. `ThingBinding`) | `server/src/world/types.ts` |
+| Spatial tables | `server/src/world/db/schema.ts` |
+| Placement service | `server/src/world/services/worldService.ts` |
+| Office Layout configs | `server/src/world/configs/` |
+| Registration (configs + menu) | `server/src/world/bootstrap.ts` |
+| 2D floorplan client | `client/src/world/`, `client/office.html` |
+| Audit change feed | `server/src/core/audit/writer.ts` (`onAuditEvent`) |
+
+### Verification
+
+```bash
+node server/scripts/world-loop-check.mjs   # terminal + HTTP + WS, one binding
+npx playwright test tests/world-office.spec.ts
+```
+
+`world-loop-check.mjs` drives the real terminal WebSocket and asserts that the
+green screen, `curl :3006`, and the resolved scene all agree on one binding. If
+they ever disagree, the model is wrong — that script is what says so.
+
+> 3D is a later phase: it swaps `client/src/world/`'s renderer against this same
+> protocol. The 2D floorplan then stays on as the world's debug tool, the way the
+> ingest monitor is for the RAG stack.
+
+---
+
 ## AI Agent Integration
 
 AS500 ships an in-terminal AI chat panel backed by a local Python AI agent (`as500-agent` repo). The user opens the panel with the star button (✦) in the top-right corner; the server streams responses token-by-token over the existing WebSocket.
@@ -766,6 +904,7 @@ Test files:
 - `tests/scrollable-subfile.spec.ts` – Subfile pagination
 - `tests/time-registration-crud.spec.ts` – Add/edit/delete (uses opt-field workflow, option 6)
 - `tests/keyboard-navigation.spec.ts` – Arrow key nav, Enter, shortcut keys, mouse click (option 7, CRUDTable)
+- `tests/world-office.spec.ts` – Virtual office floorplan: a bound object resolves to real records, and is refused for another user
 
 ---
 

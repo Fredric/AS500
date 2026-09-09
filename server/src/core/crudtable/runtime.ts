@@ -156,7 +156,15 @@ async function executeOpenUINavigation(
     };
   }
 
-  const targetConfig = getConfig(config.openUI.id);
+  // Set the selection before resolving the target: a dynamic `openUI.id` picks
+  // the destination from the selected row, so it must see it.
+  crudCtx.selection = [selection.record];
+
+  const targetId = typeof config.openUI.id === 'function'
+    ? config.openUI.id(crudCtx)
+    : config.openUI.id;
+
+  const targetConfig = getConfig(targetId);
   if (!targetConfig) {
     return {
       ...(await buildListScreen(config, session, `Invalid option '${selection.opt}'`, 'error')),
@@ -164,7 +172,6 @@ async function executeOpenUINavigation(
     };
   }
 
-  crudCtx.selection = [selection.record];
   const derivedCtx = config.openUI.mapContext(crudCtx);
 
   if (derivedCtx.skipNavigation) {

@@ -38,6 +38,11 @@ import { startMcpServer, DEFAULT_MCP_PORT } from './core/mcp/index.js';
 // self-contained in `server/src/monitor/` — see that folder's index.ts.
 import { startMonitorServer } from './monitor/index.js';
 
+// Virtual office: spatial projection of AS500 on its own port. Self-contained
+// in `server/src/world/` for the same reason the monitor is.
+import { bootstrapWorld } from './world/bootstrap.js';
+import { startWorldServer } from './world/index.js';
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 const MCP_PORT = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT) : DEFAULT_MCP_PORT;
 const MCP_ENABLED = process.env.MCP_ENABLED !== 'false'; // default on
@@ -83,7 +88,14 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<v
   // its extensionless path must resolve to its own HTML file rather than falling
   // through to the terminal's index.html.
   const isMonitor = url === '/ingestmonitor' || url === '/ingestmonitor/';
-  let filePath = join(CLIENT_DIST, isMonitor ? 'ingestmonitor.html' : url === '/' ? 'index.html' : url);
+  const isOffice = url === '/office' || url === '/office/';
+  let filePath = join(
+    CLIENT_DIST,
+    isMonitor ? 'ingestmonitor.html'
+      : isOffice ? 'office.html'
+      : url === '/' ? 'index.html'
+      : url,
+  );
 
   try {
     const stats = await stat(filePath);
@@ -153,6 +165,11 @@ async function startServer() {
 
   // Register core system configs
   bootstrapCore();
+
+  // Register the virtual office's layout screens + menu entry (no-op when
+  // WORLD_ENABLED=false). Must run after bootstrapCore so the binding picker
+  // can offer core configs too.
+  bootstrapWorld();
 
   const DOCS_API_URL_INTERNAL = process.env.DOCS_API_URL?.replace(/\/$/, '') ?? '';
 
@@ -276,6 +293,14 @@ async function startServer() {
     startMonitorServer();
   } catch (err) {
     console.error('Failed to start ingest monitor:', err);
+  }
+
+  // Virtual office backend. Own listener, same reasoning as the monitor.
+  let worldHttpServer: ReturnType<typeof startWorldServer> = null;
+  try {
+    worldHttpServer = startWorldServer();
+  } catch (err) {
+    console.error('Failed to start world server:', err);
   }
 
   // Ping/pong keepalive for Heroku (55s idle timeout)
@@ -675,6 +700,9 @@ async function startServer() {
     clearInterval(pingInterval);
     if (mcpHttpServer) {
       mcpHttpServer.close();
+    }
+    if (worldHttpServer) {
+      worldHttpServer.close();
     }
     wss.close(async () => {
       httpServer.close(async () => {

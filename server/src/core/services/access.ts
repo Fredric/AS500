@@ -30,6 +30,8 @@ export const PERMISSIONS = {
   MODS_WRITE: 'mods:write',
   SERVICES_PERFORMED_READ:  'services_performed:read',
   SERVICES_PERFORMED_WRITE: 'services_performed:write',
+  WORLD_READ:      'world:read',
+  WORLD_WRITE:     'world:write',
   SYS_ADMIN:       'sys:admin',
 } as const;
 
@@ -48,6 +50,8 @@ export const PERMISSION_REGISTRY: Array<{ key: PermissionKey; description: strin
   { key: PERMISSIONS.MODS_WRITE, description: 'Create/edit/delete motorcycle mods' },
   { key: PERMISSIONS.SERVICES_PERFORMED_READ,  description: 'View motorcycle service records' },
   { key: PERMISSIONS.SERVICES_PERFORMED_WRITE, description: 'Create/edit/delete motorcycle service records' },
+  { key: PERMISSIONS.WORLD_READ,  description: 'Enter the virtual office and see placed objects' },
+  { key: PERMISSIONS.WORLD_WRITE, description: 'Place, move, bind and remove objects in the virtual office' },
   { key: PERMISSIONS.SYS_ADMIN,       description: 'Full system administration' },
 ];
 
@@ -64,6 +68,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSIONS.MODS_WRITE,
     PERMISSIONS.SERVICES_PERFORMED_READ,
     PERMISSIONS.SERVICES_PERFORMED_WRITE,
+    PERMISSIONS.WORLD_READ,
   ],
   superuser: [
     PERMISSIONS.TIME_REG_READ,
@@ -77,10 +82,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSIONS.MODS_WRITE,
     PERMISSIONS.SERVICES_PERFORMED_READ,
     PERMISSIONS.SERVICES_PERFORMED_WRITE,
+    PERMISSIONS.WORLD_READ,
+    PERMISSIONS.WORLD_WRITE,
   ],
   aiagent: [
     PERMISSIONS.TIME_REG_READ,
     //PERMISSIONS.TIME_REG_WRITE,
+    PERMISSIONS.WORLD_READ,
   ],
   admin: [
     PERMISSIONS.TIME_REG_READ,
@@ -95,6 +103,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSIONS.MODS_WRITE,
     PERMISSIONS.SERVICES_PERFORMED_READ,
     PERMISSIONS.SERVICES_PERFORMED_WRITE,
+    PERMISSIONS.WORLD_READ,
+    PERMISSIONS.WORLD_WRITE,
     PERMISSIONS.SYS_ADMIN,
   ],
 };
