@@ -24,7 +24,23 @@ const SPECIAL_KEYS: Record<string, string> = {
   'F12': 'F12',
 };
 
-export default function Terminal() {
+interface TerminalProps {
+  /**
+   * Notifies the host of auth/screen changes. Used by the virtual office, which
+   * mounts this component as the login gate and as the workstation modal, and
+   * needs to know when the user is signed in and which screen is showing.
+   */
+  onStatus?: (status: { authenticated: boolean; screenId: string; connected: boolean }) => void;
+  /**
+   * False while the component is mounted but hidden (the office keeps it mounted
+   * so the WebSocket session survives). When it flips back to true the terminal
+   * re-grabs keyboard focus, which the normal per-response focus effect would
+   * otherwise not do without a fresh server message.
+   */
+  visible?: boolean;
+}
+
+export default function Terminal({ onStatus, visible = true }: TerminalProps = {}) {
   const {
     connected,
     rows,
@@ -47,6 +63,10 @@ export default function Terminal() {
   } = useTerminal();
 
   const authenticated = connected && !!sessionId && screenId !== '' && screenId !== 'LOGIN';
+
+  useEffect(() => {
+    onStatus?.({ authenticated, screenId, connected });
+  }, [authenticated, screenId, connected, onStatus]);
 
   const chat = useAiChat({
     sessionId,
@@ -638,6 +658,8 @@ export default function Terminal() {
       pendingFocusFrameRef.current = null;
     }
 
+    if (!visible) return;
+
     if (isListMode || isMenuMode) {
       // In list/menu navigation mode, focus the container so arrow keys work
       containerRef.current?.focus();
@@ -681,7 +703,7 @@ export default function Terminal() {
         pendingFocusFrameRef.current = null;
       }
     };
-  }, [responseCount, focusField, isListMode, isMenuMode, focusedActionIndex, fields, cursor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [responseCount, visible, focusField, isListMode, isMenuMode, focusedActionIndex, fields, cursor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Render a row with field inputs overlaid
   const renderRow = (row: string, rowIndex: number) => {

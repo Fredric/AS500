@@ -546,9 +546,28 @@ The same `CRUDTableConfig` that renders as an 80×24 list and as MCP tools also
 becomes an object in a room: a drawer bound to `documents` **is** that folder, a
 rack bound to `docs-api` **is** that service.
 
-Runs on its own port (**3006**) with its own Vite entry point (`/office`), the
+Runs on its own port (**3006**) with its own Vite entry point, the
 same arrangement as the ingest monitor. Deleting `server/src/world/` and
 `client/src/world/` removes the feature completely.
+
+**The world is now the app's front door.** `client/index.html` loads
+`client/src/world/main.tsx` (`/office` stays as an alias). There is no
+standalone terminal page any more — the green-screen `Terminal` component is
+mounted *inside* the world (`client/src/world/App.tsx`) in two roles:
+
+- **Login gate** — full-screen `Terminal` at `LOGIN` until authenticated;
+  once the terminal reports `authenticated` (via its new `onStatus` prop) the
+  gate hides and the world socket (`useWorldSocket(space, authed)`) connects.
+- **Workstation modal** — clicking a `{ kind: 'workstation' }` object
+  (`App.select()`) shows the same `Terminal` as an overlay with a close strip.
+  Esc minimises it *only* at `MAIN_MENU`/`LOGIN`; on deeper screens Esc falls
+  through as F3. Signing off (F3 at the main menu) clears the token and drops
+  back to the login gate.
+
+The `Terminal` is mounted once and never unmounted (a stable tree across the
+auth transition) so its WebSocket session survives being hidden/reshown.
+`client/src/styles/terminal.css` is imported before `world.css` so the office's
+own light theme wins on shared base rules.
 
 ### The binding — the one idea everything rests on
 

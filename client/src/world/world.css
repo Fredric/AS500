@@ -337,3 +337,48 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
 
 .modal__row--file { color: var(--w-text-dim); }
 .modal__row-meta { color: var(--w-text-faint); font-size: 12px; flex-shrink: 0; }
+
+/* ------------------------------------------------------------------ *
+ * Embedded terminal — login gate (full screen) and workstation modal *
+ * ------------------------------------------------------------------ */
+
+.term-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+}
+
+/* Login gate: the plain full-screen terminal, nothing around it. */
+.term-layer--full { z-index: 1200; }
+
+/* Workstation modal: same terminal, with a close strip on top. */
+.term-layer--modal { padding-top: 34px; }
+.term-layer--modal .app { height: calc(100% - 34px); }
+
+.term-layer__bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  background: #0b0b0b;
+  border-bottom: 1px solid #1f1f1f;
+  color: #7ee787;
+  font: 500 12px/1 'Inter', system-ui, sans-serif;
+  z-index: 1;
+}
+
+.term-layer__bar button {
+  background: transparent;
+  border: 1px solid #2f6f3f;
+  color: #7ee787;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.term-layer__bar button:hover { background: #12331b; }

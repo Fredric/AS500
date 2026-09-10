@@ -42,6 +42,12 @@ body {
 /* Terminal Container */
 .terminal-container {
   background-color: var(--bg-color);
+  /* The terminal used to inherit its monospace font and green text from the
+     global `body` rule. It is now mounted inside the virtual office, whose own
+     stylesheet owns `body`, so the terminal must set these on its own root and
+     let the whole 80x24 grid inherit them. */
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  color: var(--text-color);
   border: 0.1875em solid #1a3a1a;
   border-radius: 12px;
   padding: 1.25em;

@@ -78,7 +78,7 @@ export interface WorldConnection {
   refresh: () => void;
 }
 
-export function useWorldSocket(initialSpaceKey: string | null): WorldConnection {
+export function useWorldSocket(initialSpaceKey: string | null, enabled = true): WorldConnection {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scene, setScene] = useState<ResolvedScene | null>(null);
@@ -87,7 +87,9 @@ export function useWorldSocket(initialSpaceKey: string | null): WorldConnection 
   const [browse, setBrowse] = useState<DocumentsBrowseLevel | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const authed = accessToken() != null;
+  // `enabled` is false while the login gate is still up: no token has been
+  // issued yet, so there is nothing to connect with and no error to show.
+  const authed = enabled && accessToken() != null;
 
   // Held in a ref so the socket's onopen can rejoin the current room after a
   // reconnect without the effect needing to tear the socket down.
@@ -101,7 +103,7 @@ export function useWorldSocket(initialSpaceKey: string | null): WorldConnection 
 
   useEffect(() => {
     if (!authed) {
-      setError('No AS500 access token. Sign in to the terminal first, or add ?token=…');
+      if (enabled) setError('No AS500 access token. Sign in to the terminal first, or add ?token=…');
       return;
     }
 
