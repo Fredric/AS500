@@ -20,6 +20,7 @@
 //                                                      username+password → tokens)
 //   POST /api/auth/refresh                            (rotate refresh token)
 //   POST /api/auth/revoke                             (logout / revoke token)
+//   POST /api/documents/upload                        (Bearer multipart file → My Documents)
 //
 // Auth posture:
 //   `/mcp` is now protected by `requireBearerAuth`. Unauthenticated calls
@@ -38,6 +39,7 @@ import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middlew
 import { buildMcpServer } from './transport.js';
 import { buildApiRouter } from '../api/index.js';
 import { buildAuthRouter } from '../api/auth.js';
+import { buildDocumentsUploadRouter } from '../../app/api/documentsBearerUpload.js';
 import { buildAs500OAuthProvider, issueAuthorizationCodeAfterConsent } from './oauth/provider.js';
 import { initJwtSecret } from './oauth/tokens.js';
 import { hasLiveConsent, recordConsent } from './oauth/store.js';
@@ -324,6 +326,11 @@ export function buildMcpApp(opts: McpAppOptions = {}): Express {
   // -------- First-party auth (no bearer — credential exchange) --------
   // Must be mounted BEFORE the general /api router so /api/auth/* is matched here.
   app.use('/api/auth', buildAuthRouter());
+
+  // -------- Document upload (Bearer multipart) --------
+  // Must be mounted BEFORE the general /api router so /documents/upload is
+  // not treated as a CRUDTable config id.
+  app.use('/api/documents', buildDocumentsUploadRouter(bearerAuth));
 
   // -------- REST API (mounted at /api) --------
   app.use('/api', buildApiRouter({ bearerAuth, debug: opts.debug }));
