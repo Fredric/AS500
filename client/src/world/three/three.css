@@ -1,0 +1,50 @@
+/* 3D view overlay — kept separate from world.css's SVG-oriented rules,
+   matching this project's existing per-surface CSS separation (terminal,
+   office, monitor each get their own file). */
+
+.three-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.three-stage canvas { display: block; cursor: crosshair; }
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud__crosshair {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1.5px rgba(28, 33, 40, 0.55);
+}
+
+.hud__prompt {
+  position: absolute;
+  bottom: 22%;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(28, 33, 40, 0.72);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hud__hint {
+  position: absolute;
+  bottom: 14px;
+  color: rgba(28, 33, 40, 0.55);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 3px 10px;
+  border-radius: 5px;
+}

@@ -22,7 +22,7 @@ import { auditLog } from '../db/schema.js';
 // ---------------------------------------------------------------------------
 
 export type AuditEventType = 'auth' | 'crud' | 'mcp' | 'api' | 'session';
-export type AuditSource = 'terminal' | 'mcp' | 'api';
+export type AuditSource = 'terminal' | 'mcp' | 'api' | 'world';
 
 export interface AuditEventArgs {
   event_type: AuditEventType;
@@ -46,6 +46,39 @@ export interface AuditEventArgs {
   after_data?: Record<string, unknown> | null;
   /** SHA-256 hex of serialised input params (MCP/API calls — avoids PII). */
   params_hash?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// In-process change feed
+// ---------------------------------------------------------------------------
+//
+// Every mutation on every surface — terminal CRUD, MCP tool call, REST request,
+// auth event — already funnels through writeAuditEvent(), carrying config_id and
+// record_id. That makes it the system's complete change feed, so subscribers get
+// updates from all surfaces at once rather than each having to instrument them.
+//
+// Listeners are called synchronously after the writes, are wrapped so one bad
+// subscriber cannot break another, and must never throw or block: this is on
+// the path of every write in the system.
+
+type AuditListener = (event: AuditEventArgs) => void;
+
+const listeners = new Set<AuditListener>();
+
+/** Subscribe to the audit stream. Returns an unsubscribe function. */
+export function onAuditEvent(listener: AuditListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function emit(event: AuditEventArgs): void {
+  for (const listener of listeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.error('[audit] listener failed:', err);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,4 +163,7 @@ export async function writeAuditEvent(args: AuditEventArgs): Promise<void> {
   } catch (err) {
     console.error('[audit] file write failed:', err);
   }
+
+  // 3. Notify in-process subscribers (e.g. the world runtime's live scene).
+  emit(args);
 }

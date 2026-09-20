@@ -115,7 +115,20 @@ export interface OpenUIMapResult extends Partial<CRUDContext> {
 }
 
 export interface OpenUIConfig {
-  id: string;
+  /**
+   * Id of the config to open.
+   *
+   * A plain string is the common case — every row opens the same UI. Pass a
+   * function when the destination depends on the selected row; it receives the
+   * `CRUDContext` with `selection` already populated with that row. The world
+   * layer relies on this: an object in the room opens whatever its binding
+   * names, so a drawer bound to `documents` and a shelf bound to `motorcycles`
+   * open different configs from the same list.
+   *
+   * Returning the parent's own id keeps navigation on the same screen (an
+   * in-place scope change), exactly as a string equal to `config.id` does.
+   */
+  id: string | ((context: CRUDContext) => string);
   mapContext: (parentContext: CRUDContext) => OpenUIMapResult;
 }
 

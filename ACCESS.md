@@ -71,6 +71,8 @@ Defined in `ROLE_DEFAULT_PERMISSIONS` in `access.ts` and seeded to the `role_per
 | `time_reg:write` | ✓ | ✓ | ✓ | ✓ |
 | `user_mgmt:read` | | ✓ | | ✓ |
 | `user_mgmt:admin` | | | | ✓ |
+| `world:read` | ✓ | ✓ | ✓ | ✓ |
+| `world:write` | | ✓ | | ✓ |
 | `sys:admin` | | | | ✓ |
 
 ---

@@ -40,6 +40,11 @@ services:
       # /ingestmonitor page. See server/src/monitor/. Bound to loopback only:
       # it exposes raw service logs and has no auth unless MONITOR_TOKEN is set.
       - "127.0.0.1:3005:3005"
+      # Virtual office backend (HTTP + WebSocket). Consumed by the /office page,
+      # which connects straight to this port from the browser. See
+      # server/src/world/. Published like 3002 rather than loopback-only: every
+      # route requires a valid AS500 access token, unlike the ingest monitor.
+      - "3006:3006"
     extra_hosts:
       # Ingest monitor probes Ollama, vLLM and as500-agent, all of which run
       # natively on the host rather than in this Compose project.

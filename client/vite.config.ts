@@ -7,18 +7,25 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
- * The ingest monitor is a second, independent entry point (`ingestmonitor.html`)
- * rather than a route inside the terminal app. This serves it at the extensionless
- * path `/ingestmonitor` in dev; the Node server does the same for the built file.
+ * The ingest monitor and the virtual office are independent entry points
+ * (`ingestmonitor.html`, `office.html`) rather than routes inside the terminal
+ * app. This serves them at their extensionless paths in dev; the Node server
+ * does the same for the built files.
  */
-function ingestMonitorRoute(): Plugin {
+function extraEntryRoutes(): Plugin {
+  const routes: Record<string, string> = {
+    '/ingestmonitor': '/ingestmonitor.html',
+    '/office': '/office.html',
+  };
+
   return {
-    name: 'as500-ingestmonitor-route',
+    name: 'as500-extra-entry-routes',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         const [path, query] = (req.url ?? '').split('?');
-        if (path === '/ingestmonitor' || path === '/ingestmonitor/') {
-          req.url = `/ingestmonitor.html${query ? `?${query}` : ''}`;
+        const target = routes[path.replace(/\/$/, '')];
+        if (target) {
+          req.url = `${target}${query ? `?${query}` : ''}`;
         }
         next();
       });
@@ -41,12 +48,13 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_DATE__: JSON.stringify(buildDate),
   },
-  plugins: [react(), ingestMonitorRoute()],
+  plugins: [react(), extraEntryRoutes()],
   build: {
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
         ingestmonitor: resolve(__dirname, 'ingestmonitor.html'),
+        office: resolve(__dirname, 'office.html'),
       },
     },
   },

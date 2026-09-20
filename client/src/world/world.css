@@ -1,0 +1,384 @@
+/* Virtual office — 2D floorplan.
+   Deliberately its own, ordinary visual language — not the terminal's
+   green-on-black phosphor CRT theme, which stays where it belongs
+   (client/src/styles/terminal.css). This is a normal light UI. */
+
+:root {
+  --w-bg: #f4f5f7;
+  --w-surface: #ffffff;
+  --w-surface-sunken: #f8f9fb;
+  --w-line: #e2e5eb;
+  --w-line-strong: #cbd0da;
+
+  --w-text: #1c2128;
+  --w-text-dim: #565f6d;
+  --w-text-faint: #8b94a3;
+
+  --w-accent: #2f6fed;
+  --w-accent-soft: rgba(47, 111, 237, 0.10);
+  --w-accent-strong: #1d4fc4;
+
+  --w-warning: #b45309;
+  --w-warning-bg: #fef3c7;
+  --w-danger: #dc2626;
+  --w-danger-bg: #fee2e2;
+  --w-success: #15803d;
+
+  --w-human: #2f6fed;
+  --w-agent: #d97706;
+
+  --w-book: #92400e;
+  --w-book-hover: #b45309;
+  --w-book-overflow: #9aa3b2;
+
+  --w-note-yellow: #fef3c7;      --w-note-yellow-line: #d4a72c;
+  --w-note-pink:   #fce7f3;      --w-note-pink-line:   #d4569a;
+  --w-note-blue:   #dbeafe;      --w-note-blue-line:   #3b82f6;
+  --w-note-green:  #dcfce7;      --w-note-green-line:  #22a35d;
+
+  --w-shadow: 0 8px 24px rgba(28, 33, 40, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--w-bg);
+  color: var(--w-text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.shell { display: flex; flex-direction: column; height: 100vh; }
+
+.shell--empty {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 24px;
+}
+.shell--empty .hint { color: var(--w-text-faint); max-width: 46ch; line-height: 1.6; }
+code {
+  color: var(--w-accent-strong);
+  background: var(--w-accent-soft);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.92em;
+}
+
+/* ---- top bar ---- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--w-line);
+  background: var(--w-surface);
+  flex-shrink: 0;
+}
+.topbar h1 { font-size: 15px; margin: 0; font-weight: 600; color: var(--w-text); }
+.topbar__space { display: flex; align-items: center; gap: 8px; color: var(--w-text-dim); font-size: 13px; }
+.topbar__actors { margin-left: auto; color: var(--w-text-faint); font-size: 13px; }
+
+select, button {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--w-text);
+  background: var(--w-surface);
+  border: 1px solid var(--w-line-strong);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+select:disabled { opacity: 0.5; cursor: default; }
+button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color: var(--w-accent); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot--on { background: var(--w-success); }
+.dot--off { background: var(--w-danger); }
+
+.banner {
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--w-line);
+  background: var(--w-danger-bg);
+  color: var(--w-danger);
+  font-size: 13px;
+}
+.banner--hint { background: var(--w-warning-bg); color: var(--w-warning); }
+.banner strong { color: inherit; font-weight: 600; }
+
+/* ---- stage ---- */
+
+.stage { display: flex; flex: 1; min-height: 0; }
+.stage__empty { margin: auto; color: var(--w-text-faint); }
+
+.floorplan { flex: 1; min-width: 0; height: 100%; display: block; cursor: crosshair; background: var(--w-bg); }
+.floorplan__grid-line { stroke: var(--w-line); }
+.floorplan__border { stroke: var(--w-line-strong); }
+
+/* ---- objects ---- */
+
+.thing { cursor: pointer; }
+.thing rect {
+  fill: var(--w-surface);
+  stroke: var(--w-line-strong);
+  stroke-width: 0.05;
+  transition: fill 120ms ease, stroke 120ms ease;
+}
+.thing:hover rect { fill: var(--w-surface-sunken); stroke: var(--w-accent); }
+
+/* Access state is the outline: a locked cabinet must read at a glance. */
+.thing--bound rect  { stroke: var(--w-accent); fill: var(--w-accent-soft); }
+.thing--open rect   { stroke: var(--w-line-strong); }
+.thing--unbound rect{ stroke: var(--w-text-faint); stroke-dasharray: 0.2 0.15; }
+.thing--denied rect { stroke: var(--w-warning); stroke-dasharray: 0.3 0.2; fill: var(--w-warning-bg); }
+.thing--error rect  { stroke: var(--w-danger); fill: var(--w-danger-bg); }
+.thing--selected rect { stroke-width: 0.11; filter: drop-shadow(0 0 0.2px var(--w-accent)); }
+
+/* A door reads as passable, not as a bound container — its own tint,
+   distinct from the generic access-state outlines above. */
+.thing--door rect { stroke: var(--w-success); fill: rgba(21, 128, 61, 0.08); cursor: pointer; }
+.thing--door:hover rect { fill: rgba(21, 128, 61, 0.16); }
+.thing__door-label { fill: var(--w-success); font-weight: 600; }
+
+.thing__label { fill: var(--w-text); font-weight: 600; }
+.thing__type  { fill: var(--w-text-faint); }
+.thing__note-body { fill: var(--w-text-dim); }
+.thing__badge { font-size: 0.34px; fill: var(--w-accent-strong); font-weight: 600; }
+.thing text { pointer-events: none; }
+
+/* ---- notes (postit / board furniture) ---- */
+
+.thing.note rect { stroke-width: 0.03; }
+.thing.note--yellow rect { fill: var(--w-note-yellow); stroke: var(--w-note-yellow-line); }
+.thing.note--pink rect   { fill: var(--w-note-pink);   stroke: var(--w-note-pink-line); }
+.thing.note--blue rect   { fill: var(--w-note-blue);   stroke: var(--w-note-blue-line); }
+.thing.note--green rect  { fill: var(--w-note-green);  stroke: var(--w-note-green-line); }
+
+.avatar circle { fill: var(--w-human); opacity: 0.9; }
+.avatar--agent circle { fill: var(--w-agent); }
+.avatar__name { font-size: 0.34px; fill: var(--w-text-dim); pointer-events: none; }
+
+/* ---- book spines (bookshelf furniture) ---- */
+
+.book-spine { cursor: pointer; }
+.book-spine rect {
+  fill: var(--w-book);
+  stroke: rgba(28, 33, 40, 0.18);
+  stroke-width: 0.02;
+  transition: fill 120ms ease;
+}
+.book-spine:hover rect { fill: var(--w-book-hover); }
+.book-spine--overflow rect { fill: var(--w-book-overflow); }
+.book-spine--overflow:hover rect { fill: var(--w-text-dim); }
+.book-spine__overflow-label { font-size: 0.26px; fill: #fff; font-weight: 700; pointer-events: none; }
+
+/* ---- panel ---- */
+
+.panel {
+  width: 340px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--w-line);
+  background: var(--w-surface);
+  overflow-y: auto;
+  padding: 0 0 20px;
+}
+.panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--w-line);
+  position: sticky;
+  top: 0;
+  background: var(--w-surface);
+}
+.panel__head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--w-text); }
+.panel__head button {
+  margin-left: auto; border: none; background: none; color: var(--w-text-faint);
+  font-size: 20px; line-height: 1; padding: 0 4px;
+}
+.panel__head button:hover { background: none; color: var(--w-text); }
+.panel__sub { margin: 4px 0 0; color: var(--w-text-faint); font-size: 12px; }
+
+.panel__meta { margin: 0; padding: 14px 18px; display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; }
+.panel__meta dt { color: var(--w-text-faint); font-size: 12px; }
+.panel__meta dd { margin: 0; word-break: break-word; font-size: 13px; }
+
+.access--ok { color: var(--w-success); }
+.access--denied { color: var(--w-warning); }
+.access--error { color: var(--w-danger); }
+.access--unbound { color: var(--w-text-faint); }
+
+/* Real component health (Phase 3), same palette as .access--*. */
+.service { font-weight: 600; }
+.service--up { color: var(--w-success); }
+.service--degraded { color: var(--w-warning); }
+.service--down { color: var(--w-danger); }
+.service--unknown,
+.service--unprobed { color: var(--w-text-faint); }
+.service--disabled { color: var(--w-text-faint); font-style: italic; }
+
+.panel__section { padding: 12px 18px; border-top: 1px solid var(--w-line); }
+.panel__section h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--w-text-dim); font-weight: 600; }
+.panel__note { margin: 0; color: var(--w-text-faint); line-height: 1.6; font-size: 13px; }
+.count { color: var(--w-accent-strong); margin-left: 4px; font-weight: 600; }
+
+.contents, .children { list-style: none; margin: 0; padding: 0; }
+.contents li { padding: 4px 0; border-bottom: 1px solid var(--w-line); word-break: break-word; font-size: 13px; }
+.contents__more { color: var(--w-text-faint); border-bottom: none; }
+
+.children li { margin-bottom: 4px; }
+.children button {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: baseline;
+  text-align: left;
+  background: var(--w-surface-sunken);
+  border-color: var(--w-line);
+}
+.children__label { flex: 1; color: var(--w-text); font-weight: 500; }
+.children__type { color: var(--w-text-faint); font-size: 11px; }
+.children__count { color: var(--w-accent-strong); font-weight: 600; }
+
+/* ---- note editor (postit / board panel section) ---- */
+
+.note-editor__body {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--w-text);
+  background: var(--w-surface-sunken);
+  border: 1px solid var(--w-line-strong);
+  border-radius: 6px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.note-editor__row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.note-editor__row select { flex: 1; }
+
+/* ---- documents browser modal ---- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 33, 40, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.modal {
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--w-surface);
+  border-radius: 10px;
+  box-shadow: var(--w-shadow);
+  overflow: hidden;
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--w-line);
+  flex-shrink: 0;
+}
+
+.modal__breadcrumb { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 13px; }
+.modal__breadcrumb-sep { color: var(--w-text-faint); margin: 0 4px; }
+.modal__crumb {
+  border: none; background: none; padding: 2px 4px; border-radius: 4px;
+  color: var(--w-accent); font-size: 13px;
+}
+.modal__crumb:hover { background: var(--w-accent-soft); }
+.modal__crumb--current { color: var(--w-text); font-weight: 600; cursor: default; }
+
+.modal__close {
+  border: none; background: none; color: var(--w-text-faint);
+  font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0;
+}
+.modal__close:hover { background: none; color: var(--w-text); }
+
+.modal__body { padding: 12px 16px 16px; overflow-y: auto; }
+.modal__error { color: var(--w-danger); font-size: 13px; margin: 0 0 10px; }
+.modal__empty { color: var(--w-text-faint); font-size: 13px; margin: 8px 0; }
+
+.modal__list { list-style: none; margin: 0 0 8px; padding: 0; }
+
+.modal__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.modal__row--folder {
+  border: none;
+  background: none;
+  color: var(--w-text);
+  text-align: left;
+  cursor: pointer;
+}
+.modal__row--folder:hover { background: var(--w-accent-soft); }
+.modal__row-icon { color: var(--w-accent); flex-shrink: 0; }
+.modal__row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.modal__row--file { color: var(--w-text-dim); }
+.modal__row-meta { color: var(--w-text-faint); font-size: 12px; flex-shrink: 0; }
+
+/* ------------------------------------------------------------------ *
+ * Embedded terminal — login gate (full screen) and workstation modal *
+ * ------------------------------------------------------------------ */
+
+.term-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+}
+
+/* Login gate: the plain full-screen terminal, nothing around it. */
+.term-layer--full { z-index: 1200; }
+
+/* Workstation modal: same terminal, with a close strip on top. */
+.term-layer--modal { padding-top: 34px; }
+.term-layer--modal .app { height: calc(100% - 34px); }
+
+.term-layer__bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  background: #0b0b0b;
+  border-bottom: 1px solid #1f1f1f;
+  color: #7ee787;
+  font: 500 12px/1 'Inter', system-ui, sans-serif;
+  z-index: 1;
+}
+
+.term-layer__bar button {
+  background: transparent;
+  border: 1px solid #2f6f3f;
+  color: #7ee787;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.term-layer__bar button:hover { background: #12331b; }

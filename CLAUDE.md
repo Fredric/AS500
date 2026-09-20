@@ -16,8 +16,9 @@ Run from the **project root** unless noted:
 
 ```bash
 # Development (Docker recommended)
-docker-compose up                          # Start all services
-docker-compose exec server npm run seed    # Seed database
+docker-compose up                                 # Start all services
+docker-compose exec server npm run seed           # Seed database
+docker-compose exec server npm run seed:office    # Build a demo virtual office
 
 # Testing (Playwright E2E)
 npm test                                   # All tests, headless
@@ -37,7 +38,7 @@ npm run backup-db   # pg_dump backup
 npm run restore-db <file>   # Restore from SQL dump
 ```
 
-**Ports**: PostgreSQL `5433`, Server WebSocket `ws://localhost:3001`, Client `http://localhost:5173`  
+**Ports**: PostgreSQL `5433`, Server WebSocket `ws://localhost:3001`, MCP/REST `http://localhost:3002`, Ingest monitor `http://localhost:3005`, Virtual office `http://localhost:3006`, Client `http://localhost:5173`  
 **Default login**: `FREDRIC` / `fredric`
 
 ---
@@ -538,6 +539,366 @@ Server-side code changes need `docker compose restart server` — `tsx watch` do
 
 ---
 
+## Virtual Office (spatial projection)
+
+A **fourth projection surface** for AS500, alongside the terminal, MCP and REST.
+The same `CRUDTableConfig` that renders as an 80×24 list and as MCP tools also
+becomes an object in a room: a drawer bound to `documents` **is** that folder, a
+rack bound to `docs-api` **is** that service.
+
+Runs on its own port (**3006**) with its own Vite entry point, the
+same arrangement as the ingest monitor. Deleting `server/src/world/` and
+`client/src/world/` removes the feature completely.
+
+**The world is now the app's front door.** `client/index.html` loads
+`client/src/world/main.tsx` (`/office` stays as an alias). There is no
+standalone terminal page any more — the green-screen `Terminal` component is
+mounted *inside* the world (`client/src/world/App.tsx`) in two roles:
+
+- **Login gate** — full-screen `Terminal` at `LOGIN` until authenticated;
+  once the terminal reports `authenticated` (via its new `onStatus` prop) the
+  gate hides and the world socket (`useWorldSocket(space, authed)`) connects.
+- **Workstation modal** — clicking a `{ kind: 'workstation' }` object
+  (`App.select()`) shows the same `Terminal` as an overlay with a close strip.
+  Esc minimises it *only* at `MAIN_MENU`/`LOGIN`; on deeper screens Esc falls
+  through as F3. Signing off (F3 at the main menu) clears the token and drops
+  back to the login gate.
+
+The `Terminal` is mounted once and never unmounted (a stable tree across the
+auth transition) so its WebSocket session survives being hidden/reshown.
+`client/src/styles/terminal.css` is imported before `world.css` so the office's
+own light theme wins on shared base rules.
+
+### The binding — the one idea everything rests on
+
+An object stores a **binding**, never a copy of the data:
+
+```typescript
+type ThingBinding =
+  | { kind: 'crud';   configId: string; scope?: Record<string, unknown> }
+  | { kind: 'record'; configId: string; recordId: string | number }
+  | { kind: 'workstation' }
+  | { kind: 'service'; serviceKey: string }   // reuses monitor/probes.ts
+  | { kind: 'agent';  userId: number }
+  | { kind: 'none' };                          // owns its own payload
+```
+
+**The world server never queries app tables.** `resolver.ts` resolves
+`binding.configId` through `getConfig()` and calls the config's own
+`services.list.params(ctx)` — the identical path the terminal, MCP and REST
+take. Therefore:
+
+- No copied data, no drift, one source of truth.
+- **RBAC is not reimplemented.** `config.requirePermission` and
+  `ServiceCall.requirePermission` already gate every object.
+- Every CRUDTableConfig registered in future is immediately placeable, with no
+  world-side work.
+- `userId` is injected from the *viewer*, never read from the binding, so a
+  binding can never widen access.
+
+A refused object is returned **visible but closed** (`access: 'denied'`), never
+omitted — otherwise the room's furniture would change depending on who is
+looking, which leaks the object's existence.
+
+### Two hierarchies that must never be merged
+
+| Tree | Column | Changed by |
+|---|---|---|
+| **Furniture** — desk ▸ drawer ▸ tray | `world_things.parent_thing_id` | people arranging the office |
+| **Data** — folder ▸ subfolder ▸ file | `document_folders.parent_id` | people using the system |
+
+A binding is a **mount point**, exactly like a Unix mount. Navigating deeper
+into folders moves through the *data* tree while you stand still in the
+*furniture* tree. This is visible from the keyboard: pressing Esc inside an
+opened drawer climbs out of the data tree first, and only then returns to the room.
+
+### Furnishing the office (terminal)
+
+```
+MAIN MENU → Virtual Office → Spaces
+  F6                create a space
+  Enter (opt 2)     edit it, then T = its objects
+  F6                place an object
+  Enter on a row    bound object  → opens the config it names, scoped
+                    container     → descends into its contents, in place
+  Esc               back up the furniture tree, then out
+```
+
+Or skip the typing: **`cd server && npm run seed:office`** builds a demo room
+(desk, workstation, shelf, rack, and a drawer bound to a folder the user already
+owns). `--user KALLE --space my_office --reset` to vary it. It goes through
+`worldService`, so the objects are validated exactly as the terminal validates
+them.
+
+The binding is **three always-visible fields**, never conditionally shown:
+
+| Field | Meaning |
+|---|---|
+| `Binds to` | `none` · `crud` · `record` · `service` · `workstation` · `agent` |
+| `Target` | config id (crud/record) · service key (service) · user id (agent) |
+| `Scope` | `folderId=42` for crud · the record id for record · else blank |
+
+> **Do not put `form.visible` on a field whose expression reads another field's
+> current value.** The terminal only re-evaluates visibility on a server round
+> trip, so a field revealed by what the user is typing can never appear — the
+> first version of this form hid `Config Id` behind `bindingKind === 'crud'` and
+> was impossible to complete. `Target` is deliberately overloaded across kinds
+> instead, the way AS/400 qualifier fields have always worked.
+
+Both Office Layout screens are ordinary CRUDTable configs, so they also carry
+`mcp` and `api` blocks: **an agent can rearrange the office**, audited like
+everything else.
+
+### Bookshelves — browsing My Documents folders as furniture
+
+`type: 'bookshelf'` is a distinct furniture type (not the generic `'shelf'`,
+which stays a plain label — see `seedOffice.ts`'s unrelated `motorcycles`-bound
+"Garage Shelf") that must bind to `documents` (`BOOKSHELF_CONFIG_ID` in
+`world/types.ts`) — enforced on every write path via
+`validateShelfBinding()`. Its books are one per direct subfolder, **derived
+live** on every resolve (`documentsShelf.ts`), never stored as separate
+`world_things` — the same "no copied data" rule as everything else here.
+
+Books render as clickable spines directly on the floorplan shape (capped, with
+an overflow tab), and the side panel always lists the complete set as a
+fallback. Clicking a book opens a modal (`DocumentsBrowserModal.tsx`) that can
+descend to arbitrary depth via a client-side breadcrumb stack — the server is
+only ever asked for folder ids the client already saw, never to go "up" past
+the book it was opened from. New WS pair: `BROWSE_DOCUMENTS_FOLDER` →
+`DOCUMENTS_FOLDER`.
+
+The office's own visual language is a plain, ordinary light UI
+(`client/src/world/world.css`) — not the terminal's green phosphor theme,
+which stays confined to `client/src/styles/terminal.css`.
+
+### Notes — objects that own their own text (Phase 2)
+
+`type: 'postit'`/`'board'` are the roadmap's second Thing class: instead of
+binding to existing data, they own it. They still bind `kind: 'none'` — a
+note's scope is its own thing id, which doesn't exist yet at placement time,
+so no ordinary binding fits — and `validateNoteBinding()` enforces that on
+every write path exactly like `validateShelfBinding()` does for bookshelves.
+
+The payload is still a real, registered `CRUDTableConfig` (`world_notes`,
+`configs/notesConfig.ts`), scoped by `thingId` the same way `documentsConfig`
+is scoped by `folderId` — **not** a special-cased table only the resolver
+knows about, so RBAC/MCP/REST all work unchanged. `resolver.ts` resolves it
+through the identical config-registry path every other binding uses
+(`notes.ts`, parallel to `documentsShelf.ts`), keyed by `thing.id` rather than
+a stored scope. A never-written note resolves `access: 'ok', note: null` — an
+empty post-it is a normal state, not an error.
+
+The floorplan's own textarea (not CRUDTable-driven — the floorplan has no
+form renderer) writes through one new WS message, `SET_NOTE`, replying with
+the existing `THING_CHANGED` message. It audits itself
+(`source: 'world'`, a new `AuditSource` variant) so the existing
+`onAuditEvent()` → dirty-room → rebuild pipeline broadcasts the change to
+every other viewer with no bespoke fan-out code. The terminal's own form
+(reached the same way a bookshelf's books aren't — via `openUI` on the
+`postit`/`board` row) stays the short, single-line version; the graphical
+panel's textarea is the ceiling, same split the bookshelf modal makes for
+depth the green screen can't show. Because a note already exists after
+seeding/placement, `world_notes`'s `create` operation deliberately calls the
+same upsert-by-`thingId` function `update` does — a strict insert there would
+hit the `thing_id` unique constraint the first time a user presses F6 on a
+postit that isn't blank.
+
+### Live service health + agent presence (Phase 3)
+
+**Service racks.** `{ kind: 'service' }` bindings resolved *identity* only
+through Phase 2 — `serviceStatus.ts` said probing per object/per resolve/per
+client was too heavy, and that the fix was subscribing to the ingest
+monitor's own snapshot rather than probing again. That subscription is
+`server/src/monitor/index.ts`'s `getLastSnapshot()`/`onSnapshot()`, mirroring
+`core/audit/writer.ts`'s `onAuditEvent` pub/sub exactly. One wrinkle: the
+monitor's own polling is normally **lazy** — it only runs while a dashboard
+WebSocket client is connected, so nobody pays for probes when no one is
+watching (`server/src/monitor/index.ts`'s `clients.size` gate). A subscriber
+wants live data for as long as it's subscribed regardless of whether the
+dashboard happens to be open, so `onSnapshot()` starts polling immediately
+and `stopIfIdle()` only stops it once *both* the dashboard clients and the
+in-process subscribers are gone — the world subscribing at boot keeps
+component health flowing for its whole lifetime, dashboard or not. No
+snapshot yet (`MONITOR_ENABLED=false`, or the world booted before the first
+poll) degrades to exactly the old identity-only response, since the two
+`_ENABLED` flags are independent.
+
+**Agents as occupants.** `{ kind: 'agent' }` bindings resolved to `access:
+'ok'` and nothing else through Phase 2 — the agent never actually appeared
+in the room. `agentPresence.ts` derives an avatar purely from the audit
+feed, with **no new connection type**: `presence.ts`'s `byConnection` map is
+keyed by an opaque `symbol`, not a real WebSocket, so a synthetic per-agent
+symbol behaves exactly like a real connection's, and the existing tick loop
+already rebroadcasts every occupied space's presence list every 250ms
+regardless of why it changed — nothing needs to actively push an update.
+Every audit event is checked for `client_id === AI_AGENT_CLIENT_ID`
+(`core/mcp/mintSessionToken.ts` — the same constant every agent-driven MCP
+call already carries) before `findAgentThings(userId)`
+(`worldService.ts`) looks up where to seat it; a local last-activity map is
+swept from `world/index.ts`'s existing `tick()` using the same
+`PRESENCE_TIMEOUT_MS` real connections already expire on — one new line, not
+a second timer.
+
+Verified against a real MCP tool call made with a JWT minted the identical
+way `chatService.ts` mints one for a live agent turn — not a simulated audit
+row — confirming the whole path from a genuine `as500-ai` tool call through
+to an amber avatar in the room, and its disappearance after the timeout.
+
+### First-person 3D (Phase 4)
+
+`client/src/world/three/` is a second renderer for the *same* state
+`Floorplan.tsx` already consumes (`scene`, `actors`, `opened`, `browse`) —
+zero changes to the server, the WS protocol, or `resolver.ts`, per the
+roadmap's own framing of Phase 4 as a renderer swap. A topbar toggle in
+`App.tsx` (`view: '2d' | '3d'`) switches which one renders; **2D stays the
+default** for now — zero regression risk to the working view.
+
+**No protocol change was needed for movement.** `Presence.pose` was already
+`{x, y, rot}`; 3D reinterprets the same ground-plane pair as `(x, z)` with
+`y` as height computed client-side and never sent, and reuses `rot` as yaw
+directly. `layout.ts`'s `layoutThings()`/`FOOTPRINT` are reused verbatim for
+both 3D placement and collision boxes — `PlayerController.tsx` does simple
+per-axis AABB sliding collision, sub-stepped (`MAX_STEP`) so a frame hitch
+can never let a single step tunnel through a thin object.
+
+**Assets are primitives for now** (boxes, `MeshStandardMaterial`, no GLTF
+pipeline) — `heights.ts`'s `MODEL_FOR_TYPE` lookup returns `null` for every
+type today, read but unused, so a future model swap touches one table, not
+`ThingMesh.tsx`'s structure.
+
+**Interaction**: `InteractionHUD.tsx` raycasts forward from camera center
+each frame (not the mouse pointer, which is locked/hidden) and E triggers
+the *same* `onSelect`/`onOpenBook` callbacks `Floorplan.tsx`'s click handler
+already uses — a new input trigger for an existing interaction, not a new
+one. One real bug worth remembering if this file is touched again: a
+thing's `<lineSegments>` edge overlay is a *child* of the tagged `<mesh>`
+and is very often the nearer of the two raycast hits, but isn't itself
+tagged — the hit-resolution loop must fall back to `object.parent.userData`,
+not just `object.userData`, or every raycast against an edge silently
+misses.
+
+**Pointer lock lifecycle**: opening `ThingPanel`/`DocumentsBrowserModal`
+must release pointer lock so normal DOM interaction works, and re-acquire on
+close — `Scene3D.tsx`'s `overlayOpen` prop (`Boolean(selected) ||
+Boolean(openBook)` in `App.tsx`) is the only place the two render trees need
+to know about each other's state, for this one reason.
+
+Verified against the real server: walking into a bound object shows "Press
+E", E opens the identical `ThingPanel` the 2D view opens, and pointer lock
+correctly releases for it — confirmed with a temporary REST-placed object at
+a known position (pointer lock itself cannot be driven from an automated
+headless browser; mouselook needs a manual check in a real tab).
+
+### Doors between spaces (Phase 5)
+
+`type: 'door'` is bound `{ kind: 'door', spaceKey, spaceId, spaceName }` to
+another `world_spaces` row, and walking into it (2D click, 3D "Press E", or
+Enter in the terminal) moves you there via `enterSpace()` — which already
+existed and needed **no changes at all**: `ENTER_SPACE` already resets the
+avatar to the same default entry pose every space entry uses.
+
+**The one binding kind that caches a DB lookup.** Every other kind resolves
+its target through `getConfig()` — synchronous, in-memory — so the
+terminal's `openUI.mapContext` (`thingsConfig.ts`), which is itself
+synchronous (`OpenUIMapResult`, not a `Promise`, per
+`core/crudtable/types.ts`), can navigate in one step. A door's target is a
+**space**, which only exists in Postgres. Fix: `composeBinding`
+(`worldService.ts`) is `async` for the `door` case only, resolves the target
+once at write time via the existing `getSpaceByKey()`, and caches its
+immutable numeric `id` (plus `name`, for display) on the binding — catching
+a typo'd target space **immediately at create time** as a proper
+`McpToolError('validation_failed', …)`, not a bare 500 (the only case where
+this distinction actually matters: every other kind's Target check already
+runs as a synchronous field validator before the service is ever called,
+so their equivalent thrown-`Error` fallback is normally unreachable — a
+door's space-existence check is the *only* enforcement point, since it
+can't be a field validator). The graphical surfaces (`resolver.ts`) always
+re-resolve `spaceKey` live, never the cached `id`, so a later-renamed target
+space degrades to `access: 'error'`, same as any other dangling binding.
+
+**Esc from inside a doored-into room** — `onListBack` (`thingsConfig.ts`)
+already climbed the furniture tree (`parentThingId`) one level at a time; a
+`spaceStack` in `ctx.input`, pushed alongside the spaceId swap in
+`openUI.mapContext`, extends the exact same nesting one level higher: pop
+the furniture tree first, and only once it's exhausted, pop one space level
+instead of leaving the screen.
+
+### Spatial model
+
+The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not
+physics. Avatar poses are relayed between clients but never validated and never
+persisted — no tick loop, no collision, no reconciliation. `transform` is a
+renderer *hint*; objects without one are auto-placed by `zone`, so placing
+furniture is a one-field operation.
+
+### Live updates
+
+`writeAuditEvent()` already fires on every mutation from every surface, so
+`onAuditEvent()` (added alongside its two writes) gives the world a complete
+change feed for free. Occupied rooms are marked dirty and rebuilt on the next
+presence tick — filing a document in the green screen updates the drawer in
+everyone's browser.
+
+### Endpoints (port 3006)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/spaces` | Every space, for a picker |
+| `GET` | `/api/space/:key` | The resolved scene — curl-testable |
+| `WS` | `/ws` | `ENTER_SPACE` / `MOVE` / `OPEN_THING` → `SCENE` / `PRESENCE` / `THING_OPENED` |
+
+Auth is the terminal's own access token (`?token=` or `Bearer`) — no new
+credential, no new session type.
+
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WORLD_ENABLED` | `true` | `false` skips booting it and hides the menu entry |
+| `WORLD_PORT` | `3006` | HTTP + WebSocket port |
+| `WORLD_PRESENCE_MS` | `250` | Presence broadcast / dirty-scene tick |
+| `WORLD_PRESENCE_TIMEOUT_MS` | `30000` | Drop an actor whose socket went quiet |
+
+### Key files
+
+| Purpose | Path |
+|---|---|
+| **Binding resolver** | `server/src/world/resolver.ts` |
+| World runtime (:3006) | `server/src/world/index.ts` |
+| World types (incl. `ThingBinding`) | `server/src/world/types.ts` |
+| Spatial tables | `server/src/world/db/schema.ts` |
+| Placement service | `server/src/world/services/worldService.ts` |
+| Office Layout configs | `server/src/world/configs/` |
+| Registration (configs + menu) | `server/src/world/bootstrap.ts` |
+| Demo room seeder (`npm run seed:office`) | `server/src/world/seedOffice.ts` |
+| Bookshelf books + browse | `server/src/world/documentsShelf.ts` |
+| Note payload service + config | `server/src/world/services/notesService.ts`, `configs/notesConfig.ts` |
+| Note resolution (`resolver.ts` support) | `server/src/world/notes.ts` |
+| Agent presence from the audit feed | `server/src/world/agentPresence.ts` |
+| Live service health subscription | `server/src/monitor/index.ts` (`getLastSnapshot`/`onSnapshot`), `server/src/world/serviceStatus.ts` |
+| 2D floorplan client | `client/src/world/`, `client/office.html` |
+| First-person 3D client | `client/src/world/three/` |
+| File-explorer modal | `client/src/world/components/DocumentsBrowserModal.tsx` |
+| Audit change feed | `server/src/core/audit/writer.ts` (`onAuditEvent`) |
+
+### Verification
+
+```bash
+node server/scripts/world-loop-check.mjs   # terminal + HTTP + WS, one binding
+npx playwright test tests/world-office.spec.ts
+```
+
+`world-loop-check.mjs` drives the real terminal WebSocket and asserts that the
+green screen, `curl :3006`, and the resolved scene all agree on one binding. If
+they ever disagree, the model is wrong — that script is what says so.
+
+> 3D is a later phase: it swaps `client/src/world/`'s renderer against this same
+> protocol. The 2D floorplan then stays on as the world's debug tool, the way the
+> ingest monitor is for the RAG stack.
+
+---
+
 ## AI Agent Integration
 
 AS500 ships an in-terminal AI chat panel backed by a local Python AI agent (`as500-agent` repo). The user opens the panel with the star button (✦) in the top-right corner; the server streams responses token-by-token over the existing WebSocket.
@@ -766,6 +1127,7 @@ Test files:
 - `tests/scrollable-subfile.spec.ts` – Subfile pagination
 - `tests/time-registration-crud.spec.ts` – Add/edit/delete (uses opt-field workflow, option 6)
 - `tests/keyboard-navigation.spec.ts` – Arrow key nav, Enter, shortcut keys, mouse click (option 7, CRUDTable)
+- `tests/world-office.spec.ts` – Virtual office floorplan: a bound object resolves to real records, and is refused for another user
 
 ---
 

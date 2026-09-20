@@ -54,6 +54,42 @@ let pollTimer: NodeJS.Timeout | null = null;
 let lastSnapshot: MonitorSnapshot | null = null;
 let building = false;
 
+// ============================================
+// In-process subscription
+// ============================================
+//
+// The world server (server/src/world/serviceStatus.ts) wants real component
+// health for a `{ kind: 'service' }` binding without running its own probes —
+// probing is comparatively heavy (readQueue + every component's health
+// check) and this module already does it once, on a timer, for its own
+// WebSocket clients. Mirrors `core/audit/writer.ts`'s `onAuditEvent` pattern:
+// a plain listener set, no new dependency.
+const snapshotListeners = new Set<(s: MonitorSnapshot) => void>();
+
+/** The most recent snapshot, or `null` before the first poll completes. */
+export function getLastSnapshot(): MonitorSnapshot | null {
+  return lastSnapshot;
+}
+
+/**
+ * Subscribe to every future snapshot. Returns an unsubscribe function.
+ *
+ * Polling is normally lazy — it only runs while a dashboard WebSocket client
+ * is connected (`clients.size`), so nobody pays for probes when no one is
+ * watching. A subscriber wants live data for as long as it's subscribed
+ * regardless of whether the dashboard happens to be open, so this starts
+ * polling immediately and `stopIfIdle()` below keeps it running until both
+ * kinds of listener are gone, not just the dashboard clients.
+ */
+export function onSnapshot(listener: (s: MonitorSnapshot) => void): () => void {
+  snapshotListeners.add(listener);
+  startPolling();
+  return () => {
+    snapshotListeners.delete(listener);
+    stopIfIdle();
+  };
+}
+
 async function buildSnapshot(): Promise<MonitorSnapshot> {
   const queue = await readQueue();
   const { components, gpu, warnings } = await probeAll({ queue });
@@ -86,6 +122,7 @@ async function pollOnce(): Promise<void> {
   try {
     lastSnapshot = await buildSnapshot();
     broadcast({ type: 'SNAPSHOT', snapshot: lastSnapshot });
+    for (const listener of snapshotListeners) listener(lastSnapshot);
   } catch (err) {
     console.error('[monitor] snapshot failed:', (err as Error).message);
     broadcast({ type: 'ERROR', message: `snapshot failed: ${(err as Error).message}` });
@@ -105,9 +142,14 @@ function stopPolling(): void {
   pollTimer = null;
 }
 
+/** Stop only when nobody — dashboard client or in-process subscriber — is still listening. */
+function stopIfIdle(): void {
+  if (clients.size === 0 && snapshotListeners.size === 0) stopPolling();
+}
+
 function restartPolling(): void {
   stopPolling();
-  if (clients.size > 0) startPolling();
+  if (clients.size > 0 || snapshotListeners.size > 0) startPolling();
 }
 
 /* ── HTTP ────────────────────────────────────────────────────────────────── */
@@ -341,11 +383,11 @@ export function startMonitorServer(): ReturnType<typeof createServer> | null {
     ws.on('message', (data) => handleClientMessage(client, data.toString()));
     ws.on('close', () => {
       clients.delete(client);
-      if (clients.size === 0) stopPolling();
+      stopIfIdle();
     });
     ws.on('error', () => {
       clients.delete(client);
-      if (clients.size === 0) stopPolling();
+      stopIfIdle();
     });
   });
 

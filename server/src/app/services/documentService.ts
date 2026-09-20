@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { dirname, extname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -258,6 +258,34 @@ export async function createFolder(params: {
     sizeBytes: null,
     modifiedAt: formatTimestamp(folder.updated_at),
   };
+}
+
+export const INCOMING_FOLDER_NAME = 'INCOMING';
+
+/** Root-level My Documents folder that mobile photo uploads land in. */
+export async function ensureIncomingFolder(userId: number): Promise<number> {
+  const [existing] = await db
+    .select({ id: documentFolders.id })
+    .from(documentFolders)
+    .where(
+      and(
+        eq(documentFolders.user_id, userId),
+        isNull(documentFolders.parent_id),
+        eq(documentFolders.name, INCOMING_FOLDER_NAME),
+      ),
+    )
+    .orderBy(asc(documentFolders.id))
+    .limit(1);
+
+  if (existing) return existing.id;
+
+  const created = await createFolder({
+    userId,
+    folderId: null,
+    name: INCOMING_FOLDER_NAME,
+  });
+
+  return Number(created.id);
 }
 
 function validateEntryName(name: string, entryKind: 'folder' | 'file'): string {

@@ -20,7 +20,8 @@
     "restore-db": "tsx scripts/restore-database.ts",
     "push-to-heroku": "tsx scripts/push-to-heroku.ts",
     "audit": "node scripts/audit.mjs",
-    "audit:tail": "node scripts/audit.mjs --tail"
+    "audit:tail": "node scripts/audit.mjs --tail",
+    "seed:office": "npx tsx src/world/seedOffice.ts"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

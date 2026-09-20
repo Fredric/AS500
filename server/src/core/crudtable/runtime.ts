@@ -156,7 +156,15 @@ async function executeOpenUINavigation(
     };
   }
 
-  const targetConfig = getConfig(config.openUI.id);
+  // Set the selection before resolving the target: a dynamic `openUI.id` picks
+  // the destination from the selected row, so it must see it.
+  crudCtx.selection = [selection.record];
+
+  const targetId = typeof config.openUI.id === 'function'
+    ? config.openUI.id(crudCtx)
+    : config.openUI.id;
+
+  const targetConfig = getConfig(targetId);
   if (!targetConfig) {
     return {
       ...(await buildListScreen(config, session, `Invalid option '${selection.opt}'`, 'error')),
@@ -164,7 +172,6 @@ async function executeOpenUINavigation(
     };
   }
 
-  crudCtx.selection = [selection.record];
   const derivedCtx = config.openUI.mapContext(crudCtx);
 
   if (derivedCtx.skipNavigation) {
@@ -453,6 +460,10 @@ export async function handleList(
     crudCtx.formMode = 'create';
     crudCtx.editRecord = null;
     crudCtx.formPage = 0;
+    // Start clean: buildFormScreen layers `values` over the initial values so a
+    // rejected submit comes back as typed, which would otherwise resurrect
+    // whatever was last entered on a different record.
+    crudCtx.values = {};
     saveContext(session, config.id, crudCtx);
 
     session.screenStack.push(listScreenId(config.id));
@@ -533,6 +544,7 @@ export async function handleList(
       crudCtx.formMode = 'edit';
       crudCtx.editRecord = record;
       crudCtx.formPage = 0;
+      crudCtx.values = {};   // see the create branch above
       saveContext(session, config.id, crudCtx);
 
       session.screenStack.push(listScreenId(config.id));
@@ -652,9 +664,9 @@ export async function buildFormScreen(
   // Build field values for ALL visible fields (needed so values persist across pages)
   let fieldValues: Record<string, string> = {};
 
-  if (isCreate && config.getInitialValues) {
-    fieldValues = config.getInitialValues(crudCtx);
-  } else if (!isCreate && crudCtx.editRecord) {
+  if (isCreate) {
+    fieldValues = config.getInitialValues ? config.getInitialValues(crudCtx) : {};
+  } else if (crudCtx.editRecord) {
     for (const fieldKey of visibleKeys) {
       const fc = config.fieldConfigs[fieldKey];
       if (!fc) continue;
@@ -665,11 +677,12 @@ export async function buildFormScreen(
         fieldValues[fc.field] = val !== null && val !== undefined ? String(val) : '';
       }
     }
-    // Also merge any values saved from other pages
-    for (const [k, v] of Object.entries(crudCtx.values)) {
-      if (!(k in fieldValues)) fieldValues[k] = v;
-    }
   }
+
+  // Whatever the user has actually entered wins over the seed above. This is
+  // what makes a rejected submit come back as they left it instead of silently
+  // reverting to the initial values — and it carries values across form pages.
+  fieldValues = { ...fieldValues, ...crudCtx.values };
 
   // Build form rows from the current page's keys only
   const formRows: Array<[string, FieldDef]> = [];
@@ -887,6 +900,13 @@ export async function handleForm(
     }
 
     crudCtx.values = values;
+    // Persist before validating. Every failure below re-renders through
+    // buildFormScreen(), which reloads from session context — so without this
+    // a rejected submit silently reverts the form to the values it opened with
+    // and the user loses everything they typed. It also means a field whose
+    // `visible` depends on another field's value can never appear, because the
+    // value that would reveal it is thrown away on the way out.
+    saveContext(session, config.id, crudCtx);
 
     // Run required checks
     for (const fieldKey of config.formBuilder) {
