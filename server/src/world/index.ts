@@ -8,10 +8,16 @@
  * deleted together without touching a line of terminal code.
  *
  * Endpoints:
- *   GET  /health              liveness
- *   GET  /api/spaces          every space (name + key), for a picker
- *   GET  /api/space/:key      the resolved scene — curl-testable
- *   WS   /ws                  live scene + presence
+ *   GET  /health              liveness (unprefixed — not browser-facing)
+ *   GET  /world/api/spaces         every space (name + key), for a picker
+ *   GET  /world/api/space/:key     the resolved scene — curl-testable
+ *   WS   /world/ws                 live scene + presence
+ *
+ * Everything the browser reaches lives under /world/ so it can be proxied
+ * same-origin: Vite proxies /world -> this port in dev, Caddy does the same
+ * in prod. The client never talks to this port directly — see
+ * client/src/world/useWorldSocket.ts. Passthrough proxying needs no prefix
+ * rewrite on either side because the prefix is part of the route itself.
  *
  * Auth is the terminal's own access token, passed as `?token=`. There is no new
  * credential and no new session type.
@@ -231,12 +237,12 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
     return;
   }
 
-  if (url.pathname === '/api/spaces') {
+  if (url.pathname === '/world/api/spaces') {
     json(res, 200, { spaces: await listSpaces() });
     return;
   }
 
-  const spaceMatch = url.pathname.match(/^\/api\/space\/([\w-]+)$/);
+  const spaceMatch = url.pathname.match(/^\/world\/api\/space\/([\w-]+)$/);
   if (spaceMatch) {
     const scene = await buildScene(spaceMatch[1], actor);
     if (!scene) {
@@ -392,7 +398,7 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
     });
   });
 
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  const wss = new WebSocketServer({ server: httpServer, path: '/world/ws' });
 
   wss.on('connection', (ws, req) => {
     // Authenticating a connection is async, but clients send ENTER_SPACE the
@@ -427,7 +433,7 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
     });
 
     void (async () => {
-      const url = new URL(req.url ?? '/ws', `http://${req.headers.host ?? 'localhost'}`);
+      const url = new URL(req.url ?? '/world/ws', `http://${req.headers.host ?? 'localhost'}`);
       const actor = await actorFromToken(tokenFrom(req, url));
       if (!actor) {
         send(ws, { type: 'ERROR', message: 'a valid AS500 access token is required' });

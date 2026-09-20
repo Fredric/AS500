@@ -102,7 +102,7 @@ test.describe('REST API — document browsing', () => {
     expect(res.status()).toBe(401);
   });
 
-  test('GET /api advertises documents as a listable resource', async ({ request }) => {
+  test('GET /api advertises documents as browsable and writable', async ({ request }) => {
     const res = await request.get(`${API_BASE}/api/`, { headers: auth() });
     expect(res.status()).toBe(200);
     const body = (await res.json()) as {
@@ -110,9 +110,10 @@ test.describe('REST API — document browsing', () => {
     };
     const documents = body.resources.find((r) => r.id === 'documents');
     expect(documents).toBeDefined();
-    expect(documents!.operations).toEqual(['list']);
+    // See tests/api-documents-write.spec.ts for create/read/update/delete.
+    expect(documents!.operations).toEqual(['list', 'read', 'create', 'update', 'delete']);
     // userId is injected from the token and must never be advertised as a param.
-    expect(documents!.scope.map((p) => p.name)).toEqual(['folderId']);
+    expect(documents!.scope.map((p) => p.name)).toEqual(['folderId', 'kind']);
   });
 
   test('GET /api/documents lists the root folder', async ({ request }) => {
@@ -169,25 +170,14 @@ test.describe('REST API — document browsing', () => {
     }
   });
 
-  test('GET /api/documents/:id is not exposed — browsing is read-only list', async ({
-    request,
-  }) => {
-    const res = await request.get(`${API_BASE}/api/documents/${parentFolderId}`, {
+  test('GET /api/documents/:id reads one entry, given its kind', async ({ request }) => {
+    // Create/update/delete lifecycle is covered by api-documents-write.spec.ts;
+    // this only confirms a plain read of a folder made by beforeAll.
+    const res = await request.get(`${API_BASE}/api/documents/${parentFolderId}?kind=folder`, {
       headers: auth(),
     });
-    expect(res.status()).toBe(405);
-  });
-
-  test('writes are not exposed on the documents resource', async ({ request }) => {
-    const created = await request.post(`${API_BASE}/api/documents`, {
-      headers: auth(),
-      data: { name: `${SENTINEL}_NOPE` },
-    });
-    expect(created.status()).toBe(405);
-
-    const deleted = await request.delete(`${API_BASE}/api/documents/${parentFolderId}`, {
-      headers: auth(),
-    });
-    expect(deleted.status()).toBe(405);
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as { record: { name: string } };
+    expect(body.record.name).toBe(SENTINEL);
   });
 });

@@ -1,10 +1,13 @@
 /**
  * Virtual office — WebSocket client.
  *
- * Connects to the standalone world server (default :3006) and keeps the current
- * scene and the list of people in the room. Auth reuses the terminal's own
- * access token from the `as500_access_token` cookie: the office is not a
- * separate credential, it is the same user in a different projection.
+ * Connects to the standalone world server (its own process, default :3006)
+ * through the page's own origin under /world/* rather than a separate
+ * host:port — Vite proxies /world there in dev, Caddy does the same in prod,
+ * so no extra port ever needs opening in a firewall. Keeps the current scene
+ * and the list of people in the room. Auth reuses the terminal's own access
+ * token from the `as500_access_token` cookie: the office is not a separate
+ * credential, it is the same user in a different projection.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -36,26 +39,23 @@ function accessToken(): string | null {
   return new URLSearchParams(window.location.search).get('token') ?? readCookie(ACCESS_TOKEN_COOKIE);
 }
 
-function worldOrigin(): { host: string; port: string } {
-  return {
-    host: window.location.hostname,
-    port: (import.meta.env.VITE_WORLD_PORT as string | undefined) ?? '3006',
-  };
-}
-
 function worldWsUrl(): string | null {
   const token = accessToken();
   if (!token) return null;
+  // WebSocket() needs a full ws(s):// URL — unlike a fetch path, a relative
+  // one won't do — but "full" still means this page's own host, not a
+  // separate port: the dev/prod proxy is what turns /world/ws into a
+  // connection to the actual world server.
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const { host, port } = worldOrigin();
-  return `${protocol}//${host}:${port}/ws?token=${encodeURIComponent(token)}`;
+  return `${protocol}//${window.location.host}/world/ws?token=${encodeURIComponent(token)}`;
 }
 
+/** `path` is the world server's own route, e.g. '/api/spaces' — this prefixes
+ *  it with /world so it resolves same-origin through the dev/prod proxy. */
 export function worldApiUrl(path: string): string | null {
   const token = accessToken();
   if (!token) return null;
-  const { host, port } = worldOrigin();
-  return `${window.location.protocol}//${host}:${port}${path}?token=${encodeURIComponent(token)}`;
+  return `/world${path}?token=${encodeURIComponent(token)}`;
 }
 
 export interface WorldConnection {

@@ -25,6 +25,12 @@ services:
       # Remote MCP server. Bind to 127.0.0.1 only — Caddy terminates TLS on
       # the host and reverse-proxies /mcp/* to this port.
       - "127.0.0.1:3002:3002"
+      # Virtual office backend (HTTP + WebSocket). Bind to 127.0.0.1 only —
+      # Caddy terminates TLS and reverse-proxies /world/* to this port. The
+      # browser never addresses this port directly (unlike the dev compose
+      # file, where it's published straight to the host for curl-testing);
+      # see client/src/world/useWorldSocket.ts.
+      - "127.0.0.1:3006:3006"
     depends_on:
       postgres:
         condition: service_healthy

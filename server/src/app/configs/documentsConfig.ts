@@ -2,6 +2,7 @@ import type { CRUDTableConfig } from '../../core/crudtable/types.js';
 import type { Session } from '../../core/types/index.js';
 import * as documentService from '../services/documentService.js';
 import { PERMISSIONS } from '../../core/services/access.js';
+import { McpToolError } from '../../core/mcp/errors.js';
 
 function formatSize(bytes: unknown): string {
   const n = Number(bytes);
@@ -23,15 +24,26 @@ export const documentsConfig: CRUDTableConfig = {
   requireAuth: true,
   requirePermission: PERMISSIONS.DOCUMENTS_READ,
 
-  // Read-only REST surface for the mobile app. Only `list` is exposed: the
-  // read/update/delete services below resolve `kind` from `ctx.editRecord` /
-  // `ctx.selection`, which the REST layer never populates, so enabling them
-  // would throw. Browsing needs nothing more than listFolderContents.
+  // REST surface for the mobile app: browse, rename, and delete. `create` is
+  // not exposed — nothing asks for it yet, and this config's other services
+  // are untouched, so it stays a one-line addition to `operations` later.
+  //
+  // `kind` ('folder' | 'file') is a scope param because the REST layer, unlike
+  // the terminal, never has ctx.editRecord/ctx.selection to source it from
+  // before the first fetch — the terminal sets editRecord straight from the
+  // already-loaded list row, but a REST update/delete pre-fetches via
+  // services.read first, and readDocumentEntry needs to know which table to
+  // query. The caller already has `kind` from the listing, so it costs
+  // nothing to pass it back on the query string.
   api: {
     name: 'documents',
     description: "Folders and files in the authenticated user's My Documents.",
     operations: {
       list: true,
+      read: true,
+      create: true,
+      update: true,
+      delete: true,
     },
     scope: [
       {
@@ -46,6 +58,13 @@ export const documentsConfig: CRUDTableConfig = {
         type: 'number' as const,
         required: false,
         description: 'Folder to list the contents of. Omit for the root folder.',
+      },
+      {
+        name: 'kind',
+        type: 'string' as const,
+        required: false,
+        description:
+          "'folder' or 'file'. Required for read/update/delete — the value from the listing that produced this id.",
       },
     ],
   },
@@ -62,11 +81,27 @@ export const documentsConfig: CRUDTableConfig = {
     read: {
       service: documentService as unknown as Record<string, Function>,
       method: 'readDocumentEntry',
-      params: (ctx) => ({
-        userId: ctx.input.userId as number,
-        kind: ctx.editRecord!.kind as documentService.DocumentEntryKind,
-        id: ctx.editRecord!.id as number,
-      }),
+      params: (ctx) => {
+        // The terminal never calls this directly (it seeds editRecord from the
+        // list row it already has), so editRecord is only ever set here by the
+        // REST layer's own pre-fetch — which has nothing to seed it with. Its
+        // `kind` therefore comes from the scope param on first call, and from
+        // editRecord on any hypothetical future terminal-driven call.
+        const kind = (ctx.editRecord?.kind ?? ctx.input.kind) as
+          | documentService.DocumentEntryKind
+          | undefined;
+        if (kind !== 'folder' && kind !== 'file') {
+          throw new McpToolError(
+            'validation_failed',
+            "Query param 'kind' must be 'folder' or 'file'.",
+          );
+        }
+        return {
+          userId: ctx.input.userId as number,
+          kind,
+          id: (ctx.editRecord?.id ?? ctx.input.id) as number,
+        };
+      },
     },
     create: {
       service: documentService as unknown as Record<string, Function>,

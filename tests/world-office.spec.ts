@@ -271,7 +271,7 @@ test.describe('Bookshelf — browsing subfolders as books', () => {
     });
     const { access_token: token } = await tokenRes.json();
 
-    const spacesRes = await fetch(`http://localhost:3006/api/spaces?token=${token}`);
+    const spacesRes = await fetch(`http://localhost:3006/world/api/spaces?token=${token}`);
     const { spaces } = await spacesRes.json();
     const space = spaces.find((s: { key: string }) => s.key === SPACE_KEY);
 

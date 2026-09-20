@@ -599,7 +599,7 @@ function emptyToNull(v: string | undefined): string | null {
   return s === '' ? null : s;
 }
 
-/** Space keys address the world API (`/api/space/:key`), so keep them URL-safe. */
+/** Space keys address the world API (`/world/api/space/:key`), so keep them URL-safe. */
 function normaliseKey(raw: string): string {
   const s = (raw ?? '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
   if (!s) throw new Error('Key is required (letters, digits, - and _)');

@@ -96,6 +96,14 @@ export default defineConfig({
           });
         },
       },
+      // Virtual office: its own process (default :3006), proxied same-origin
+      // so the browser only ever talks to :5173. Production does the
+      // equivalent with a Caddy route — see client/src/world/useWorldSocket.ts.
+      '/world': {
+        target: process.env.VITE_DEV_WORLD_TARGET ?? 'http://localhost:3006',
+        changeOrigin: true,
+        ws: true, // upgrades /world/ws
+      },
     },
   },
 });

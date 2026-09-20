@@ -97,6 +97,10 @@ services:
       - server
     environment:
       VITE_DEV_API_TARGET: http://server:3001
+      # server:3006 — Docker's internal service DNS, not localhost: the client
+      # and server run in separate containers, so 127.0.0.1 from inside the
+      # client container is the client container itself, not the server.
+      VITE_DEV_WORLD_TARGET: http://server:3006
 
 volumes:
   postgres_data:

@@ -25,7 +25,7 @@ import { users } from '../../core/db/schema.js';
 
 /**
  * A room, floor, or any bounded place. `key` is the stable URL-safe handle the
- * world API is addressed by (`GET /api/space/:key`).
+ * world API is addressed by (`GET /world/api/space/:key`).
  */
 export const worldSpaces = pgTable('world_spaces', {
   id: serial('id').primaryKey(),

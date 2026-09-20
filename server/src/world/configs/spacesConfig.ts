@@ -63,7 +63,7 @@ export const spacesConfig: CRUDTableConfig = {
       field: 'key',
       label: 'Key',
       length: 24,
-      form: { required: true, uppercase: false, hint: '(url-safe; addresses /api/space/:key)' },
+      form: { required: true, uppercase: false, hint: '(url-safe; addresses /world/api/space/:key)' },
       column: { width: 18 },
     },
     name: {
