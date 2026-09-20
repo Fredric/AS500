@@ -97,6 +97,48 @@ export async function getBreadcrumbPath(params: {
   return buildBreadcrumb(params.userId, params.folderId);
 }
 
+/**
+ * Every folder the user owns, with its full path, as a flat list — for
+ * pickers (e.g. the virtual office's "bind this object to a folder"), where
+ * walking the tree one level at a time would be unusable.
+ *
+ * One query plus an in-memory walk, rather than {@link buildBreadcrumb} per
+ * folder (one query per ancestor per row). Sorted by path so a parent sits
+ * directly above its children. A folder whose ancestry is broken (a parent
+ * deleted out from under it — `parent_id` has no FK) is listed under the part
+ * of its path that still resolves rather than dropped.
+ */
+export async function listFolderPaths(params: {
+  userId: number;
+}): Promise<Array<{ id: number; path: string }>> {
+  const rows = await db
+    .select({
+      id: documentFolders.id,
+      parent_id: documentFolders.parent_id,
+      name: documentFolders.name,
+    })
+    .from(documentFolders)
+    .where(eq(documentFolders.user_id, params.userId));
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  function pathOf(id: number): string {
+    const parts: string[] = [];
+    const seen = new Set<number>(); // guards a parent_id cycle
+    let current = byId.get(id);
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      parts.unshift(current.name);
+      current = current.parent_id === null ? undefined : byId.get(current.parent_id);
+    }
+    return `/${parts.join('/')}`;
+  }
+
+  return rows
+    .map((r) => ({ id: r.id, path: pathOf(r.id) }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
 export async function getParentFolderId(params: {
   userId: number;
   folderId: number;

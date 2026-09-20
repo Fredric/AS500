@@ -630,20 +630,39 @@ owns). `--user KALLE --space my_office --reset` to vary it. It goes through
 `worldService`, so the objects are validated exactly as the terminal validates
 them.
 
-The binding is **three always-visible fields**, never conditionally shown:
+The binding is **three always-visible fields**, never conditionally shown. Read
+them as a sentence — *Shows* a list of records, *Source* My Documents, *Filter*
+folder `/ENTENCE/Contracts`. Each is a **dropdown** (press ↓; the ▾ marks it):
 
-| Field | Meaning |
-|---|---|
-| `Binds to` | `none` · `crud` · `record` · `service` · `workstation` · `agent` |
-| `Target` | config id (crud/record) · service key (service) · user id (agent) |
-| `Scope` | `folderId=42` for crud · the record id for record · else blank |
+| Label | Field name | Meaning |
+|---|---|---|
+| `Shows` | `bindingKind` | `none` · `crud` · `record` · `service` · `workstation` · `agent` · `door` |
+| `Source` | `bindingTarget` | config id (crud/record) · service key (service) · user id (agent) · space key (door) |
+| `Filter` | `bindingScope` | `folderId=42` / `motorcycleId=3` for crud · the record id for record · else blank |
+
+The labels are plain words; the **field names and the kind values are the REST/MCP
+contract and do not change** (the MCP tool schema is generated from them —
+`staticOptions` values become its enum). The dropdown *text* is free to explain
+(`crud - A list of records`), the stored *value* is not. The option lists come
+from `world/bindingPickers.ts`: Source is one merged list with each row tagged by
+the `Shows` value it belongs to (`[list/record]`, `[service]`, `[door]`,
+`[agent]`), because the terminal cannot swap a list while the form is open.
 
 > **Do not put `form.visible` on a field whose expression reads another field's
 > current value.** The terminal only re-evaluates visibility on a server round
 > trip, so a field revealed by what the user is typing can never appear — the
 > first version of this form hid `Config Id` behind `bindingKind === 'crud'` and
-> was impossible to complete. `Target` is deliberately overloaded across kinds
+> was impossible to complete. `Source` is deliberately overloaded across kinds
 > instead, the way AS/400 qualifier fields have always worked.
+
+> **Hints must fit.** The form is 80 columns; a hint starts at column
+> `30 + field length + 2` and anything past column 80 is silently cut off. Size
+> the hint to the space that is left, or shorten the field.
+
+> **A dropdown must render above the terminal.** It is portaled to `<body>`, and
+> the terminal itself sits in `.term-layer` (`world.css`: z-index 1000 modal /
+> 1200 login gate), so `.field-dropdown` (`terminal.css`) must stay above 1200. Below
+> that the list opens *invisibly* — while still capturing every keystroke.
 
 Both Office Layout screens are ordinary CRUDTable configs, so they also carry
 `mcp` and `api` blocks: **an agent can rearrange the office**, audited like

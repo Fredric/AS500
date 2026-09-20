@@ -11,7 +11,6 @@
 
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../core/db/index.js';
-import { getAllConfigs } from '../../core/crudtable/registry.js';
 import { McpToolError } from '../../core/mcp/errors.js';
 import { worldSpaces, worldThings } from '../db/schema.js';
 import {
@@ -197,7 +196,7 @@ export interface BindingFields {
 export function validateBinding(f: BindingFields): string | null {
   const kind = (f.bindingKind || 'none').trim();
   if (!(THING_BINDING_KINDS as string[]).includes(kind)) {
-    return `Binds to must be one of: ${THING_BINDING_KINDS.join(', ')}`;
+    return `Shows must be one of: ${THING_BINDING_KINDS.join(', ')}`;
   }
 
   const target = (f.bindingTarget ?? '').trim();
@@ -205,29 +204,29 @@ export function validateBinding(f: BindingFields): string | null {
 
   switch (kind as ThingBindingKind) {
     case 'crud':
-      if (!target) return 'A crud binding needs a Target (the config id, e.g. documents)';
-      try { parseScope(scope); } catch (err) { return `Scope: ${(err as Error).message}`; }
+      if (!target) return 'A list (crud) needs a Source: which list, e.g. documents';
+      try { parseScope(scope); } catch (err) { return `Filter: ${(err as Error).message}`; }
       return null;
 
     case 'record':
-      if (!target) return 'A record binding needs a Target (the config id)';
-      if (!scope) return 'A record binding needs the record id in Scope';
+      if (!target) return 'A record needs a Source: which list it belongs to';
+      if (!scope) return 'A record needs its record id in Filter';
       return null;
 
     case 'service':
-      if (!target) return 'A service binding needs a Target (the service key, e.g. docs-api)';
+      if (!target) return 'A service needs a Source: which service, e.g. docs-api';
       return null;
 
     case 'agent': {
       const userId = Number(target);
       if (!Number.isInteger(userId) || userId <= 0) {
-        return 'An agent binding needs a numeric user id in Target';
+        return 'An agent needs a Source: the agent\'s numeric user id';
       }
       return null;
     }
 
     case 'door':
-      if (!target) return 'A door binding needs a Target (the destination space\'s key)';
+      if (!target) return 'A door needs a Source: the space it leads to';
       return null;
 
     default:
@@ -248,7 +247,7 @@ export function validateShelfBinding(
 ): string | null {
   if (type !== 'bookshelf') return null;
   if (bindingKind !== 'crud' || bindingTarget.trim() !== BOOKSHELF_CONFIG_ID) {
-    return `A bookshelf must bind to '${BOOKSHELF_CONFIG_ID}' — set Binds to=crud, Target=${BOOKSHELF_CONFIG_ID}`;
+    return `A bookshelf must bind to '${BOOKSHELF_CONFIG_ID}' — set Shows=crud, Source=${BOOKSHELF_CONFIG_ID}`;
   }
   return null;
 }
@@ -263,7 +262,7 @@ export function validateShelfBinding(
 export function validateNoteBinding(type: string, bindingKind: string): string | null {
   if (type !== 'postit' && type !== 'board') return null;
   if (bindingKind !== 'none') {
-    return `A ${type} owns its own text and cannot bind to anything — set Binds to=none`;
+    return `A ${type} owns its own text and cannot bind to anything — set Shows=none`;
   }
   return null;
 }
@@ -277,7 +276,7 @@ export function validateNoteBinding(type: string, bindingKind: string): string |
  */
 export function validateDoorBinding(type: string, bindingKind: string): string | null {
   if (type === 'door' && bindingKind !== 'door') {
-    return `A door must bind to a space — set Binds to=door, Target=<space key>`;
+    return `A door must bind to a space — set Shows=door, Source=<space key>`;
   }
   if (type !== 'door' && bindingKind === 'door') {
     return `A door binding only makes sense on a door — set Type=door`;
@@ -341,18 +340,8 @@ export async function composeBinding(f: BindingFields): Promise<ThingBinding> {
   }
 }
 
-/**
- * Every registered CRUDTableConfig, as options for the binding picker.
- *
- * A datasource rather than `staticOptions` so the list is built when the form
- * renders, not when this module is imported — registration order would
- * otherwise decide which configs are bindable.
- */
-export async function listBindableConfigs(): Promise<Record<string, unknown>[]> {
-  return getAllConfigs()
-    .map((c) => ({ id: c.id, title: `${c.id} - ${c.title}`.slice(0, 40) }))
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-}
+// The binding pickers (Shows / Source / Filter options) live in
+// `../bindingPickers.ts`, not here: this module owns placement only.
 
 // ============================================
 // Spaces

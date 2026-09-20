@@ -66,19 +66,21 @@ const FieldDropdown = forwardRef<DropdownHandle, FieldDropdownProps>(
       },
     }), [filtered, highlightedIndex, onSelect]);
 
-    if (filtered.length === 0) return null;
+    // An empty filter still renders (as "(no match)") rather than vanishing:
+    // while this component is mounted the terminal routes every keystroke into
+    // the filter, so a list that silently disappears looks like the keyboard
+    // has died. Stacking order (z-index) lives in terminal.css.
 
     // Position: below the field, or above if near bottom of viewport
     const spaceBelow = window.innerHeight - anchorRect.bottom;
     const itemHeightPx = anchorRect.height || 22;
-    const dropdownHeight = Math.min(filtered.length, MAX_VISIBLE) * itemHeightPx + 4;
+    const dropdownHeight = Math.min(Math.max(filtered.length, 1), MAX_VISIBLE) * itemHeightPx + 4;
     const showAbove = spaceBelow < dropdownHeight + 8 && anchorRect.top > dropdownHeight;
 
     const style: React.CSSProperties = {
       position: 'fixed',
       left: anchorRect.left,
       minWidth: anchorRect.width,
-      zIndex: 100,
       ...(showAbove
         ? { bottom: window.innerHeight - anchorRect.top + 2 }
         : { top: anchorRect.bottom + 2 }),
@@ -95,9 +97,14 @@ const FieldDropdown = forwardRef<DropdownHandle, FieldDropdownProps>(
           ref={listRef}
           style={{ maxHeight: `${MAX_VISIBLE * 1.4}em` }}
         >
+          {filtered.length === 0 && (
+            <div className="field-dropdown__empty">(no match — Esc to close)</div>
+          )}
           {filtered.map((option, i) => (
             <div
-              key={option.value}
+              // Index in the key: a merged list (e.g. a binding Target that
+              // mixes configs, services and spaces) may repeat a value.
+              key={`${i}:${option.value}`}
               className={`field-dropdown__item${i === highlightedIndex ? ' field-dropdown__item--highlighted' : ''}`}
               onMouseEnter={() => setHighlightedIndex(i)}
               onMouseDown={(e) => {

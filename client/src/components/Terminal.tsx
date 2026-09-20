@@ -150,6 +150,10 @@ export default function Terminal({ onStatus, visible = true }: TerminalProps = {
   const [dropdownFilterText, setDropdownFilterText] = useState('');
   const dropdownRef = useRef<DropdownHandle>(null);
   const dropdownOpenRef = useRef(false);
+  // Name of the field the open dropdown belongs to. While a dropdown is open the
+  // terminal routes every printable key into its filter, so it must never stay
+  // open once focus has moved to some other field.
+  const dropdownFieldNameRef = useRef<string | null>(null);
 
   // Close dropdown and reset action focus when screen changes
   useEffect(() => {
@@ -517,6 +521,7 @@ export default function Terminal({ onStatus, visible = true }: TerminalProps = {
   // Open dropdown for a field
   const openDropdown = useCallback((field: Field, inputEl: HTMLElement) => {
     dropdownOpenRef.current = true;
+    dropdownFieldNameRef.current = field.name;
     setActiveDropdownField(field);
     setDropdownAnchorRect(inputEl.getBoundingClientRect());
     setDropdownFilterText('');
@@ -524,6 +529,7 @@ export default function Terminal({ onStatus, visible = true }: TerminalProps = {
 
   const closeDropdown = useCallback(() => {
     dropdownOpenRef.current = false;
+    dropdownFieldNameRef.current = null;
     setActiveDropdownField(null);
     setDropdownFilterText('');
   }, []);
@@ -767,7 +773,7 @@ export default function Terminal({ onStatus, visible = true }: TerminalProps = {
           }}
           type={field.type === 'password' ? 'password' : 'text'}
           data-1p-ignore
-          className={`terminal-field ${field.type}`}
+          className={`terminal-field ${field.type}${field.options?.length ? ' has-options' : ''}`}
           data-field={field.name}
           style={{ width: `${field.length}ch` }}
           maxLength={field.length}
@@ -791,6 +797,12 @@ export default function Terminal({ onStatus, visible = true }: TerminalProps = {
             if (isSelectableRow) {
               setFocusedDataRowIndex(relativeRowIndex);
             }
+            // Focus landing on a different field ends the open dropdown at once.
+            // Otherwise it stays "open" (and swallows typing) for a field the
+            // user has already left — e.g. after clicking another input.
+            if (dropdownOpenRef.current && dropdownFieldNameRef.current !== field.name) {
+              closeDropdown();
+            }
           }}
           onBlur={() => {
             // Delay closing to allow dropdown click to fire first.
@@ -799,7 +811,15 @@ export default function Terminal({ onStatus, visible = true }: TerminalProps = {
             const wasOpen = dropdownOpenRef.current;
             setTimeout(() => {
               if (wasOpen && !dropdownOpenRef.current) return; // already closed by explicit action
-              if (dropdownOpenRef.current && document.activeElement instanceof HTMLInputElement) return; // refocused
+              // Refocused — but only counts if it is the dropdown's own field.
+              // A re-render re-mounts the input and refocuses it; a click on
+              // some other input must not keep this dropdown alive.
+              const active = document.activeElement;
+              if (
+                dropdownOpenRef.current &&
+                active instanceof HTMLInputElement &&
+                active.getAttribute('data-field') === dropdownFieldNameRef.current
+              ) return;
               closeDropdown();
             }, 150);
           }}

@@ -19,9 +19,11 @@ import type { CRUDContext, CRUDTableConfig } from '../../core/crudtable/types.js
 import type { Session } from '../../core/types/index.js';
 import { PERMISSIONS } from '../../core/services/access.js';
 import * as worldService from '../services/worldService.js';
+import * as bindingPickers from '../bindingPickers.js';
 import { THING_BINDING_KINDS, THING_TYPES, type ThingBinding } from '../types.js';
 
 const svc = worldService as unknown as Record<string, Function>;
+const pickers = bindingPickers as unknown as Record<string, Function>;
 
 /** The binding stored on a list row. `listThings` returns it verbatim. */
 function bindingOf(record: Record<string, unknown> | undefined): ThingBinding | null {
@@ -148,19 +150,33 @@ export const thingsConfig: CRUDTableConfig = {
     // Three always-visible fields, never conditionally hidden. `form.visible`
     // cannot work here: the terminal only re-evaluates visibility on a server
     // round trip, so a field revealed by the value you are currently typing can
-    // never appear. `Target` therefore carries whichever identifier the chosen
-    // kind needs, and the hints say which.
+    // never appear. `Source` therefore carries whichever identifier the chosen
+    // kind needs, and its dropdown tags each choice with the `Shows` value it
+    // belongs to.
+    //
+    // Read it as a sentence:  Shows [a list of records]  Source [My Documents]
+    //                         Filter [folder /ENTENCE/Contracts]
+    //
+    // The labels are plain words, but the field NAMES (bindingKind,
+    // bindingTarget, bindingScope) and the kind values (crud, record, ...) are
+    // unchanged: they are the REST/MCP contract, and the MCP tool schema is
+    // generated from them (staticOptions become its enum). Hints are kept short
+    // because the form is 80 columns wide and anything past that is cut off.
     bindingKind: {
       field: 'bindingKind',
-      label: 'Binds to',
+      label: 'Shows',
       length: 12,
-      staticOptions: THING_BINDING_KINDS.map((k) => ({ value: k, display: k })),
+      // value = the stored kind; display = the kind plus what it means.
+      staticOptions: THING_BINDING_KINDS.map((k) => ({
+        value: k,
+        display: `${k} - ${bindingPickers.BINDING_KIND_HELP[k]}`,
+      })),
       form: {
         required: true,
-        hint: '(crud=a list, record=one row, service, workstation, agent, door, none)',
-        // Validated here rather than per-field: the rule spans Binds to,
-        // Target and Scope together, and this field is always visible so the
-        // check always runs.
+        hint: '(what this object is a view of)',
+        // Validated here rather than per-field: the rule spans Shows, Source
+        // and Filter together, and this field is always visible so the check
+        // always runs.
         validators: [
           (ctx) => worldService.validateBinding({
             bindingKind: ctx.values.bindingKind ?? 'none',
@@ -169,27 +185,51 @@ export const thingsConfig: CRUDTableConfig = {
           }),
         ],
       },
+      mcp: {
+        description:
+          'What the object is a view of: crud (a list of records), record (one ' +
+          'record), service, workstation, agent, door (to another space) or none.',
+      },
     },
     bindingTarget: {
       field: 'bindingTarget',
-      label: 'Target',
+      label: 'Source',
       length: 24,
       datasource: {
-        service: svc,
-        method: 'listBindableConfigs',
+        service: pickers,
+        method: 'listBindingSources',
         valueField: 'id',
         displayField: 'title',
       },
       form: {
-        hint: '(crud/record: config id | service: service key | agent: user id)',
+        hint: '(which one, see Shows)',
+      },
+      mcp: {
+        description:
+          'Which one the object points at: a config id (crud/record), a service ' +
+          'key (service), an agent\'s user id (agent) or a space key (door).',
       },
     },
     bindingScope: {
       field: 'bindingScope',
-      label: 'Scope',
-      length: 44,
+      label: 'Filter',
+      length: 32,
+      datasource: {
+        service: pickers,
+        method: 'listBindingFilters',
+        // The person editing the layout — a binding's scope can never name
+        // another user's data.
+        params: (ctx) => ({ userId: Number(ctx.input.userId) }),
+        valueField: 'id',
+        displayField: 'title',
+      },
       form: {
-        hint: '(crud: folderId=42 | record: the record id | else blank)',
+        hint: '(blank = all)',
+      },
+      mcp: {
+        description:
+          'Narrows a crud list, e.g. "folderId=42" (a My Documents folder) or ' +
+          '"motorcycleId=3"; for kind record it is the record id. Blank otherwise.',
       },
     },
 
@@ -215,6 +255,15 @@ export const thingsConfig: CRUDTableConfig = {
   ],
 
   getInitialValues: () => ({ type: 'box', bindingKind: 'none' }),
+
+  // Source and Filter list live data (spaces, agents, folders, motorcycles), but
+  // a datasource is cached in the session context for as long as the screen
+  // stays open. Dropping them on every list render means a folder made a minute
+  // ago is in the next form you open; the loader refills them straight after.
+  onBeforeListRender: async (_session, ctx) => {
+    delete ctx.datasources.bindingTarget;
+    delete ctx.datasources.bindingScope;
+  },
 
   navigation: {
     primaryAction: 'open',
