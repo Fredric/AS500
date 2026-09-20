@@ -23,6 +23,33 @@ export const documentsConfig: CRUDTableConfig = {
   requireAuth: true,
   requirePermission: PERMISSIONS.DOCUMENTS_READ,
 
+  // Read-only REST surface for the mobile app. Only `list` is exposed: the
+  // read/update/delete services below resolve `kind` from `ctx.editRecord` /
+  // `ctx.selection`, which the REST layer never populates, so enabling them
+  // would throw. Browsing needs nothing more than listFolderContents.
+  api: {
+    name: 'documents',
+    description: "Folders and files in the authenticated user's My Documents.",
+    operations: {
+      list: true,
+    },
+    scope: [
+      {
+        name: 'userId',
+        type: 'number' as const,
+        required: true,
+        description: 'Injected from the Bearer token — never a request param.',
+        injectFromAuth: 'userId' as const,
+      },
+      {
+        name: 'folderId',
+        type: 'number' as const,
+        required: false,
+        description: 'Folder to list the contents of. Omit for the root folder.',
+      },
+    ],
+  },
+
   services: {
     list: {
       service: documentService as unknown as Record<string, Function>,
