@@ -19,7 +19,9 @@ services:
       dockerfile: Dockerfile.prod
       network: host
     ports:
-      - "3001:3001"
+      # Bind to loopback only — Caddy terminates TLS and proxies the site here.
+      # A public bind would let clients bypass TLS and talk plaintext HTTP.
+      - "127.0.0.1:3001:3001"
       # Remote MCP server. Bind to 127.0.0.1 only — Caddy terminates TLS on
       # the host and reverse-proxies /mcp/* to this port.
       - "127.0.0.1:3002:3002"
