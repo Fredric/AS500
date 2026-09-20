@@ -25,7 +25,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { IS_PRODUCTION, PRESENCE_TICK_MS, PRESENCE_TIMEOUT_MS, WORLD_ENABLED, WORLD_PORT } from './config.js';
+import { PRESENCE_TICK_MS, PRESENCE_TIMEOUT_MS, WORLD_ENABLED, WORLD_PORT } from './config.js';
 import { validateAccessToken } from '../core/services/auth.js';
 import { loadUserPermissions } from '../core/services/access.js';
 import { onAuditEvent, writeAuditEvent } from '../core/audit/writer.js';
@@ -468,7 +468,10 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
   // no new connection type, see agentPresence.ts.
   unsubscribeAgentPresence = startAgentPresenceTracking();
 
-  httpServer.listen(WORLD_PORT, IS_PRODUCTION ? '127.0.0.1' : '0.0.0.0', () => {
+  // Bind all interfaces inside the container: a 127.0.0.1 bind is unreachable
+  // through Docker's port mapping (502 from Caddy). Host exposure is limited by
+  // the compose port mapping (127.0.0.1:3006), not by this bind.
+  httpServer.listen(WORLD_PORT, process.env.WORLD_HOST ?? '0.0.0.0', () => {
     console.log(`AS500 world listening on port ${WORLD_PORT} (ws://localhost:${WORLD_PORT}/ws)`);
   });
 
