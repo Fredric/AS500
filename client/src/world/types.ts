@@ -65,6 +65,8 @@ export interface ResolvedThing {
   note: ResolvedNote | null;
   /** Populated for `kind: 'door'` bindings whose target space resolved live. */
   door: { spaceKey: string; spaceName: string } | null;
+  /** Isometric sprite for a bound My Thing whose generation is ready. */
+  sprite: { url: string; recordId: number } | null;
   children: ResolvedThing[];
 }
 

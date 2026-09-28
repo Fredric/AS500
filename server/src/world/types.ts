@@ -162,6 +162,12 @@ export interface ResolvedThing extends WorldThingRow {
   note: ResolvedNote | null;
   /** Populated for `kind: 'door'` bindings whose target space resolved live — not the cached spaceId. */
   door: { spaceKey: string; spaceName: string } | null;
+  /**
+   * Isometric sprite for a `my_things` record binding whose generation is
+   * ready. `url` is a world-server path (`/api/things/:id/image/processed`);
+   * the client prefixes `/world` and appends `?token=` via `worldApiUrl`.
+   */
+  sprite: { url: string; recordId: number } | null;
   /** Child things (the furniture tree), already resolved. */
   children: ResolvedThing[];
 }

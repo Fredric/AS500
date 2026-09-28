@@ -9,10 +9,14 @@ export function bytes(value: number | null): string {
 }
 
 export function duration(seconds: number | null): string {
-  if (seconds == null) return '—';
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
+  if (seconds == null || Number.isNaN(seconds)) return '—';
+  const abs = Math.max(0, seconds);
+  if (abs < 60) {
+    const rounded = Math.round(abs * 10) / 10;
+    return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
+  }
+  const m = Math.floor(abs / 60);
+  const s = Math.round(abs % 60);
   if (m < 60) return `${m}m ${s}s`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }

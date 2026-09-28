@@ -27,7 +27,7 @@ import {
   MONITOR_PORT,
   MONITOR_TOKEN,
 } from './config.js';
-import { readQueue } from './db.js';
+import { readQueue, readThingQueue } from './db.js';
 import {
   listDocuments,
   locateImage,
@@ -91,8 +91,8 @@ export function onSnapshot(listener: (s: MonitorSnapshot) => void): () => void {
 }
 
 async function buildSnapshot(): Promise<MonitorSnapshot> {
-  const queue = await readQueue();
-  const { components, gpu, warnings } = await probeAll({ queue });
+  const [queue, thingsQueue] = await Promise.all([readQueue(), readThingQueue()]);
+  const { components, gpu, warnings } = await probeAll({ queue, thingsQueue });
 
   return {
     ts: new Date().toISOString(),
@@ -101,6 +101,7 @@ async function buildSnapshot(): Promise<MonitorSnapshot> {
     overall: rollUp(components),
     components,
     queue,
+    thingsQueue,
     gpu,
     logSources: getLogSourceInfos(),
     warnings,

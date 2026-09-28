@@ -11,6 +11,7 @@
  *   GET  /health              liveness (unprefixed — not browser-facing)
  *   GET  /world/api/spaces         every space (name + key), for a picker
  *   GET  /world/api/space/:key     the resolved scene — curl-testable
+ *   GET  /world/api/things/:id/image/{source|processed}  a Thing's photo / sprite
  *   WS   /world/ws                 live scene + presence
  *
  * Everything the browser reaches lives under /world/ so it can be proxied
@@ -23,15 +24,17 @@
  * credential and no new session type.
  */
 
+import { createReadStream } from 'fs';
+import { stat } from 'fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { PRESENCE_TICK_MS, PRESENCE_TIMEOUT_MS, WORLD_ENABLED, WORLD_PORT } from './config.js';
 import { validateAccessToken } from '../core/services/auth.js';
-import { loadUserPermissions } from '../core/services/access.js';
+import { loadUserPermissions, PERMISSIONS } from '../core/services/access.js';
 import { onAuditEvent, writeAuditEvent } from '../core/audit/writer.js';
 import { onSnapshot } from '../monitor/index.js';
-import { PERMISSIONS } from '../core/services/access.js';
 import { actorHasPermission, resolveScene, resolveThing, type WorldActor } from './resolver.js';
+import { getThingRow } from '../app/services/thingService.js';
 import { browseDocumentsFolder } from './documentsShelf.js';
 import { updateNote } from './services/notesService.js';
 import { startAgentPresenceTracking, sweepStaleAgents } from './agentPresence.js';
@@ -207,6 +210,41 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body, null, 2));
 }
 
+async function streamThingImage(
+  actor: WorldActor,
+  thingId: number,
+  which: 'source' | 'processed',
+  res: ServerResponse,
+): Promise<void> {
+  if (!actorHasPermission(actor, PERMISSIONS.THINGS_READ)) {
+    json(res, 403, { error: `Requires ${PERMISSIONS.THINGS_READ}` });
+    return;
+  }
+  const thing = await getThingRow({ id: thingId, userId: actor.userId });
+  if (!thing) {
+    json(res, 404, { error: 'Thing not found' });
+    return;
+  }
+  const path = which === 'source' ? thing.source_path : thing.processed_path;
+  const mime = which === 'source' ? thing.source_mime : thing.processed_mime;
+  if (!path) {
+    json(res, 404, { error: `No ${which} image yet` });
+    return;
+  }
+  const info = await stat(path).catch(() => null);
+  if (!info) {
+    json(res, 404, { error: 'Image missing on disk' });
+    return;
+  }
+  cors(res);
+  res.writeHead(200, {
+    'Content-Type': mime ?? 'application/octet-stream',
+    'Content-Length': String(info.size),
+    'Cache-Control': 'private, max-age=60',
+  });
+  createReadStream(path).pipe(res);
+}
+
 /** Token from `?token=` or an `Authorization: Bearer` header. */
 function tokenFrom(req: IncomingMessage, url: URL): string | null {
   const q = url.searchParams.get('token');
@@ -250,6 +288,12 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       return;
     }
     json(res, 200, scene);
+    return;
+  }
+
+  const spriteMatch = url.pathname.match(/^\/world\/api\/things\/(\d+)\/image\/(source|processed)$/);
+  if (spriteMatch && req.method === 'GET') {
+    await streamThingImage(actor, Number(spriteMatch[1]), spriteMatch[2] as 'source' | 'processed', res);
     return;
   }
 

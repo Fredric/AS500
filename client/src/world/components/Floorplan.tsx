@@ -9,6 +9,7 @@
 
 import type { Presence, ResolvedBook, ResolvedThing } from '../types';
 import { layoutThings, ROOM_H, ROOM_W, type Placed } from '../layout';
+import { worldApiUrl } from '../useWorldSocket';
 
 interface Props {
   things: ResolvedThing[];
@@ -164,20 +165,28 @@ function ThingShape({
   // and book spines already set.
   const doorLabel = isDoor ? fit(`→ ${thing.door!.spaceName}`, w - PAD * 2, 0.3, 0.2) : null;
 
+  const spriteUrl = thing.sprite ? worldApiUrl(thing.sprite.url) : null;
+
   return (
     <g
       className={`thing ${accessClass(thing)}${noteClass}${doorClass} ${selected ? 'thing--selected' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
-        // A door's primary interaction is walking through it directly, not
-        // opening the side panel — the panel is still reachable as a
-        // fallback (it has its own "Go through" button) the same way a
-        // bookshelf's panel is a fallback for its spines.
         if (isDoor) onEnterDoor(thing.door!.spaceKey);
         else onSelect(thing);
       }}
     >
       <rect x={x} y={y} width={w} height={h} rx="0.15" />
+      {spriteUrl && (
+        <image
+          href={spriteUrl}
+          x={x + 0.08}
+          y={y + 0.08}
+          width={w - 0.16}
+          height={h - 0.16}
+          preserveAspectRatio="xMidYMid meet"
+        />
+      )}
       <title>{`${thing.label} — ${thing.type}${thing.reason ? ` — ${thing.reason}` : ''}`}</title>
       <text x={x + PAD} y={y + 0.58} className="thing__label" fontSize={label.fontSize}>
         {label.text}

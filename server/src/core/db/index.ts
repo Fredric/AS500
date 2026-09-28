@@ -83,6 +83,9 @@ export async function initializeDatabase(): Promise<void> {
   // Seed permission registry and role defaults (idempotent)
   const { seedPermissions } = await import('../services/access.js');
   await seedPermissions();
+
+  const { seedGpuWorkerAccount } = await import('../../app/things/seedWorker.js');
+  await seedGpuWorkerAccount();
 }
 
 /**

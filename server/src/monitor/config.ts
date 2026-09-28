@@ -67,11 +67,25 @@ export const LOCK_TIMEOUT_SECONDS = Number(env('LOCK_TIMEOUT_SECONDS', '900'));
 /** How many lines of history each log source keeps in memory. */
 export const LOG_BUFFER_LINES = Math.max(100, Number(env('MONITOR_LOG_LINES', '600')));
 
+/**
+ * as500-images runs natively on the GPU host (same arrangement as as500-agent)
+ * and appends to `worker.log`. The file is only readable here when that repo
+ * is bind-mounted into this container.
+ */
+export const IMAGES_LOG_FILE = env('MONITOR_IMAGES_LOG', '/host/as500-images/worker.log');
+
+/**
+ * A runner that has not polled within this window is treated as gone. Matches
+ * `RUNNER_STALE_MS` in `app/things/jobQueue.ts`.
+ */
+export const THINGS_RUNNER_STALE_MS = 90_000;
+
 export type ProbeKind =
   | 'self'
   | 'postgres'
   | 'docs-api'
   | 'docs-worker'
+  | 'things-worker'
   | 'ollama'
   | 'vllm'
   | 'agent'
@@ -129,6 +143,16 @@ export const COMPONENTS: ComponentDef[] = [
     endpoint: null,
     logSource: 'docs-worker',
     hint: 'cd ../as500-docs && docker compose up -d --build worker',
+  },
+  {
+    id: 'as500-images',
+    label: 'as500-images',
+    subtitle: 'Qwen Image 2.1 · My Things',
+    group: 'inference',
+    probe: 'things-worker',
+    endpoint: null,
+    logSource: 'as500-images',
+    hint: 'cd /d c:\\Users\\fredr\\code\\as500-images && start.cmd',
   },
   {
     id: 'vllm',
@@ -225,5 +249,11 @@ export const LOG_SOURCES: LogSourceDef[] = [
     label: 'as500-agent (host stderr)',
     kind: 'file',
     file: AGENT_LOG_FILE,
+  },
+  {
+    key: 'as500-images',
+    label: 'as500-images (host worker.log)',
+    kind: 'file',
+    file: IMAGES_LOG_FILE,
   },
 ];

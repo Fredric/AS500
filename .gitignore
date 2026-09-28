@@ -8,6 +8,8 @@ server/data/*.db-shm
 server/data/*.json
 server/data/documents/**
 !server/data/documents/.gitkeep
+server/data/things/**
+!server/data/things/.gitkeep
 
 # Backups
 server/backups/

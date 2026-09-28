@@ -288,6 +288,60 @@ export interface SearchOutcome {
   keywordDead: boolean;
 }
 
+/* ── My Things / as500-images ────────────────────────────────────────────── */
+
+export interface ThingJobRow {
+  id: string;
+  thingId: number;
+  thingName: string | null;
+  userId: number;
+  processor: string;
+  state: string;
+  stage: string | null;
+  progress: number | null;
+  attempts: number;
+  error: string | null;
+  lockedBy: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  leaseExpiresAt: string | null;
+  /** Wall clock from started_at to finished_at (or now if still running). */
+  durationSec: number | null;
+  /** GPU generate() only, from the worker's result.generateMs. */
+  generateSec: number | null;
+  /** Claim-to-complete on the worker, from result.jobMs. */
+  jobSec: number | null;
+  workingSize: string | null;
+  backend: string | null;
+  stalled: boolean;
+}
+
+export interface ThingRunnerRow {
+  id: string;
+  version: string | null;
+  lastSeenAt: string;
+  stale: boolean;
+  capabilities: string[];
+}
+
+export interface ThingsQueueSnapshot {
+  available: boolean;
+  error: string | null;
+  counts: { queued: number; processing: number; completed: number; failed: number };
+  totals: { things: number; processed: number };
+  throughput: {
+    completedLastHour: number;
+    completedLast24h: number;
+    failedLast24h: number;
+    avgDurationSec: number | null;
+    avgGenerateSec: number | null;
+    lastGenerateSec: number | null;
+  };
+  runners: ThingRunnerRow[];
+  jobs: ThingJobRow[];
+}
+
 export interface MonitorSnapshot {
   ts: string;
   serverStartedAt: string;
@@ -296,6 +350,7 @@ export interface MonitorSnapshot {
   overall: Health;
   components: ComponentStatus[];
   queue: QueueSnapshot;
+  thingsQueue: ThingsQueueSnapshot;
   gpu: GpuSnapshot;
   logSources: LogSourceInfo[];
   /** Setup problems worth surfacing at the top of the page. */

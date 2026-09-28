@@ -1,0 +1,200 @@
+{
+  "13": {
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 1,
+      "multiple": 32
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "Resolution Selector"
+    }
+  },
+  "461": {
+    "inputs": {
+      "filename_prefix": "Qwen_image_2.1",
+      "format": "png",
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB",
+      "images": [
+        "481:457",
+        0
+      ]
+    },
+    "class_type": "SaveImageAdvanced",
+    "_meta": {
+      "title": "Save Image (Advanced)"
+    }
+  },
+  "470": {
+    "inputs": {
+      "image": "svenskflagga.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "478": {
+    "inputs": {
+      "resize_type": "scale width",
+      "resize_type.width": 512,
+      "scale_method": "bicubic",
+      "input": [
+        "470",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize Image/Mask"
+    }
+  },
+  "481:451": {
+    "inputs": {
+      "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "481:453": {
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "481:454": {
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "481:456": {
+    "inputs": {
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "481:457": {
+    "inputs": {
+      "samples": [
+        "481:458",
+        0
+      ],
+      "vae": [
+        "481:454",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "481:458": {
+    "inputs": {
+      "seed": 1030663111723143,
+      "steps": 25,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "481:469",
+        0
+      ],
+      "positive": [
+        "481:474",
+        0
+      ],
+      "negative": [
+        "481:474",
+        1
+      ],
+      "latent_image": [
+        "481:468",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "481:468": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "481:474",
+        2
+      ],
+      "on_true": [
+        "481:456",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "If/Else Switch"
+    }
+  },
+  "481:469": {
+    "inputs": {
+      "device": "auto",
+      "dtype": "default",
+      "model": [
+        "481:451",
+        0
+      ]
+    },
+    "class_type": "QwenImage21Cache",
+    "_meta": {
+      "title": "Qwen Image 2.1 Cache"
+    }
+  },
+  "481:474": {
+    "inputs": {
+      "prompt": "chunky, simplified isometric 2.5D representation of the source object on a fully transparent background. Preserve the object's identity, proportions, structure and recognizable features. Do not reinterpret or redesign the object.\n\nRotate the viewpoint 45 degrees horizontally to the right around the object.\nShow the object from a front-right three-quarter view.\n\n\nIMPORTANT:\nTransparency means an actual empty/alpha background.\nDo not visually depict transparency.\nDo not draw a checkerboard, grid, transparency pattern, white background,\ncolored background, or any other background.\n",
+      "negative_prompt": "",
+      "resolution": 0,
+      "clip": [
+        "481:453",
+        0
+      ],
+      "images.image_1": [
+        "478",
+        0
+      ],
+      "vae": [
+        "481:454",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImage21",
+    "_meta": {
+      "title": "Text Encode Qwen Image 2.1"
+    }
+  }
+}

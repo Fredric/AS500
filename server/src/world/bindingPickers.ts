@@ -20,7 +20,7 @@ import { asc, eq } from 'drizzle-orm';
 import { db } from '../core/db/index.js';
 import { getAllConfigs } from '../core/crudtable/registry.js';
 import { users } from '../core/db/schema.js';
-import { motorcycles } from '../app/db/schema.js';
+import { motorcycles, myThings } from '../app/db/schema.js';
 import { listFolderPaths } from '../app/services/documentService.js';
 import { COMPONENTS } from '../monitor/config.js';
 import { listSpaces } from './services/worldService.js';
@@ -118,5 +118,16 @@ export async function listBindingFilters(params: {
     ),
   }));
 
-  return [...folders, ...bikes];
+  const things = (
+    await db
+      .select({ id: myThings.id, name: myThings.name, status: myThings.status })
+      .from(myThings)
+      .where(eq(myThings.user_id, params.userId))
+      .orderBy(asc(myThings.name))
+  ).map((t) => ({
+    id: String(t.id),
+    title: tagged('thing', `${t.name}  (#${t.id} ${t.status})`),
+  }));
+
+  return [...folders, ...bikes, ...things];
 }

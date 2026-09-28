@@ -11,11 +11,12 @@
 
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard, Text, useTexture } from '@react-three/drei';
 import type { Placed } from '../layout';
 import type { ResolvedBook, ResolvedThing } from '../types';
 import { ACCESS_COLOR, BOOK_COLOR, BOOK_OVERFLOW_COLOR, DOOR_COLOR, EDGE_COLOR, NOTE_COLOR, SELECTED_EMISSIVE } from './colors';
 import { heightFor, MODEL_FOR_TYPE } from './heights';
+import { worldApiUrl } from '../useWorldSocket';
 
 interface Props {
   placed: Placed;
@@ -45,11 +46,11 @@ export default function ThingMesh({ placed, selected, onSelect, onOpenBook, onEn
     return ACCESS_COLOR[accessKey(thing)];
   }, [thing, isNote, isDoor]);
 
-  // Model swap seam — a real model per type is a later increment (primitives
-  // now, per the plan). Reserved so that future work touches this lookup,
-  // not this component's structure.
+  const spriteUrl = thing.sprite ? worldApiUrl(thing.sprite.url) : null;
+  // Model swap seam — a real GLTF per type is a later increment. A My Thing
+  // with a generated sprite uses that instead of the primitive box.
   const modelUrl = MODEL_FOR_TYPE[thing.type];
-  void modelUrl; // unused until a model pipeline exists
+  void modelUrl;
 
   const cx = x + w / 2;
   const cz = y + h / 2;
@@ -63,25 +64,38 @@ export default function ThingMesh({ placed, selected, onSelect, onOpenBook, onEn
 
   return (
     <group>
-      <mesh
-        position={[cx, height / 2, cz]}
-        userData={{ thingId: thing.id }}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (isDoor) onEnterDoor(thing.door!.spaceKey);
-          else onSelect(thing);
-        }}
-      >
-        <boxGeometry args={[w, height, h]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={selected ? SELECTED_EMISSIVE : undefined}
-          emissiveIntensity={selected ? 0.35 : 0}
+      {spriteUrl ? (
+        <SpriteBillboard
+          url={spriteUrl}
+          thingId={thing.id}
+          cx={cx}
+          cz={cz}
+          width={Math.max(w, 0.6)}
+          height={height}
+          selected={selected}
+          onSelect={() => onSelect(thing)}
         />
-        <lineSegments geometry={edges}>
-          <lineBasicMaterial color={EDGE_COLOR} />
-        </lineSegments>
-      </mesh>
+      ) : (
+        <mesh
+          position={[cx, height / 2, cz]}
+          userData={{ thingId: thing.id }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isDoor) onEnterDoor(thing.door!.spaceKey);
+            else onSelect(thing);
+          }}
+        >
+          <boxGeometry args={[w, height, h]} />
+          <meshStandardMaterial
+            color={color}
+            emissive={selected ? SELECTED_EMISSIVE : undefined}
+            emissiveIntensity={selected ? 0.35 : 0}
+          />
+          <lineSegments geometry={edges}>
+            <lineBasicMaterial color={EDGE_COLOR} />
+          </lineSegments>
+        </mesh>
+      )}
 
       <Billboard position={[cx, height + 0.3, cz]}>
         <Text fontSize={0.32} color="#1c2128" anchorX="center" anchorY="bottom" maxWidth={Math.max(w, 2)}>
@@ -93,6 +107,48 @@ export default function ThingMesh({ placed, selected, onSelect, onOpenBook, onEn
         <BookSpines thing={thing} x={x} y={y} w={w} h={h} height={height} onOpenBook={onOpenBook} />
       )}
     </group>
+  );
+}
+
+function SpriteBillboard({
+  url,
+  thingId,
+  cx,
+  cz,
+  width,
+  height,
+  selected,
+  onSelect,
+}: {
+  url: string;
+  thingId: number;
+  cx: number;
+  cz: number;
+  width: number;
+  height: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const texture = useTexture(url);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return (
+    <Billboard
+      position={[cx, height / 2, cz]}
+      userData={{ thingId }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+    >
+      <planeGeometry args={[width, height]} />
+      <meshStandardMaterial
+        map={texture}
+        transparent
+        alphaTest={0.08}
+        emissive={selected ? SELECTED_EMISSIVE : undefined}
+        emissiveIntensity={selected ? 0.35 : 0}
+      />
+    </Billboard>
   );
 }
 

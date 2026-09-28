@@ -8,12 +8,14 @@ import { motorcyclesConfig } from './configs/motorcyclesConfig.js';
 import { modsConfig } from './configs/modsConfig.js';
 import { servicesPerformedConfig } from './configs/servicesPerformedConfig.js';
 import { documentsConfig } from './configs/documentsConfig.js';
+import { myThingsConfig } from './configs/myThingsConfig.js';
 
 registerConfig(timeRegV2Config);
 registerConfig(motorcyclesConfig);
 registerConfig(modsConfig);
 registerConfig(servicesPerformedConfig);
 registerConfig(documentsConfig);
+registerConfig(myThingsConfig);
 
 // Menu items — must come after config registration (initContext references config objects)
 import './menus/appMenu.js';

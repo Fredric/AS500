@@ -32,6 +32,7 @@ import type {
   GpuSnapshot,
   Health,
   QueueSnapshot,
+  ThingsQueueSnapshot,
 } from './types.js';
 
 const SERVER_STARTED_AT = new Date();
@@ -186,7 +187,11 @@ let nvidiaSmiUsable = true;
  * what the model servers report about themselves — enough to show which models
  * are resident and roughly how much VRAM they hold.
  */
-async function readGpu(ollama: OllamaState, vllm: VllmState): Promise<GpuSnapshot> {
+async function readGpu(
+  ollama: OllamaState,
+  vllm: VllmState,
+  thingsQueue: ThingsQueueSnapshot,
+): Promise<GpuSnapshot> {
   const consumers: GpuConsumer[] = [];
 
   for (const m of ollama.loaded) {
@@ -198,6 +203,18 @@ async function readGpu(ollama: OllamaState, vllm: VllmState): Promise<GpuSnapsho
   }
   for (const id of vllm.models) {
     consumers.push({ label: `vLLM · ${id}`, vramMb: null, detail: 'served (VRAM reserved up front)' });
+  }
+
+  const imagesLive = thingsQueue.runners.some((r) => !r.stale);
+  if (imagesLive || thingsQueue.counts.processing > 0) {
+    consumers.push({
+      label: 'as500-images · Qwen-Image-2.1',
+      vramMb: null,
+      detail:
+        thingsQueue.counts.processing > 0
+          ? `generating ${thingsQueue.counts.processing} thing(s)`
+          : 'idle (FP8 dequant + CPU-offload encoder)',
+    });
   }
 
   if (nvidiaSmiUsable) {
@@ -277,6 +294,7 @@ function attachLogProblems(status: ComponentStatus): ComponentStatus {
 
 export interface ProbeContext {
   queue: QueueSnapshot;
+  thingsQueue: ThingsQueueSnapshot;
 }
 
 export async function probeAll(ctx: ProbeContext): Promise<{
@@ -320,7 +338,7 @@ export async function probeAll(ctx: ProbeContext): Promise<{
   }
 
   const [ollama, vllm] = await Promise.all([readOllama(), readVllm()]);
-  const gpu = await readGpu(ollama, vllm);
+  const gpu = await readGpu(ollama, vllm, ctx.thingsQueue);
 
   const results = await Promise.all(
     COMPONENTS.map(async (def): Promise<ComponentStatus> => {
@@ -431,6 +449,74 @@ export async function probeAll(ctx: ProbeContext): Promise<{
           break;
         }
 
+        case 'things-worker': {
+          const things = ctx.thingsQueue;
+          const { queued, processing } = things.counts;
+          const live = things.runners.filter((r) => !r.stale);
+          const stalled = things.jobs.filter((j) => j.stalled).length;
+          const lastGenerate = things.throughput.lastGenerateSec;
+          const avgGenerate = things.throughput.avgGenerateSec;
+          const fmt = (sec: number | null): string => {
+            if (sec == null) return '—';
+            const rounded = Math.round(sec * 10) / 10;
+            return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
+          };
+
+          if (live.length > 0) {
+            status.health = stalled > 0 ? 'degraded' : 'up';
+            status.detail =
+              stalled > 0
+                ? `${stalled} job(s) past the lease expiry`
+                : processing > 0
+                  ? `generating ${processing} thing(s)`
+                  : 'idle, polling for Thing jobs';
+          } else if (processing > 0 || queued > 0) {
+            status.health = 'down';
+            status.detail = `${queued + processing} job(s) waiting — no runner heartbeat`;
+          } else if (things.runners.length > 0) {
+            const ago = humanDuration(Date.now() - new Date(things.runners[0].lastSeenAt).getTime());
+            status.health = 'down';
+            status.detail = `last seen ${ago} ago`;
+            status.error = 'runner heartbeat stale (>90s)';
+          } else {
+            status.health = 'down';
+            status.detail = 'no runner has registered';
+          }
+
+          const inFlight = things.jobs.find((j) => j.state === 'processing');
+          status.facts = [
+            { label: 'runner', value: live[0]?.id ?? things.runners[0]?.id ?? '—' },
+            {
+              label: 'queued',
+              value: String(queued),
+              tone: queued > 0 ? 'warn' : 'muted',
+            },
+            {
+              label: 'processing',
+              value: String(processing),
+              tone: processing > 0 ? 'ok' : 'muted',
+            },
+            {
+              label: 'last generate',
+              value: fmt(lastGenerate),
+              tone: lastGenerate != null ? 'ok' : 'muted',
+            },
+            {
+              label: 'avg generate 24h',
+              value: fmt(avgGenerate),
+              tone: avgGenerate != null ? 'ok' : 'muted',
+            },
+            {
+              label: 'in flight',
+              value: inFlight?.startedAt
+                ? fmt((Date.now() - new Date(inFlight.startedAt).getTime()) / 1000)
+                : '—',
+              tone: inFlight ? 'ok' : 'muted',
+            },
+          ];
+          break;
+        }
+
         case 'vllm': {
           status.latencyMs = vllm.latencyMs;
           if (!vllm.reachable) {
@@ -529,6 +615,7 @@ export async function probeAll(ctx: ProbeContext): Promise<{
     warnings.push('DOCS_API_URL is not set, so ingest cannot be enqueued at all.');
   }
   if (ctx.queue.error) warnings.push(ctx.queue.error);
+  if (ctx.thingsQueue.error) warnings.push(ctx.thingsQueue.error);
 
   return { components: results, gpu, warnings };
 }

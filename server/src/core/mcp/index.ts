@@ -21,6 +21,9 @@
 //   POST /api/auth/refresh                            (rotate refresh token)
 //   POST /api/auth/revoke                             (logout / revoke token)
 //   POST /api/documents/upload                        (Bearer multipart file → My Documents)
+//   POST /api/things/upload                           (Bearer multipart photo → My Things)
+//   GET  /api/things/:id/status                       (generation progress, long-pollable)
+//   POST /api/things/jobs/claim                       (GPU worker lease protocol)
 //
 // Auth posture:
 //   `/mcp` is now protected by `requireBearerAuth`. Unauthenticated calls
@@ -40,6 +43,7 @@ import { buildMcpServer } from './transport.js';
 import { buildApiRouter } from '../api/index.js';
 import { buildAuthRouter } from '../api/auth.js';
 import { buildDocumentsUploadRouter } from '../../app/api/documentsBearerUpload.js';
+import { buildThingsRouter } from '../../app/things/api/index.js';
 import { buildAs500OAuthProvider, issueAuthorizationCodeAfterConsent } from './oauth/provider.js';
 import { initJwtSecret } from './oauth/tokens.js';
 import { hasLiveConsent, recordConsent } from './oauth/store.js';
@@ -331,6 +335,12 @@ export function buildMcpApp(opts: McpAppOptions = {}): Express {
   // Must be mounted BEFORE the general /api router so /documents/upload is
   // not treated as a CRUDTable config id.
   app.use('/api/documents', buildDocumentsUploadRouter(bearerAuth));
+
+  // -------- My Things (upload, status, images, GPU worker lease) --------
+  // Mounted before the general /api router for the same reason. The CRUDTable
+  // config is registered as `my_things`, so its generated REST routes live at
+  // /api/my_things and never reach this path.
+  app.use('/api/things', buildThingsRouter(bearerAuth));
 
   // -------- REST API (mounted at /api) --------
   app.use('/api', buildApiRouter({ bearerAuth, debug: opts.debug }));

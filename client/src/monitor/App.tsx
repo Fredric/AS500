@@ -14,11 +14,30 @@ import JobCard from './components/JobCard';
 import LogConsole from './components/LogConsole';
 import PipelineFlow from './components/PipelineFlow';
 import ServiceCard from './components/ServiceCard';
+import ThingJobCard from './components/ThingJobCard';
+import ThingsFlow from './components/ThingsFlow';
 import { ago, duration } from './format';
 import { useMonitorSocket } from './useMonitorSocket';
-import type { ComponentGroup, ComponentStatus } from './types';
+import type { ComponentGroup, ComponentStatus, ThingsQueueSnapshot } from './types';
 
 const POLL_CHOICES = [1000, 2500, 5000, 10000];
+
+const EMPTY_THINGS_QUEUE: ThingsQueueSnapshot = {
+  available: false,
+  error: null,
+  counts: { queued: 0, processing: 0, completed: 0, failed: 0 },
+  totals: { things: 0, processed: 0 },
+  throughput: {
+    completedLastHour: 0,
+    completedLast24h: 0,
+    failedLast24h: 0,
+    avgDurationSec: null,
+    avgGenerateSec: null,
+    lastGenerateSec: null,
+  },
+  runners: [],
+  jobs: [],
+};
 
 const GROUP_TITLES: Record<ComponentGroup, string> = {
   as500: 'AS500',
@@ -94,6 +113,9 @@ export default function App() {
         snapshot.queue.totals.tables,
         snapshot.queue.counts.processing,
         snapshot.queue.counts.failed,
+        snapshot.thingsQueue?.counts.processing,
+        snapshot.thingsQueue?.counts.failed,
+        snapshot.thingsQueue?.counts.completed,
       ].join(':')
     : '';
 
@@ -144,9 +166,11 @@ export default function App() {
   }
 
   const { queue, gpu } = snapshot;
+  const thingsQueue = snapshot.thingsQueue ?? EMPTY_THINGS_QUEUE;
   const activeJobs = queue.jobs.filter((j) => j.state === 'processing' || j.state === 'queued');
   const recentJobs = queue.jobs.filter((j) => j.state === 'completed' || j.state === 'failed');
   const failedJobs = recentJobs.filter((j) => j.state === 'failed');
+  const thingActive = thingsQueue.jobs.filter((j) => j.state === 'processing' || j.state === 'queued');
   const staleMs = lastUpdateAt ? Date.now() - lastUpdateAt : null;
   const logErrorsBySource = new Map(snapshot.logSources.map((s) => [s.key, s.errorCount]));
 
@@ -212,6 +236,7 @@ export default function App() {
       )}
 
       <PipelineFlow snapshot={snapshot} />
+      <ThingsFlow snapshot={snapshot} />
 
       <div className="mon-grid">
         <div className="mon-col">
@@ -269,6 +294,77 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="mon-panel">
+            <div className="mon-panel-head">
+              <span className="mon-panel-title">My Things</span>
+              <span className="mon-panel-sub">
+                {thingsQueue.available
+                  ? `last generate ${duration(thingsQueue.throughput.lastGenerateSec)} · ` +
+                    `avg ${duration(thingsQueue.throughput.avgGenerateSec)} · ` +
+                    `${thingsQueue.throughput.completedLast24h} done / ${thingsQueue.throughput.failedLast24h} failed in 24h`
+                  : 'unavailable'}
+              </span>
+            </div>
+            <div className="mon-panel-body">
+              <div className="mon-stats">
+                <div className={`mon-stat${thingsQueue.counts.queued > 0 ? ' warn' : ''}`}>
+                  <div className="mon-stat-label">Queued</div>
+                  <div className="mon-stat-value">{thingsQueue.counts.queued}</div>
+                  <div className="mon-stat-foot">waiting for GPU worker</div>
+                </div>
+                <div className={`mon-stat${thingsQueue.counts.processing > 0 ? ' hot' : ''}`}>
+                  <div className="mon-stat-label">Processing</div>
+                  <div className="mon-stat-value">{thingsQueue.counts.processing}</div>
+                  <div className="mon-stat-foot">Qwen generate in flight</div>
+                </div>
+                <div className="mon-stat">
+                  <div className="mon-stat-label">Last generate</div>
+                  <div className="mon-stat-value">{duration(thingsQueue.throughput.lastGenerateSec)}</div>
+                  <div className="mon-stat-foot">GPU only, not download/upload</div>
+                </div>
+                <div className="mon-stat">
+                  <div className="mon-stat-label">Avg generate</div>
+                  <div className="mon-stat-value">{duration(thingsQueue.throughput.avgGenerateSec)}</div>
+                  <div className="mon-stat-foot">completed in last 24h</div>
+                </div>
+                <div className="mon-stat">
+                  <div className="mon-stat-label">Sprites</div>
+                  <div className="mon-stat-value">{thingsQueue.totals.processed}</div>
+                  <div className="mon-stat-foot">{thingsQueue.totals.things} things total</div>
+                </div>
+                <div className={`mon-stat${thingsQueue.counts.failed > 0 ? ' bad' : ''}`}>
+                  <div className="mon-stat-label">Failed</div>
+                  <div className="mon-stat-value">{thingsQueue.counts.failed}</div>
+                  <div className="mon-stat-foot">{thingsQueue.throughput.failedLast24h} in last 24h</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mon-panel">
+            <div className="mon-panel-head">
+              <span className="mon-panel-title">Thing jobs</span>
+              <span className="mon-panel-sub">
+                {thingActive.length} in flight · generate / job / wall clock
+              </span>
+            </div>
+            <div className="mon-panel-body">
+              {thingsQueue.jobs.length === 0 ? (
+                <div className="mon-empty">
+                  Nothing in the Things queue. Upload a photo from the phone, or{' '}
+                  <code>POST /api/things/upload</code>. Start the GPU worker from Command Prompt:{' '}
+                  <code>cd /d c:\Users\fredr\code\as500-images && start.cmd</code>
+                </div>
+              ) : (
+                <div className="mon-jobs">
+                  {thingsQueue.jobs.map((j) => (
+                    <ThingJobCard job={j} key={j.id} />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

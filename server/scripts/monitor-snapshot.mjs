@@ -41,6 +41,23 @@ for (const j of s.queue.jobs.slice(0, 6)) {
   );
 }
 
+const tq = s.thingsQueue ?? { available: false, counts: {}, throughput: {}, jobs: [], runners: [] };
+console.log('\nTHINGS');
+console.log(`  available: ${tq.available}${tq.error ? ` (${tq.error})` : ''}`);
+console.log(`  counts:    ${JSON.stringify(tq.counts)}`);
+console.log(`  totals:    ${JSON.stringify(tq.totals)}`);
+console.log(`  throughput:${JSON.stringify(tq.throughput)}`);
+console.log(`  runners:   ${(tq.runners ?? []).map((r) => `${r.id}${r.stale ? ' (stale)' : ''}`).join(', ') || 'none'}`);
+console.log(`  jobs:      ${(tq.jobs ?? []).length}`);
+for (const j of (tq.jobs ?? []).slice(0, 6)) {
+  const gen = j.generateSec != null ? `${Number(j.generateSec).toFixed(1)}s` : '-';
+  const wall = j.durationSec != null ? `${Number(j.durationSec).toFixed(1)}s` : '-';
+  console.log(
+    `    ${pad(j.state, 11)} ${pad(j.stage ?? '-', 12)} generate=${pad(gen, 7)} wall=${pad(wall, 7)} ` +
+      `${j.thingName ?? 'thing#' + j.thingId}`,
+  );
+}
+
 console.log('\nGPU');
 console.log(`  source: ${s.gpu.source}   used: ${s.gpu.memoryUsedMb ?? '-'} MB`);
 for (const c of s.gpu.consumers) console.log(`    ${pad(c.label, 44)} ${c.vramMb ?? '-'} MB  ${c.detail}`);

@@ -9,6 +9,8 @@ import {
   unique,
   index,
   customType,
+  jsonb,
+  bigint,
 } from 'drizzle-orm/pg-core';
 import { users } from '../../core/db/schema.js';
 
@@ -135,6 +137,107 @@ export const documentItems = pgTable('document_items', {
   index('idx_document_items_folder_id').on(t.folder_id),
   index('idx_document_items_content_hash').on(t.content_hash),
 ]);
+
+// ============================================
+// My Things — photographed objects turned into isometric sprites
+// ============================================
+//
+// A Thing owns its own files under server/data/things/{userId}/{thingId}/,
+// deliberately outside My Documents: the source photo is raw material for a
+// generation, not a document the user filed.
+//
+// Thing folders are organizational only, for now — a separate tree from
+// document_folders (a Thing is deliberately not a document). `folder_id` is
+// `set null` on folder delete rather than cascading: a folder is scaffolding,
+// the sprite inside it is not disposable. `parent_id` is a plain int with no
+// FK, matching document_folders — self-references are enforced in code, not
+// the schema, so a folder's own subtree can be deleted without ordering games.
+
+export const thingFolders = pgTable('thing_folders', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parent_id: integer('parent_id'),
+  name: text('name').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_thing_folders_user_id').on(t.user_id),
+  index('idx_thing_folders_parent_id').on(t.parent_id),
+]);
+
+export const myThings = pgTable('my_things', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  folder_id: integer('folder_id').references(() => thingFolders.id, { onDelete: 'set null' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  category: text('category'),
+
+  source_path: text('source_path'),
+  source_mime: text('source_mime'),
+  source_width: integer('source_width'),
+  source_height: integer('source_height'),
+
+  processed_path: text('processed_path'),
+  processed_mime: text('processed_mime'),
+  processed_width: integer('processed_width'),
+  processed_height: integer('processed_height'),
+
+  status: text('status').default('draft').notNull(),
+  // Rolled up from the active job so a status poll is one indexed row read.
+  stage: text('stage'),
+  progress: integer('progress'),
+  blocked_reason: text('blocked_reason'),
+
+  // Snapshotted at enqueue time, never read back from config: an old Thing
+  // must keep recording the prompt that actually produced it.
+  prompt: text('prompt'),
+  seed: bigint('seed', { mode: 'number' }),
+  model: text('model'),
+
+  metadata: jsonb('metadata'),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_my_things_user_id').on(t.user_id),
+  index('idx_my_things_status').on(t.status),
+  index('idx_my_things_folder_id').on(t.folder_id),
+]);
+
+export const thingJobs = pgTable('thing_jobs', {
+  id: text('id').primaryKey(),
+  thing_id: integer('thing_id').notNull().references(() => myThings.id, { onDelete: 'cascade' }),
+  user_id: integer('user_id').notNull(),
+  processor: text('processor').notNull(),
+  params: jsonb('params'),
+
+  state: text('state').default('queued').notNull(),
+  stage: text('stage'),
+  progress: integer('progress'),
+
+  attempts: integer('attempts').default(0).notNull(),
+  max_attempts: integer('max_attempts').default(3).notNull(),
+  error: text('error'),
+  traceback: text('traceback'),
+  result: jsonb('result'),
+
+  locked_by: text('locked_by'),
+  locked_at: timestamp('locked_at', { withTimezone: true }),
+  lease_expires_at: timestamp('lease_expires_at', { withTimezone: true }),
+  created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  started_at: timestamp('started_at', { withTimezone: true }),
+  finished_at: timestamp('finished_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_thing_jobs_state_created').on(t.state, t.created_at),
+  index('idx_thing_jobs_thing_id').on(t.thing_id),
+]);
+
+export const jobRunners = pgTable('job_runners', {
+  id: text('id').primaryKey(),
+  capabilities: text('capabilities').array(),
+  version: text('version'),
+  last_seen_at: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const documentChunks = pgTable('document_chunks', {
   id: serial('id').primaryKey(),

@@ -2,6 +2,7 @@ import { registerMenuItems } from '../../core/menus/menuRegistry.js';
 import { initTimeRegV2Context } from '../configs/timeRegV2.js';
 import { initMotorcyclesContext } from '../configs/motorcyclesConfig.js';
 import { initDocumentsContext } from '../configs/documentsConfig.js';
+import { initMyThingsContext } from '../configs/myThingsConfig.js';
 import { PERMISSIONS } from '../../core/services/access.js';
 
 registerMenuItems([
@@ -20,6 +21,14 @@ registerMenuItems([
     requirePermission: PERMISSIONS.DOCUMENTS_READ,
     configId: 'documents',
     initContext: initDocumentsContext,
+  },
+  {
+    type: 'crudtable',
+    key: 'my_things',
+    name: 'My Things',
+    requirePermission: PERMISSIONS.THINGS_READ,
+    configId: 'my_things',
+    initContext: initMyThingsContext,
   },
   {
     type: 'menu',

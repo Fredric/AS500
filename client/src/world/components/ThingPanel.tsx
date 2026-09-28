@@ -9,6 +9,7 @@
 
 import { useState } from 'react';
 import type { ResolvedBook, ResolvedThing } from '../types';
+import { worldApiUrl } from '../useWorldSocket';
 
 interface Props {
   thing: ResolvedThing;
@@ -66,6 +67,17 @@ export default function ThingPanel({ thing, onClose, onSelect, onOpenBook, onSet
           {thing.reason ? ` — ${thing.reason}` : ''}
         </dd>
       </dl>
+
+      {thing.sprite && worldApiUrl(thing.sprite.url) && (
+        <section className="panel__section">
+          <h3>Sprite</h3>
+          <img
+            src={worldApiUrl(thing.sprite.url) ?? undefined}
+            alt={thing.label}
+            style={{ maxWidth: '100%', background: 'repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 16px 16px' }}
+          />
+        </section>
+      )}
 
       {thing.service && (
         <section className="panel__section">

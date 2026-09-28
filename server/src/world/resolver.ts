@@ -165,21 +165,21 @@ async function resolveRecordBinding(
   actor: WorldActor,
   configId: string,
   recordId: string | number,
-): Promise<Pick<ResolvedThing, 'access' | 'reason' | 'contents'>> {
+): Promise<Pick<ResolvedThing, 'access' | 'reason' | 'contents' | 'sprite'>> {
   const config = getConfig(configId);
   if (!config) {
-    return { access: 'error', reason: `No registered config '${configId}'`, contents: null };
+    return { access: 'error', reason: `No registered config '${configId}'`, contents: null, sprite: null };
   }
   if (!actorHasPermission(actor, config.requirePermission)) {
-    return { access: 'denied', reason: `Requires ${config.requirePermission}`, contents: null };
+    return { access: 'denied', reason: `Requires ${config.requirePermission}`, contents: null, sprite: null };
   }
 
   const call = config.services.read;
   if (!call) {
-    return { access: 'error', reason: `Config '${configId}' has no read service`, contents: null };
+    return { access: 'error', reason: `Config '${configId}' has no read service`, contents: null, sprite: null };
   }
   if (!actorHasPermission(actor, call.requirePermission)) {
-    return { access: 'denied', reason: `Requires ${call.requirePermission}`, contents: null };
+    return { access: 'denied', reason: `Requires ${call.requirePermission}`, contents: null, sprite: null };
   }
 
   const ctx = synthesizeWorldContext(actor, { id: recordId });
@@ -190,12 +190,18 @@ async function resolveRecordBinding(
 
   const fn = call.service[call.method];
   if (typeof fn !== 'function') {
-    return { access: 'error', reason: `Service method '${call.method}' not found`, contents: null };
+    return { access: 'error', reason: `Service method '${call.method}' not found`, contents: null, sprite: null };
   }
 
   const params = call.params ? await call.params(ctx) : undefined;
   const record = (params !== undefined ? await fn(params) : await fn()) as Record<string, unknown> | null;
-  if (!record) return { access: 'error', reason: 'Record not found', contents: null };
+  if (!record) return { access: 'error', reason: 'Record not found', contents: null, sprite: null };
+
+  const numericId = Number(recordId);
+  const sprite =
+    configId === 'my_things' && record.has_processed && Number.isFinite(numericId)
+      ? { url: `/api/things/${numericId}/image/processed`, recordId: numericId }
+      : null;
 
   return {
     access: 'ok',
@@ -205,6 +211,7 @@ async function resolveRecordBinding(
       preview: [{ id: recordId, label: labelRecord(config, record) }],
       truncated: false,
     },
+    sprite,
   };
 }
 
@@ -227,6 +234,7 @@ export async function resolveThing(
     books: null,
     note: null,
     door: null,
+    sprite: null,
     children,
   };
 

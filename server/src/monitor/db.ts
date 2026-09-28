@@ -7,8 +7,8 @@
  */
 
 import pg from 'pg';
-import { DATABASE_URL, LOCK_TIMEOUT_SECONDS } from './config.js';
-import type { JobRow, QueueSnapshot } from './types.js';
+import { DATABASE_URL, LOCK_TIMEOUT_SECONDS, THINGS_RUNNER_STALE_MS } from './config.js';
+import type { JobRow, QueueSnapshot, ThingJobRow, ThingRunnerRow, ThingsQueueSnapshot } from './types.js';
 import { deriveStages } from './pipeline.js';
 
 const pool = new pg.Pool({
@@ -257,6 +257,233 @@ export async function readQueue(jobLimit = 30): Promise<QueueSnapshot> {
     };
   } catch (err) {
     return { ...EMPTY_QUEUE, error: (err as Error).message };
+  }
+}
+
+const EMPTY_THINGS_QUEUE: ThingsQueueSnapshot = {
+  available: false,
+  error: null,
+  counts: { queued: 0, processing: 0, completed: 0, failed: 0 },
+  totals: { things: 0, processed: 0 },
+  throughput: {
+    completedLastHour: 0,
+    completedLast24h: 0,
+    failedLast24h: 0,
+    avgDurationSec: null,
+    avgGenerateSec: null,
+    lastGenerateSec: null,
+  },
+  runners: [],
+  jobs: [],
+};
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function workingSizeLabel(result: Record<string, unknown> | null): string | null {
+  const size = result?.workingSize;
+  if (Array.isArray(size) && size.length >= 2) {
+    return `${size[0]}×${size[1]}`;
+  }
+  return null;
+}
+
+/**
+ * My Things sprite jobs + the as500-images runner registry. Same pool as the
+ * document queue; missing tables degrade to empty rather than failing the poll
+ * (a checkout that has not applied migration 0014 yet is a valid state).
+ */
+export async function readThingQueue(jobLimit = 30): Promise<ThingsQueueSnapshot> {
+  try {
+    const hasJobs = await tableExists('thing_jobs');
+    if (!hasJobs) {
+      return {
+        ...EMPTY_THINGS_QUEUE,
+        error: 'Table thing_jobs does not exist — apply the AS500 migrations (restart the server).',
+      };
+    }
+
+    const hasRunners = await tableExists('job_runners');
+    const hasThings = await tableExists('my_things');
+
+    const [stateRes, totalsRes, throughputRes, jobsRes, runnersRes] = await Promise.all([
+      pool.query<{ state: string; n: number }>(
+        `SELECT state, COUNT(*)::int AS n FROM thing_jobs GROUP BY state`,
+      ),
+      hasThings
+        ? pool.query<{ things: number; processed: number }>(
+            `SELECT
+               COUNT(*)::int AS things,
+               COUNT(*) FILTER (WHERE processed_path IS NOT NULL)::int AS processed
+             FROM my_things`,
+          )
+        : Promise.resolve({ rows: [{ things: 0, processed: 0 }] }),
+      pool.query<{
+        last_hour: number;
+        last_24h: number;
+        failed_24h: number;
+        avg_duration: number | null;
+        avg_generate: number | null;
+        last_generate: number | null;
+      }>(
+        `SELECT
+           COUNT(*) FILTER (WHERE state = 'completed' AND finished_at > now() - INTERVAL '1 hour')::int AS last_hour,
+           COUNT(*) FILTER (WHERE state = 'completed' AND finished_at > now() - INTERVAL '24 hours')::int AS last_24h,
+           COUNT(*) FILTER (WHERE state = 'failed' AND finished_at > now() - INTERVAL '24 hours')::int AS failed_24h,
+           AVG(EXTRACT(EPOCH FROM (finished_at - started_at)))
+             FILTER (WHERE state = 'completed' AND started_at IS NOT NULL AND finished_at > now() - INTERVAL '24 hours')
+             AS avg_duration,
+           AVG((result->>'generateMs')::float / 1000.0)
+             FILTER (WHERE state = 'completed' AND result ? 'generateMs' AND finished_at > now() - INTERVAL '24 hours')
+             AS avg_generate,
+           (
+             SELECT (result->>'generateMs')::float / 1000.0
+             FROM thing_jobs
+             WHERE state = 'completed' AND result ? 'generateMs'
+             ORDER BY finished_at DESC NULLS LAST
+             LIMIT 1
+           ) AS last_generate
+         FROM thing_jobs`,
+      ),
+      pool.query<{
+        id: string;
+        thing_id: number;
+        user_id: number;
+        processor: string;
+        state: string;
+        stage: string | null;
+        progress: number | null;
+        attempts: number;
+        error: string | null;
+        locked_by: string | null;
+        created_at: Date;
+        started_at: Date | null;
+        finished_at: Date | null;
+        lease_expires_at: Date | null;
+        duration_sec: number | null;
+        result: Record<string, unknown> | null;
+        thing_name: string | null;
+      }>(
+        `SELECT
+           j.id,
+           j.thing_id,
+           j.user_id,
+           j.processor,
+           j.state,
+           j.stage,
+           j.progress,
+           j.attempts,
+           j.error,
+           j.locked_by,
+           j.created_at,
+           j.started_at,
+           j.finished_at,
+           j.lease_expires_at,
+           EXTRACT(EPOCH FROM (COALESCE(j.finished_at, now()) - j.started_at)) AS duration_sec,
+           j.result,
+           t.name AS thing_name
+         FROM thing_jobs j
+         LEFT JOIN my_things t ON t.id = j.thing_id
+         ORDER BY (j.state IN ('processing', 'queued')) DESC, j.created_at DESC
+         LIMIT $1`,
+        [jobLimit],
+      ),
+      hasRunners
+        ? pool.query<{
+            id: string;
+            version: string | null;
+            last_seen_at: Date;
+            capabilities: string[] | null;
+          }>(
+            `SELECT id, version, last_seen_at, capabilities
+             FROM job_runners
+             ORDER BY last_seen_at DESC`,
+          )
+        : Promise.resolve({
+            rows: [] as Array<{
+              id: string;
+              version: string | null;
+              last_seen_at: Date;
+              capabilities: string[] | null;
+            }>,
+          }),
+    ]);
+
+    const counts = { queued: 0, processing: 0, completed: 0, failed: 0 };
+    for (const row of stateRes.rows) {
+      if (row.state in counts) counts[row.state as keyof typeof counts] = row.n;
+    }
+
+    const now = Date.now();
+    const runners: ThingRunnerRow[] = runnersRes.rows.map((r) => ({
+      id: r.id,
+      version: r.version,
+      lastSeenAt: r.last_seen_at.toISOString(),
+      stale: now - r.last_seen_at.getTime() > THINGS_RUNNER_STALE_MS,
+      capabilities: r.capabilities ?? [],
+    }));
+
+    const jobs: ThingJobRow[] = jobsRes.rows.map((r) => {
+      const extra = r.result && typeof r.result === 'object' ? r.result : null;
+      const generateMs = asNumber(extra?.generateMs);
+      const jobMs = asNumber(extra?.jobMs);
+      const stalled =
+        r.state === 'processing' &&
+        r.lease_expires_at != null &&
+        r.lease_expires_at.getTime() < now;
+
+      return {
+        id: r.id,
+        thingId: r.thing_id,
+        thingName: r.thing_name,
+        userId: r.user_id,
+        processor: r.processor,
+        state: r.state,
+        stage: r.stage,
+        progress: r.progress,
+        attempts: r.attempts,
+        error: r.error,
+        lockedBy: r.locked_by,
+        createdAt: r.created_at.toISOString(),
+        startedAt: iso(r.started_at),
+        finishedAt: iso(r.finished_at),
+        leaseExpiresAt: iso(r.lease_expires_at),
+        durationSec: r.duration_sec != null ? Number(r.duration_sec) : null,
+        generateSec: generateMs != null ? generateMs / 1000 : null,
+        jobSec: jobMs != null ? jobMs / 1000 : null,
+        workingSize: workingSizeLabel(extra),
+        backend: typeof extra?.backend === 'string' ? extra.backend : null,
+        stalled,
+      };
+    });
+
+    const t = totalsRes.rows[0];
+    const tp = throughputRes.rows[0];
+
+    return {
+      available: true,
+      error: null,
+      counts,
+      totals: { things: t?.things ?? 0, processed: t?.processed ?? 0 },
+      throughput: {
+        completedLastHour: tp?.last_hour ?? 0,
+        completedLast24h: tp?.last_24h ?? 0,
+        failedLast24h: tp?.failed_24h ?? 0,
+        avgDurationSec: tp?.avg_duration != null ? Number(tp.avg_duration) : null,
+        avgGenerateSec: tp?.avg_generate != null ? Number(tp.avg_generate) : null,
+        lastGenerateSec: tp?.last_generate != null ? Number(tp.last_generate) : null,
+      },
+      runners,
+      jobs,
+    };
+  } catch (err) {
+    return { ...EMPTY_THINGS_QUEUE, error: (err as Error).message };
   }
 }
 

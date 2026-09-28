@@ -418,7 +418,7 @@ Tokens issued this way carry sentinel `client_id = 'as500-direct'` and are other
 
 ## Ingest Monitor (admin dashboard)
 
-A standalone admin page at **`http://localhost:5173/ingestmonitor`** that shows every moving part of the document-ingestion / RAG stack on one screen: what is running, what is failing, what is in the queue, and how far along the current document is.
+A standalone admin page at **`http://localhost:5173/ingestmonitor`** that shows every moving part of the document-ingestion / RAG stack **and** the My Things / as500-images GPU worker on one screen: what is running, what is failing, what is in the queue, and how long processing takes.
 
 It is deliberately **separate from the terminal app** — its own HTML entry point, its own React tree, its own WebSocket server and its own port. Deleting `server/src/monitor/` and `client/src/monitor/` removes it completely.
 
@@ -427,11 +427,13 @@ It is deliberately **separate from the terminal app** — its own HTML entry poi
 | Panel | Content |
 |---|---|
 | Ingestion pipeline | Animated flow: My Documents → docs API → job queue → worker → DOCLING (vLLM) → chunker → Ollama embed → pgvector → `knowledge_*`. Each node is coloured by the health of the service performing that hop; a dead service breaks the chain visibly. |
+| My Things pipeline | Compact flow: My Things → Thing jobs → as500-images (Qwen Image 2.1) → sprite. The worker node shows last generate time. |
 | Queue | Counts by job state, `document_items.ingest_status` histogram, chunk/page/image/table totals, 1h and 24h throughput, average duration. |
+| My Things / Thing jobs | `thing_jobs` counts, last/avg **generate** time (GPU `generate()` only), wall-clock job time, live elapsed on in-flight jobs. |
 | In flight / Failures / Recent jobs | Per-job stage track with one segment per pipeline stage, live counts (pages, chunks, vectors), elapsed time, lock owner and the full error text on failure. |
-| Service cards | as500-docs API + worker, vLLM, Ollama, as500-agent, AS500 server, Postgres, Docker Engine. Each shows health, latency, key facts, container state/uptime/restarts, and the **command to run when it is down**. |
-| Local GPU | Resident models and VRAM. Real telemetry via `nvidia-smi` when the server runs on the GPU host; otherwise inferred from Ollama `/api/ps` and vLLM `/v1/models` (labelled as inferred). |
-| Log console | Live tail of every container plus the as500-agent host log file, with per-source error/warning badges, level filter, text filter and follow mode. |
+| Service cards | as500-docs API + worker, **as500-images**, vLLM, Ollama, as500-agent, AS500 server, Postgres, Docker Engine. Each shows health, latency, key facts (for as500-images: last generate, avg 24h, in-flight elapsed), container state/uptime/restarts, and the **command to run when it is down**. |
+| Local GPU | Resident models and VRAM. Real telemetry via `nvidia-smi` when the server runs on the GPU host; otherwise inferred from Ollama `/api/ps` and vLLM `/v1/models` (labelled as inferred). as500-images is listed as a consumer while a runner heartbeat is live. |
+| Log console | Live tail of every container plus the as500-agent host log file **and as500-images `worker.log`**, with per-source error/warning badges, level filter, text filter and follow mode. |
 | Documents | Every `document_items` row with its folder breadcrumb, ingest status, embedded/total chunk ratio and artefact counts. Filterable, with a **Problems** filter for documents that claim to be `ready` but are missing chunks, vectors or a summary. Click a row to inspect it. |
 
 ### Document inspector
@@ -516,6 +518,7 @@ All optional; the defaults match the dev stack.
 | `MONITOR_LOG_LINES` | `600` | Ring-buffer size per log source |
 | `MONITOR_DOCKER_SOCKET` | `/var/run/docker.sock` | Engine API socket |
 | `MONITOR_AGENT_LOG` | `/host/as500-agent/agent_err.log` | as500-agent host log file |
+| `MONITOR_IMAGES_LOG` | `/host/as500-images/worker.log` | as500-images host worker log |
 | `MONITOR_DOCS_STORAGE` | `/host/docs-storage` | Mounted as500-docs `storage/` tree, for previewing extracted images |
 | `MONITOR_UPLOAD_ROOT` | `/app/data/documents` | Where original uploads live; served files are confined to this root |
 
@@ -525,15 +528,25 @@ Probe targets reuse the existing vars: `DOCS_API_URL`, `OLLAMA_BASE_URL`, `EMBED
 
 ### Docker requirements
 
-`docker-compose.yml` gives the server container three extra mounts. All are optional — the dashboard degrades gracefully and tells you what to add if they are missing.
+`docker-compose.yml` gives the server container four extra mounts. All are optional — the dashboard degrades gracefully and tells you what to add if they are missing.
 
 ```yaml
 - /var/run/docker.sock:/var/run/docker.sock:ro   # container status + log streaming
 - ../as500-agent:/host/as500-agent:ro            # as500-agent host stderr log
+- ../as500-images:/host/as500-images:ro          # as500-images worker.log
 - ../as500-docs/storage:/host/docs-storage:ro    # extracted page images for the inspector
 ```
 
 Adding or changing a mount needs `docker compose up -d server` (a plain `restart` will not apply it).
+
+**Start as500-images from Windows Command Prompt** (`cmd.exe`, not PowerShell):
+
+```
+cd /d c:\Users\fredr\code\as500-images
+start.cmd
+```
+
+Or: `.venv\Scripts\python.exe -u -m as500_images.worker`. Health on the ingest monitor comes from `job_runners.last_seen_at` (the worker has no inbound HTTP). Generate time is stored on `thing_jobs.result.generateMs` when a job completes.
 
 Server-side code changes need `docker compose restart server` — `tsx watch` does not receive filesystem events through Windows Docker volumes.
 

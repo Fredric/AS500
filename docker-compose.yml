@@ -26,6 +26,8 @@ services:
       # Ingest monitor: as500-agent runs natively on the host and redirects its
       # stderr to a file, so the log dir is mounted read-only to surface it.
       - ../as500-agent:/host/as500-agent:ro
+      # Ingest monitor: as500-images also runs on the host and appends worker.log.
+      - ../as500-images:/host/as500-images:ro
       # Ingest monitor: the document inspector renders the page images Docling
       # extracted, which as500-docs writes into its own storage/ tree.
       - ../as500-docs/storage:/host/docs-storage:ro
