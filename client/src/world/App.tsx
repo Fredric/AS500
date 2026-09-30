@@ -19,6 +19,7 @@ import ThingPanel from './components/ThingPanel';
 import DocumentsBrowserModal from './components/DocumentsBrowserModal';
 import Scene3D from './three/Scene3D';
 import { findThing, useWorldSocket, worldApiUrl } from './useWorldSocket';
+import { useTheme } from './themes';
 import type { ResolvedBook, ResolvedThing, WorldSpace } from './types';
 
 /** `?space=main_office` overrides; otherwise the first space is entered. */
@@ -53,11 +54,12 @@ export default function App() {
   const world = useWorldSocket(requestedSpace(), authed);
   const {
     connected, error, scene, actors, opened, browse,
-    enterSpace, openThing, closeThing, browseFolder, setNote, move, refresh,
+    enterSpace, openThing, closeThing, browseFolder, setNote, move, moveThing, refresh,
   } = world;
 
   const [openBook, setOpenBook] = useState<{ folderId: number; label: string } | null>(null);
   const [view, setView] = useState<'2d' | '3d'>('2d');
+  const { theme, themes, setTheme } = useTheme();
 
   // Signing off closes the modal so the gate takes over cleanly.
   useEffect(() => {
@@ -194,6 +196,15 @@ export default function App() {
             {actors.length} here{actors.length > 0 ? `: ${actors.map((a) => a.username).join(', ')}` : ''}
           </span>
 
+          <label className="topbar__space">
+            Theme
+            <select value={theme.id} onChange={(e) => setTheme(e.target.value)} aria-label="Theme">
+              {themes.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </label>
+
           <button type="button" onClick={() => setTerminalOpen(true)}>Terminal</button>
           <button type="button" onClick={() => setView(view === '2d' ? '3d' : '2d')}>
             {view === '2d' ? 'Enter 3D' : 'Back to 2D'}
@@ -222,6 +233,8 @@ export default function App() {
                 onOpenBook={openBookModal}
                 onEnterDoor={enterDoor}
                 onMove={move}
+                onMoveThing={moveThing}
+                symbols={theme.symbols}
               />
             ) : (
               <Scene3D

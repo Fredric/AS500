@@ -516,6 +516,28 @@ export async function updateThing(p: ThingWriteParams & { id: number }): Promise
   return toThingDisplay(row);
 }
 
+/**
+ * Save where a piece of furniture sits on the floorplan, and optionally which
+ * way it faces. Anything else in the transform (`scale`) is kept.
+ */
+export async function setThingPosition(p: { id: number; x: number; y: number; rot?: number }): Promise<WorldThingRow> {
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) throw new Error('Position must be numbers');
+  const current = await getThing(p.id);
+  if (!current) throw new Error('Object not found');
+  const transform: Transform = { ...(current.transform ?? {}), x: p.x, y: p.y };
+  if (p.rot !== undefined) {
+    if (!Number.isFinite(p.rot)) throw new Error('Rotation must be a number');
+    // Degrees clockwise, kept in [0, 360). 0 = the front faces south.
+    transform.rot = ((p.rot % 360) + 360) % 360;
+  }
+  const [row] = await db
+    .update(worldThings)
+    .set({ transform, updated_at: new Date() })
+    .where(eq(worldThings.id, p.id))
+    .returning();
+  return toThingRow(row);
+}
+
 export async function deleteThing(p: { id: number }): Promise<void> {
   // Children would be orphaned rather than cascade-deleted (parent_thing_id is a
   // plain column, matching document_folders.parent_id), so refuse explicitly

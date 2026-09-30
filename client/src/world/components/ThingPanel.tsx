@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import type { ResolvedBook, ResolvedThing } from '../types';
 import { worldApiUrl } from '../useWorldSocket';
+import { ContentsTile } from './ContentsTile';
 
 interface Props {
   thing: ResolvedThing;
@@ -106,10 +107,14 @@ export default function ThingPanel({ thing, onClose, onSelect, onOpenBook, onSet
           {thing.contents.count === 0 ? (
             <p className="panel__note">Empty.</p>
           ) : (
-            <ul className="contents">
-              {thing.contents.preview.map((row, i) => (
-                <li key={`${row.id ?? i}`}>{row.label}</li>
-              ))}
+            <ul className={thing.contents.preview.some((r) => r.icon || r.image) ? 'contents contents--tiles' : 'contents'}>
+              {thing.contents.preview.map((row, i) =>
+                row.icon || row.image ? (
+                  <ContentsTile key={`${row.id ?? i}`} row={row} />
+                ) : (
+                  <li key={`${row.id ?? i}`}>{row.label}</li>
+                ),
+              )}
               {thing.contents.truncated && (
                 <li className="contents__more">
                   … {thing.contents.count - thing.contents.preview.length} more

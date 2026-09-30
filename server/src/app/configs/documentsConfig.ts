@@ -24,6 +24,14 @@ export const documentsConfig: CRUDTableConfig = {
   requireAuth: true,
   requirePermission: PERMISSIONS.DOCUMENTS_READ,
 
+  // In a Virtual Office box: a book per file, a folder icon per subfolder.
+  world: {
+    item: (r) => {
+      if (r.kind === 'parent') return null;
+      return { icon: r.kind === 'folder' ? 'folder' : 'book' };
+    },
+  },
+
   // REST surface for the mobile app: browse, rename, and delete. `create` is
   // not exposed — nothing asks for it yet, and this config's other services
   // are untouched, so it stays a one-line addition to `operations` later.

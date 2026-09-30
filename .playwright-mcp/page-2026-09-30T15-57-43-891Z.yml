@@ -1,0 +1,14 @@
+- generic [ref=f1e61]:
+  - banner [ref=f1e62]:
+    - heading "AS500 · Virtual Office" [level=1] [ref=f1e63]
+    - generic [ref=f1e64]:
+      - text: Space
+      - combobox "Space" [disabled] [ref=f1e65]:
+        - option "(none yet)" [selected]
+    - generic [ref=f1e66]: 0 here
+    - button "Terminal" [ref=f1e67] [cursor=pointer]
+    - button "Enter 3D" [ref=f1e68] [cursor=pointer]
+    - button "Refresh" [ref=f1e69] [cursor=pointer]
+    - generic "reconnecting" [ref=f1e70]
+  - main [ref=f1e71]:
+    - paragraph [ref=f1e72]: Entering…

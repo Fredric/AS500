@@ -1,0 +1,171 @@
+/* ================================================================== *
+ * Theme: Garage
+ *
+ * Graphite, steel and concrete with one enamel-green action colour, mono
+ * figures and white inventory labels — from the Garage design system.
+ * Themes are switched by `data-theme` on <html> (see themes.ts); a new
+ * theme is a file like this one plus an entry in THEMES.
+ * ================================================================== */
+
+:root[data-theme='garage'] {
+  --w-bg: #eceae5;              /* concrete */
+  --w-surface: #ffffff;         /* panel */
+  --w-surface-sunken: #f4f2ee;  /* tile */
+  --w-line: #d9d5cc;
+  --w-line-strong: #1e1f22;     /* graphite */
+
+  --w-text: #1e1f22;
+  --w-text-dim: #5a6168;        /* steel */
+  --w-text-faint: #5a6168;
+
+  --w-accent: #2e5b4e;          /* enamel */
+  --w-accent-soft: rgba(46, 91, 78, 0.10);
+  --w-accent-strong: #2e5b4e;
+
+  --w-warning: #9a5b00;
+  --w-warning-bg: #f4e6cc;
+  --w-danger: #8e3b32;
+  --w-danger-bg: #f1dcd9;
+  --w-success: #2f7d4f;
+
+  --w-human: #1e1f22;
+  --w-agent: #9a5b00;
+  --w-mobile: #5a6168;
+
+  --w-book: #5a6168;
+  --w-book-hover: #3c6b5c;
+  --w-book-overflow: #a9aeb4;
+
+  --w-shadow: none;
+
+  --w-font-body: 'Barlow', system-ui, sans-serif;
+  --w-font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --w-font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* Top-down symbol palette (FurnitureSymbol) */
+  --w-sym-ink: #1e1f22;
+  --w-sym-ink-2: #2a2b2f;
+  --w-sym-ink-line: #4a4d52;
+  --w-sym-tile: #f4f2ee;
+  --w-sym-line: #cfcbc2;
+  --w-sym-steel: #5a6168;
+  --w-sym-steel-light: #a9aeb4;
+  --w-sym-enamel: #2e5b4e;
+  --w-sym-enamel-light: #3c6b5c;
+  --w-sym-oxblood: #8e3b32;
+  --w-sym-go: #2f7d4f;
+  --w-sym-caution: #9a5b00;
+}
+
+[data-theme='garage'] code { background: var(--w-surface-sunken); color: var(--w-text); font-family: var(--w-font-mono); }
+
+/* ---- top bar ---- */
+[data-theme='garage'] .topbar { background: #1e1f22; border-bottom: 0; padding: 12px 16px; }
+[data-theme='garage'] .topbar h1 { font-family: var(--w-font-display); font-size: 28px; line-height: 1; font-weight: 700; color: #fff; }
+[data-theme='garage'] .topbar__space,
+[data-theme='garage'] .topbar__actors {
+  color: #a9aeb4; font-family: var(--w-font-mono); font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+[data-theme='garage'] .topbar select,
+[data-theme='garage'] .topbar button {
+  background: transparent; color: #fff; border: 1.5px solid #a9aeb4; border-radius: 4px;
+  font-family: var(--w-font-display); font-weight: 700; font-size: 17px; padding: 5px 12px;
+}
+[data-theme='garage'] .topbar select option { color: #1e1f22; background: #fff; }
+[data-theme='garage'] .topbar button:hover:not(:disabled) { background: #2a2b2f; border-color: #fff; }
+[data-theme='garage'] .dot { border: 1.5px solid #fff; width: 10px; height: 10px; }
+
+/* ---- buttons and inputs elsewhere ---- */
+[data-theme='garage'] select,
+[data-theme='garage'] button {
+  border: 1.5px solid #1e1f22; border-radius: 4px; font-family: var(--w-font-display);
+  font-weight: 700; font-size: 16px;
+}
+[data-theme='garage'] button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color: #1e1f22; }
+
+/* ---- floor ---- */
+[data-theme='garage'] .floorplan__grid-line { stroke: #e2ded6; }
+[data-theme='garage'] .floorplan__border { stroke: #1e1f22; stroke-width: 0.12px; }
+
+/* ---- objects: white plate, graphite outline — state is the outline, not colour alone ---- */
+[data-theme='garage'] .thing rect { fill: var(--w-surface); stroke: #1e1f22; stroke-width: 0.052px; rx: 0.04px; ry: 0.04px; }
+[data-theme='garage'] .thing:hover rect { fill: var(--w-surface-sunken); stroke: #1e1f22; }
+[data-theme='garage'] .thing--bound rect { stroke: #1e1f22; fill: var(--w-surface); }
+[data-theme='garage'] .thing--bound:hover rect { fill: var(--w-surface-sunken); }
+[data-theme='garage'] .thing--unbound rect { stroke: #5a6168; stroke-dasharray: 0.2 0.14; }
+[data-theme='garage'] .thing--denied rect { stroke: #5a6168; stroke-dasharray: 0.3 0.2; fill: var(--w-surface-sunken); }
+[data-theme='garage'] .thing--denied .sym { opacity: 0.4; }
+[data-theme='garage'] .thing--error rect { stroke: #8e3b32; fill: var(--w-surface); }
+[data-theme='garage'] .thing--selected rect { stroke-width: 0.1px; filter: none; }
+[data-theme='garage'] .thing--type-rack rect { fill: #1e1f22; }
+[data-theme='garage'] .thing--type-rack:hover rect { fill: #2a2b2f; }
+[data-theme='garage'] .thing--type-plant rect { fill: none; stroke: none; pointer-events: all; }
+[data-theme='garage'] .thing--door rect,
+[data-theme='garage'] .thing--type-door rect { fill: #eceae5; stroke: #5a6168; stroke-dasharray: 0.16 0.1; }
+[data-theme='garage'] .thing--door:hover rect { fill: var(--w-surface-sunken); }
+[data-theme='garage'] .thing.note rect { stroke: #1e1f22; fill: var(--w-surface-sunken); stroke-width: 0.052px; }
+[data-theme='garage'] .thing__label { font-family: var(--w-font-display); fill: #1e1f22; }
+[data-theme='garage'] .thing__type,
+[data-theme='garage'] .thing__badge { font-family: var(--w-font-mono); fill: #5a6168; }
+[data-theme='garage'] .thing__door-label { fill: #1e1f22; font-family: var(--w-font-display); }
+[data-theme='garage'] .thing__note-body { font-family: var(--w-font-mono); fill: #5a6168; }
+
+/* ---- front bar + rotate handle ---- */
+[data-theme='garage'] .thing__front rect { fill: #1e1f22; }
+[data-theme='garage'] .thing__front polyline { stroke: #1e1f22; }
+[data-theme='garage'] .thing--type-rack .thing__front rect { fill: #fff; }
+[data-theme='garage'] .thing--type-rack .thing__front polyline { stroke: #fff; }
+[data-theme='garage'] .rotate-handle circle { fill: #fff; stroke: #1e1f22; stroke-width: 0.06px; }
+[data-theme='garage'] .rotate-handle text { fill: #1e1f22; }
+
+/* ---- inventory label above an object ---- */
+.label-tag rect,
+[data-theme='garage'] .thing .label-tag rect { fill: #fff; stroke: #1e1f22; stroke-width: 0.02px; }
+/* Symbol parts set their own fill/stroke inline; this only stops the plate outline leaking onto the ones that don't. */
+[data-theme='garage'] .thing .sym rect { stroke: none; }
+.label-tag__name { font-family: var(--w-font-display); font-weight: 700; fill: #1e1f22; }
+.label-tag__count { font-family: var(--w-font-mono); font-weight: 700; fill: #1e1f22; }
+
+/* ---- avatars: a graphite disc with a white ring ---- */
+[data-theme='garage'] .avatar circle { fill: #1e1f22; stroke: #fff; stroke-width: 0.06px; opacity: 1; }
+[data-theme='garage'] .avatar--agent circle { fill: #9a5b00; }
+[data-theme='garage'] .avatar__name { font-family: var(--w-font-display); font-weight: 700; fill: #1e1f22; }
+
+/* ---- panel ---- */
+[data-theme='garage'] .panel { border-left: 2px solid #1e1f22; background: var(--w-bg); }
+[data-theme='garage'] .panel__head { background: #1e1f22; border-bottom: 0; }
+[data-theme='garage'] .panel__head h2 { font-family: var(--w-font-display); font-size: 28px; line-height: 1.05; color: #fff; }
+[data-theme='garage'] .panel__head button { color: #a9aeb4; border: none; }
+[data-theme='garage'] .panel__head button:hover { background: none; color: #fff; }
+[data-theme='garage'] .panel__sub {
+  color: #a9aeb4; font-family: var(--w-font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px;
+}
+[data-theme='garage'] .panel__meta { background: var(--w-surface); border-bottom: 1px solid var(--w-line); }
+[data-theme='garage'] .panel__meta dt {
+  font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #5a6168;
+}
+[data-theme='garage'] .panel__meta dd { font-family: var(--w-font-mono); font-size: 12px; }
+[data-theme='garage'] .panel__section { border-top: 0; }
+[data-theme='garage'] .panel__section h3 { font-family: var(--w-font-body); font-weight: 700; letter-spacing: 0.6px; color: #5a6168; }
+[data-theme='garage'] .count { font-family: var(--w-font-mono); color: #1e1f22; }
+[data-theme='garage'] .contents li { border-bottom-color: #e2ded6; }
+[data-theme='garage'] .tile__art { background: var(--w-surface-sunken); border: 1px solid #cfcbc2; border-radius: 6px; }
+[data-theme='garage'] .tile__label { font-weight: 600; font-size: 13px; }
+[data-theme='garage'] .tile--busy .tile__art { border-color: #5a6168; }
+[data-theme='garage'] .children button { background: var(--w-surface); border-color: var(--w-line); }
+[data-theme='garage'] .children__count { font-family: var(--w-font-mono); color: #1e1f22; }
+
+/* ---- books on a bookshelf ---- */
+[data-theme='garage'] .book-spine rect { stroke: #1e1f22; stroke-width: 0.03px; }
+
+/* ---- modal ---- */
+[data-theme='garage'] .modal { border: 2px solid #1e1f22; border-radius: 6px; }
+[data-theme='garage'] .modal__head { background: #1e1f22; border-bottom: 0; color: #fff; }
+[data-theme='garage'] .modal__crumb { color: #a9aeb4; }
+[data-theme='garage'] .modal__crumb:hover { background: #2a2b2f; color: #fff; }
+[data-theme='garage'] .modal__crumb--current { color: #fff; }
+[data-theme='garage'] .modal__breadcrumb-sep { color: #5a6168; }
+[data-theme='garage'] .modal__close { color: #a9aeb4; border: none; }
+[data-theme='garage'] .modal__close:hover { color: #fff; }
+[data-theme='garage'] .modal__row-icon { color: #1e1f22; }

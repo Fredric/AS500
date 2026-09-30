@@ -120,7 +120,15 @@ export interface ResolvedContents {
   /** Total records behind this object, when the binding resolves to a collection. */
   count: number;
   /** A small display slice — never the whole table. */
-  preview: Array<{ id: string | number | null; label: string }>;
+  preview: Array<{
+    id: string | number | null;
+    label: string;
+    /** Set by the bound config's `world.item` — see `WorldConfig`. */
+    icon?: string;
+    /** World-server image path; the client prefixes `/world` and adds the token. */
+    image?: string;
+    tone?: 'ok' | 'busy' | 'warn';
+  }>;
   /** True when `count` exceeds the preview length. */
   truncated: boolean;
 }
@@ -220,6 +228,7 @@ export type WorldClientMessage =
   | { type: 'BROWSE_DOCUMENTS_FOLDER'; folderId: number | null }
   /** The graphical client's textarea for a postit/board is not CRUDTable-driven. */
   | { type: 'SET_NOTE'; thingId: number; body: string; color?: string }
+  | { type: 'MOVE_THING'; thingId: number; x: number; y: number; rot?: number }
   | { type: 'REFRESH' }
   | { type: 'PING' };
 

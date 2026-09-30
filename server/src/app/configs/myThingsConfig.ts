@@ -269,6 +269,19 @@ export const myThingsConfig: CRUDTableConfig = {
     });
   },
 
+  // In a Virtual Office box: a thing shows its generated sprite, a folder a folder.
+  world: {
+    previewLimit: 24,
+    item: (r) => {
+      if (r.kind === 'parent') return null;
+      if (r.kind === 'folder') return { icon: 'folder' };
+      if (r.hasProcessed && typeof r.id === 'number') {
+        return { image: `/api/things/${r.id}/image/processed` };
+      }
+      return { icon: 'thing', tone: r.status === 'ready' ? 'ok' : 'busy' };
+    },
+  },
+
   mcp: {
     name: 'my_things',
     description:

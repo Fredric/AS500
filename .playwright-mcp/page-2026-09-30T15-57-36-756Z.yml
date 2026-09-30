@@ -1,0 +1,17 @@
+- generic [ref=e4]:
+  - generic [ref=e5]: ● Connected
+  - generic [ref=e6]: v1.0.1 · 2026-09-30
+  - generic [ref=e7]:
+    - generic [ref=e14]: ╔════════════════════════════════════════╗
+    - generic [ref=e16]: ║ ║
+    - generic [ref=e18]: ║ A S 5 0 0 ║
+    - generic [ref=e20]: ║ TERMINAL SYSTEM ║
+    - generic [ref=e22]: ║ ║
+    - generic [ref=e24]: ╚════════════════════════════════════════╝
+    - generic [ref=e28]:
+      - generic [ref=e54]: "User . . . :"
+      - textbox [active] [ref=e55]
+    - generic [ref=e30]:
+      - generic [ref=e57]: "Password . :"
+      - textbox [ref=e58]
+    - generic [ref=e36]: Press ENTER to sign on

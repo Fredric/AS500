@@ -75,6 +75,8 @@ export interface WorldConnection {
   /** Write a postit/board's text. Not CRUDTable-driven — see server/src/world/index.ts's SET_NOTE case. */
   setNote: (thingId: number, body: string, color?: string) => void;
   move: (pose: { x: number; y: number; rot: number }) => void;
+  /** Save a piece of furniture's floorplan position (its transform x/y). */
+  moveThing: (thingId: number, x: number, y: number, rot?: number) => void;
   refresh: () => void;
 }
 
@@ -225,11 +227,15 @@ export function useWorldSocket(initialSpaceKey: string | null, enabled = true): 
     (pose: { x: number; y: number; rot: number }) => send({ type: 'MOVE', pose }),
     [send],
   );
+  const moveThing = useCallback(
+    (thingId: number, x: number, y: number, rot?: number) => send({ type: 'MOVE_THING', thingId, x, y, rot }),
+    [send],
+  );
   const refresh = useCallback(() => send({ type: 'REFRESH' }), [send]);
 
   return {
     connected, authed, error, scene, actors, opened, browse,
-    enterSpace, openThing, closeThing, browseFolder, setNote, move, refresh,
+    enterSpace, openThing, closeThing, browseFolder, setNote, move, moveThing, refresh,
   };
 }
 

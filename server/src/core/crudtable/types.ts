@@ -589,4 +589,33 @@ export interface CRUDTableConfig {
    * `services`.
    */
   api?: APIConfig;
+
+  /**
+   * How one record of this config looks when it is "in" a Virtual Office
+   * object (a box, drawer, shelf bound with `kind: 'crud'`). Optional: a
+   * config without it is drawn with the generic icon and its usual label.
+   * The world resolver calls `item` per previewed row — the config knows its
+   * own columns, the world never has to.
+   */
+  world?: WorldConfig;
+}
+
+/** Built-in glyphs the office client can draw without an image. */
+export type WorldIcon = 'generic' | 'thing' | 'book' | 'file' | 'folder' | 'bike';
+
+export interface WorldItemView {
+  icon?: WorldIcon;
+  /** World-server path (e.g. `/api/things/4/image/processed`); wins over `icon` when set. */
+  image?: string;
+  /** Falls back to the config's own label for the row. */
+  label?: string;
+  /** Small status hint, e.g. `busy` while a sprite is still generating. */
+  tone?: 'ok' | 'busy' | 'warn';
+}
+
+export interface WorldConfig {
+  /** Return `null` to leave a row out of the box (e.g. a `..` navigation row). */
+  item: (record: Record<string, unknown>) => WorldItemView | null;
+  /** How many rows to resolve for a box. Default 8. */
+  previewLimit?: number;
 }

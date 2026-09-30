@@ -45,6 +45,7 @@ import {
   getThing,
   listAllThingsInSpace,
   listSpaces,
+  setThingPosition,
 } from './services/worldService.js';
 import type { ResolvedScene, WorldClientMessage, WorldServerMessage } from './types.js';
 
@@ -419,6 +420,41 @@ async function handleClientMessage(client: Client, raw: string): Promise<void> {
       });
 
       send(client.ws, { type: 'THING_CHANGED', thing: await resolveThing(row, client.actor) });
+      return;
+    }
+
+    case 'MOVE_THING': {
+      // Dragging furniture on the floorplan. Same write permission as the
+      // Office Layout screens, and — like a binding that only resolves for its
+      // owner — only the object's owner (or an admin) may rearrange it.
+      if (!actorHasPermission(client.actor, PERMISSIONS.WORLD_WRITE)) {
+        send(client.ws, { type: 'ERROR', message: `Requires ${PERMISSIONS.WORLD_WRITE}` });
+        return;
+      }
+      const row = await getThing(msg.thingId);
+      if (!row) {
+        send(client.ws, { type: 'ERROR', message: `No object ${msg.thingId}` });
+        return;
+      }
+      const mine = client.actor.isAdmin || row.ownerUserId === null || row.ownerUserId === client.actor.userId;
+      if (!mine) {
+        send(client.ws, { type: 'ERROR', message: 'You can only move your own objects' });
+        return;
+      }
+
+      const moved = await setThingPosition({ id: msg.thingId, x: msg.x, y: msg.y, rot: msg.rot });
+      // The audit event marks the room dirty, so every viewer's scene rebuilds.
+      await writeAuditEvent({
+        event_type: 'crud',
+        action: 'update',
+        source: 'world',
+        user_id: client.actor.userId,
+        username: client.actor.username,
+        config_id: 'world_things',
+        record_id: String(msg.thingId),
+        ok: true,
+      });
+      send(client.ws, { type: 'THING_CHANGED', thing: await resolveThing(moved, client.actor) });
       return;
     }
 

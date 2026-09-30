@@ -1,0 +1,34 @@
+- generic [ref=f6e3]:
+  - banner [ref=f6e4]:
+    - heading "AS500 · Virtual Office" [level=1] [ref=f6e5]
+    - generic [ref=f6e6]:
+      - text: Space
+      - combobox "Space" [ref=f6e7] [cursor=pointer]:
+        - option "Main Office" [selected]
+    - generic [ref=f6e8]: "2 here: FREDRIC, FREDRIC"
+    - button "Terminal" [ref=f6e9] [cursor=pointer]
+    - button "Enter 3D" [ref=f6e10] [cursor=pointer]
+    - button "Refresh" [ref=f6e11] [cursor=pointer]
+    - generic "connected" [ref=f6e12]
+  - main [ref=f6e13]:
+    - img "Office floorplan" [ref=f6e14]:
+      - generic "FREDRIC's Desk — desk" [ref=f6e17]:
+        - generic: FREDRIC's Desk
+        - generic: desk
+        - generic: "1"
+      - generic "Workstation — workstation" [ref=f6e19]:
+        - generic: Workstati…
+        - generic: workstation
+      - generic "En Låda — box" [ref=f6e21]:
+        - generic: En Lå…
+        - generic: box
+        - generic: "7"
+      - generic "Garage Shelf — shelf" [ref=f6e23]:
+        - generic: Garage Shelf
+        - generic: shelf
+        - generic: "2"
+      - generic "Ingest Rack — rack" [ref=f6e25]:
+        - generic: Ingest Rack
+        - generic: rack
+      - generic [ref=f6e27]: FREDRIC
+      - generic [ref=f6e29]: FREDRIC

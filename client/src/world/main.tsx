@@ -14,6 +14,8 @@ import App from './App';
 // (e.g. `body`).
 import '../styles/terminal.css';
 import './world.css';
+// One file per theme, after world.css so a theme's rules win.
+import './theme-garage.css';
 
 ReactDOM.createRoot(document.getElementById('office-root')!).render(
   <React.StrictMode>

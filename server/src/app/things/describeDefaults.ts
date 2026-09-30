@@ -25,11 +25,15 @@ Respond with ONLY a JSON object, no other text, no markdown code fences, in exac
     "attributes": {
       "material": "primary material, e.g. steel, plastic, wood, or null",
       "condition": "e.g. new, used, worn, damaged, or null"
+    },
+    "size": {
+      "longestDimensionCm": "number: your best estimate of the object's longest real-world dimension in centimetres, or null",
+      "confidence": "low, medium or high"
     }
   }
 }
 
-Use null (not empty strings) for fields you cannot determine. "markings" is an array; use [] if none are visible. Output valid JSON only.`;
+Use null (not empty strings) for fields you cannot determine. "markings" is an array; use [] if none are visible. For "size", estimate the typical real-world size of this kind of object (or of this exact model if you recognise it), not how large it appears in the photo. Use "high" confidence only for objects with a well-known standard size; if you cannot judge, use null for longestDimensionCm. Output valid JSON only.`;
 
 export interface DescribeParams {
   prompt: string;

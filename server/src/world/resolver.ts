@@ -147,15 +147,24 @@ async function resolveCrudBinding(
   const params = call.params ? await call.params(ctx) : undefined;
   const result = params !== undefined ? await fn(params) : await fn();
   const raw = Array.isArray(result) ? (result as Record<string, unknown>[]) : [];
-  const records = contentRows(raw);
+  const world = config.world;
+  // A config that describes its own rows may also veto some (a `..` row).
+  const records = contentRows(raw).filter((r) => (world ? world.item(r) !== null : true));
+  const limit = world?.previewLimit ?? PREVIEW_LIMIT;
 
   const contents: ResolvedContents = {
     count: records.length,
-    preview: records.slice(0, PREVIEW_LIMIT).map((r) => ({
-      id: (r.id as string | number | undefined) ?? null,
-      label: labelRecord(config, r),
-    })),
-    truncated: records.length > PREVIEW_LIMIT,
+    preview: records.slice(0, limit).map((r) => {
+      const view = world?.item(r);
+      return {
+        id: (r.id as string | number | undefined) ?? null,
+        label: view?.label ?? labelRecord(config, r),
+        ...(view?.icon ? { icon: view.icon } : {}),
+        ...(view?.image ? { image: view.image } : {}),
+        ...(view?.tone ? { tone: view.tone } : {}),
+      };
+    }),
+    truncated: records.length > limit,
   };
 
   return { access: 'ok', reason: null, contents };

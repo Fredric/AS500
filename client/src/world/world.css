@@ -38,6 +38,11 @@
   --w-note-green:  #dcfce7;      --w-note-green-line:  #22a35d;
 
   --w-shadow: 0 8px 24px rgba(28, 33, 40, 0.12);
+
+  /* Type stacks — a theme may swap them (see theme-garage.css). */
+  --w-font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --w-font-display: var(--w-font-body);
+  --w-font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -46,7 +51,7 @@ body {
   margin: 0;
   background: var(--w-bg);
   color: var(--w-text);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--w-font-body);
   font-size: 14px;
 }
 
@@ -122,7 +127,8 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
 
 /* ---- objects ---- */
 
-.thing { cursor: pointer; }
+.thing { cursor: grab; touch-action: none; }
+.floorplan:active .thing { cursor: grabbing; }
 .thing rect {
   fill: var(--w-surface);
   stroke: var(--w-line-strong);
@@ -233,6 +239,21 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
 .contents, .children { list-style: none; margin: 0; padding: 0; }
 .contents li { padding: 4px 0; border-bottom: 1px solid var(--w-line); word-break: break-word; font-size: 13px; }
 .contents__more { color: var(--w-text-faint); border-bottom: none; }
+
+/* Contents drawn as tiles (sprite or glyph) instead of a text list. */
+.contents--tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px; }
+.contents--tiles li { border-bottom: none; padding: 0; }
+.contents--tiles .contents__more { grid-column: 1 / -1; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.tile__art {
+  width: 84px; height: 84px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--w-line); border-radius: 6px; overflow: hidden;
+}
+.tile__art img { width: 100%; height: 100%; object-fit: contain; }
+.tile__glyph { font-size: 32px; line-height: 1; }
+.tile--busy .tile__art { border-style: dashed; opacity: 0.7; }
+.tile--warn .tile__art { border-color: #d97706; }
+.tile__label { font-size: 12px; line-height: 1.2; max-width: 84px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 .children li { margin-bottom: 4px; }
 .children button {
@@ -385,3 +406,10 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
   font: inherit;
 }
 .term-layer__bar button:hover { background: #12331b; }
+
+/* Which way an object faces — a bar along its front edge. */
+.thing__front rect { fill: #d97706; }
+.thing__front polyline { stroke: #d97706; stroke-linecap: round; stroke-linejoin: round; }
+.rotate-handle { cursor: pointer; }
+.rotate-handle circle { fill: #fff; stroke: #2563eb; stroke-width: 0.05; }
+.rotate-handle text { fill: #2563eb; pointer-events: none; font-weight: 700; }

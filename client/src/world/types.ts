@@ -25,7 +25,15 @@ export interface Transform {
 
 export interface ResolvedContents {
   count: number;
-  preview: Array<{ id: string | number | null; label: string }>;
+  preview: Array<{
+    id: string | number | null;
+    label: string;
+    /** 'generic' | 'thing' | 'book' | 'file' | 'folder' | 'bike' — drawn by ContentsTile. */
+    icon?: string;
+    /** World-server path; resolve with `worldApiUrl`. Wins over `icon`. */
+    image?: string;
+    tone?: 'ok' | 'busy' | 'warn';
+  }>;
   truncated: boolean;
 }
 
@@ -115,6 +123,7 @@ export type WorldClientMessage =
   | { type: 'OPEN_THING'; thingId: number }
   | { type: 'BROWSE_DOCUMENTS_FOLDER'; folderId: number | null }
   | { type: 'SET_NOTE'; thingId: number; body: string; color?: string }
+  | { type: 'MOVE_THING'; thingId: number; x: number; y: number; rot?: number }
   | { type: 'REFRESH' }
   | { type: 'PING' };
 

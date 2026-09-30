@@ -15,12 +15,22 @@ import type { ResolvedThing } from './types';
 export const ROOM_W = 24;
 export const ROOM_H = 16;
 
+export type Rotation = 0 | 90 | 180 | 270;
+
+/** Snap any stored angle to a quarter turn. */
+export function quarterTurn(deg: number | undefined | null): Rotation {
+  if (deg == null || !Number.isFinite(deg)) return 0;
+  return ((((Math.round(deg / 90) * 90) % 360) + 360) % 360) as Rotation;
+}
+
 export interface Placed {
   thing: ResolvedThing;
   x: number;
   y: number;
   w: number;
   h: number;
+  /** Quarter-turn facing in degrees clockwise: 0 = front faces south (down the plan). */
+  rot: Rotation;
 }
 
 /** Rough footprint per object type, in room units. */
@@ -87,11 +97,14 @@ export function layoutThings(things: ResolvedThing[]): Placed[] {
     const bandRight = Math.min(ROOM_W - 0.5, ax * ROOM_W + ROOM_W * 0.26);
 
     for (const thing of group) {
-      const [w, h] = footprint(thing.type);
+      const rot = quarterTurn(thing.transform?.rot);
+      const [fw, fh] = footprint(thing.type);
+      // A quarter turn swaps the footprint's sides.
+      const [w, h] = rot === 90 || rot === 270 ? [fh, fw] : [fw, fh];
 
       // An explicit transform always wins — that is the whole point of the hint.
       if (thing.transform && Number.isFinite(thing.transform.x) && Number.isFinite(thing.transform.y)) {
-        placed.push({ thing, x: clamp(thing.transform.x, 0, ROOM_W - w), y: clamp(thing.transform.y, 0, ROOM_H - h), w, h });
+        placed.push({ thing, x: clamp(thing.transform.x, 0, ROOM_W - w), y: clamp(thing.transform.y, 0, ROOM_H - h), w, h, rot });
         continue;
       }
 
@@ -107,6 +120,7 @@ export function layoutThings(things: ResolvedThing[]): Placed[] {
         y: clamp(cursorY, 0, ROOM_H - h),
         w,
         h,
+        rot,
       });
 
       cursorX += w + 0.6;

@@ -855,6 +855,24 @@ already climbed the furniture tree (`parentThingId`) one level at a time; a
 the furniture tree first, and only once it's exhausted, pop one space level
 instead of leaving the screen.
 
+### Themes (2D floorplan)
+
+The office has switchable visual themes — a dropdown in the top bar, stored per
+browser in `localStorage` (`as500.world.theme`), never on the server. `themes.ts`
+holds the registry (`THEMES`) and `useTheme()`, which sets `data-theme` on `<html>`.
+
+- **Garage** (default) — graphite/steel/concrete, one enamel-green action colour,
+  mono figures, white inventory label tags, and top-down furniture symbols
+  (`components/FurnitureSymbol.tsx`). From the "Garage" design system.
+- **Classic** — the original plain light UI; `symbols: false`, so no symbols or tags.
+
+**Adding a theme:** add an entry to `THEMES`, and a `theme-<id>.css` (imported in
+`main.tsx`) that defines `:root[data-theme='<id>']` variables (`--w-*`, fonts,
+`--w-sym-*`) and any rules it needs. Set `symbols: true` only if it wants the symbol
+and label-tag layer. Every object also carries a front marker (`rot` in its
+transform: 0 = faces south, clockwise quarter turns) in every theme. The 3D view is
+not themed yet.
+
 ### Spatial model
 
 The server owns **containment** (`parent_thing_id`, `slot`, `zone`), not

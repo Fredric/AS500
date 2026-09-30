@@ -22,6 +22,7 @@ import { getAllConfigs } from '../core/crudtable/registry.js';
 import { users } from '../core/db/schema.js';
 import { motorcycles, myThings } from '../app/db/schema.js';
 import { listFolderPaths } from '../app/services/documentService.js';
+import { listThingFolderPaths } from '../app/services/thingService.js';
 import { COMPONENTS } from '../monitor/config.js';
 import { listSpaces } from './services/worldService.js';
 import type { ThingBindingKind } from './types.js';
@@ -42,7 +43,7 @@ export const BINDING_KIND_HELP: Record<ThingBindingKind, string> = {
 };
 
 /** Longest tag below, so the titles line up in the dropdown's fixed-width list. */
-const TAG_WIDTH = '[list/record]'.length;
+const TAG_WIDTH = '[thing folder]'.length;
 
 function tagged(tag: string, text: string): string {
   return `${`[${tag}]`.padEnd(TAG_WIDTH)} ${text}`.slice(0, 72);
@@ -104,6 +105,13 @@ export async function listBindingFilters(params: {
     title: tagged('folder', f.path),
   }));
 
+  // A `my_things` list is scoped by `folderId` too, but into the *thing* folder
+  // tree — a different id space from My Documents', hence the distinct tag.
+  const thingFolderRows = (await listThingFolderPaths({ userId: params.userId })).map((f) => ({
+    id: `folderId=${f.id}`,
+    title: tagged('thing folder', f.path),
+  }));
+
   const bikes = (
     await db
       .select()
@@ -129,5 +137,5 @@ export async function listBindingFilters(params: {
     title: tagged('thing', `${t.name}  (#${t.id} ${t.status})`),
   }));
 
-  return [...folders, ...bikes, ...things];
+  return [...folders, ...thingFolderRows, ...bikes, ...things];
 }
