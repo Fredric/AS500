@@ -6,10 +6,13 @@
 
 import { Billboard, Text } from '@react-three/drei';
 import type { Presence } from '../types';
-import { AGENT_COLOR, HUMAN_COLOR } from './colors';
+import { AGENT_COLOR, HUMAN_COLOR, MOBILE_COLOR } from './colors';
+
+const COLOR_BY_KIND = { human: HUMAN_COLOR, agent: AGENT_COLOR, mobile: MOBILE_COLOR } as const;
+const SUFFIX_BY_KIND = { human: '', agent: ' (agent)', mobile: ' (phone)' } as const;
 
 export default function AvatarMesh({ actor }: { actor: Presence }) {
-  const color = actor.kind === 'agent' ? AGENT_COLOR : HUMAN_COLOR;
+  const color = COLOR_BY_KIND[actor.kind];
   const { x, y } = actor.pose;
 
   return (
@@ -20,7 +23,7 @@ export default function AvatarMesh({ actor }: { actor: Presence }) {
       </mesh>
       <Billboard position={[0, 2.0, 0]}>
         <Text fontSize={0.3} color="#1c2128" anchorX="center" anchorY="bottom">
-          {actor.username}{actor.kind === 'agent' ? ' (agent)' : ''}
+          {actor.username}{SUFFIX_BY_KIND[actor.kind]}{actor.status ? ` · ${actor.status}` : ''}
         </Text>
       </Billboard>
     </group>

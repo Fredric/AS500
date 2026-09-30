@@ -16,6 +16,8 @@ const SESSION_COOKIE_NAME = 'as500_session';
 const ACCESS_TOKEN_COOKIE_NAME = 'as500_access_token';
 const REFRESH_TOKEN_COOKIE_NAME = 'as500_refresh_token';
 const DEVICE_ID_COOKIE_NAME = 'as500_device_id';
+/** Access tokens last an hour; renew well before that. */
+const TOKEN_REFRESH_EVERY_MS = 25 * 60 * 1000;
 
 function generateUuid(): string {
   const cryptoApi = globalThis.crypto;
@@ -119,10 +121,89 @@ export function useTerminal() {
   const storedAccessTokenRef = useRef(getCookie(ACCESS_TOKEN_COOKIE_NAME));
   const storedRefreshTokenRef = useRef(getCookie(REFRESH_TOKEN_COOKIE_NAME));
   const deviceIdRef = useRef(getDeviceId());
+  // When this page last stored a fresh access token; 0 = not since it loaded,
+  // which makes the first check after a page load renew it.
+  const lastTokenAtRef = useRef(0);
 
   // Connect to WebSocket (called on mount and after every disconnect)
   useEffect(() => {
     let destroyed = false;
+
+    /** Store a token pair sent by the server, in the cookies every tab (and the
+     *  virtual office, which authenticates with the access token) reads. */
+    function saveTokens(tokens: {
+      accessToken?: string | null;
+      refreshToken?: string | null;
+      accessExpiresAt?: string;
+      refreshExpiresAt?: string;
+    }) {
+      if (tokens.accessToken !== undefined) {
+        if (tokens.accessToken === null) {
+          deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
+          storedAccessTokenRef.current = null;
+        } else {
+          const expiryHours = tokens.accessExpiresAt
+            ? Math.max(0.1, (new Date(tokens.accessExpiresAt).getTime() - Date.now()) / 3600000)
+            : 1;
+          setCookie(ACCESS_TOKEN_COOKIE_NAME, tokens.accessToken, expiryHours);
+          storedAccessTokenRef.current = tokens.accessToken;
+          lastTokenAtRef.current = Date.now();
+        }
+      }
+
+      if (tokens.refreshToken !== undefined) {
+        if (tokens.refreshToken === null) {
+          deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
+          storedRefreshTokenRef.current = null;
+        } else {
+          const expiryHours = tokens.refreshExpiresAt
+            ? Math.max(0.1, (new Date(tokens.refreshExpiresAt).getTime() - Date.now()) / 3600000)
+            : 30 * 24;
+          setCookie(REFRESH_TOKEN_COOKIE_NAME, tokens.refreshToken, expiryHours);
+          storedRefreshTokenRef.current = tokens.refreshToken;
+        }
+      }
+    }
+
+    /**
+     * Ask the server for a new token pair while the session is live. The access
+     * token only lasts an hour and the server hands out new ones only on login
+     * or resume, so without this the access-token cookie silently expires under
+     * an active terminal — and the virtual office, which authenticates with it,
+     * stops working until a full sign-on.
+     *
+     * Reads the refresh token from the cookie rather than this tab's copy: the
+     * cookie is shared by every tab and the token rotates on use, so another
+     * tab may already have replaced it.
+     */
+    function refreshTokensIfDue() {
+      const ws = wsRef.current;
+      const sessionId = storedSessionRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN || !sessionId) return;
+      const refreshToken = getCookie(REFRESH_TOKEN_COOKIE_NAME);
+      if (!refreshToken) return;
+      const lapsed = !getCookie(ACCESS_TOKEN_COOKIE_NAME);
+      if (!lapsed && Date.now() - lastTokenAtRef.current < TOKEN_REFRESH_EVERY_MS) return;
+      const request: ClientRequest = {
+        sessionId,
+        screenId: '',
+        cursor: { row: 0, col: 0 },
+        input: {},
+        key: 'TOKEN_REFRESH',
+        refreshToken,
+        deviceId: deviceIdRef.current,
+      };
+      ws.send(JSON.stringify(request));
+    }
+
+    // Background tabs throttle timers, so also check the moment the tab is
+    // shown again or the network returns.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshTokensIfDue();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', refreshTokensIfDue);
+    const tokenCheckInterval = setInterval(refreshTokensIfDue, 60_000);
 
     function connect() {
       if (destroyed) return;
@@ -196,6 +277,16 @@ export function useTerminal() {
             return;
           }
 
+          // Token renewals are their own message type: store the new pair and
+          // leave the screen alone.
+          if (data.type === 'TOKEN_REFRESH') {
+            saveTokens(data);
+            return;
+          }
+          if (data.type === 'TOKEN_REFRESH_FAILED') {
+            return;
+          }
+
           // Route AI chat events to the registered handler — never treat them as screen updates
           if (typeof data.type === 'string' && data.type.startsWith('AI_CHAT_')) {
             aiChatHandlerRef.current?.(data as AiChatEvent);
@@ -226,31 +317,7 @@ export function useTerminal() {
             storedSessionRef.current = response.sessionId;
           }
 
-          if (response.accessToken !== undefined) {
-            if (response.accessToken === null) {
-              deleteCookie(ACCESS_TOKEN_COOKIE_NAME);
-              storedAccessTokenRef.current = null;
-            } else {
-              const expiryHours = response.accessExpiresAt
-                ? Math.max(0.1, (new Date(response.accessExpiresAt).getTime() - Date.now()) / 3600000)
-                : 1;
-              setCookie(ACCESS_TOKEN_COOKIE_NAME, response.accessToken, expiryHours);
-              storedAccessTokenRef.current = response.accessToken;
-            }
-          }
-
-          if (response.refreshToken !== undefined) {
-            if (response.refreshToken === null) {
-              deleteCookie(REFRESH_TOKEN_COOKIE_NAME);
-              storedRefreshTokenRef.current = null;
-            } else {
-              const expiryHours = response.refreshExpiresAt
-                ? Math.max(0.1, (new Date(response.refreshExpiresAt).getTime() - Date.now()) / 3600000)
-                : 30 * 24;
-              setCookie(REFRESH_TOKEN_COOKIE_NAME, response.refreshToken, expiryHours);
-              storedRefreshTokenRef.current = response.refreshToken;
-            }
-          }
+          saveTokens(response);
 
           // Clear session cookie on sign-off (returning to LOGIN after being authenticated)
           if (response.screenId === 'LOGIN' && state.screenId !== 'LOGIN' && state.screenId !== '') {
@@ -289,10 +356,18 @@ export function useTerminal() {
       };
 
       ws.onclose = () => {
-        setState(prev => ({ ...prev, connected: false }));
         if (heartbeatInterval) {
           clearInterval(heartbeatInterval);
         }
+
+        // A socket from a discarded effect run must not touch state. React
+        // StrictMode (dev) mounts twice and closes the first socket only once it
+        // opens — after the second one may already be live — so its late close
+        // would otherwise mark the working connection "Disconnected". The
+        // virtual office treats that as signed-out and keeps its login gate up.
+        if (destroyed) return;
+
+        setState(prev => ({ ...prev, connected: false }));
 
         // Schedule reconnect with exponential backoff (1s → 2s → 4s → … → 30s)
         if (!destroyed) {
@@ -312,6 +387,9 @@ export function useTerminal() {
 
     return () => {
       destroyed = true;
+      clearInterval(tokenCheckInterval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', refreshTokensIfDue);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;

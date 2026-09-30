@@ -413,9 +413,9 @@ export function buildThingsRouter(bearerAuth: RequestHandler): Router {
 
         const body = req.body as Record<string, unknown>;
         const description = typeof body.description === 'string' ? body.description.trim() : '';
-        const name = typeof body.name === 'string' && body.name.trim() !== ''
-          ? body.name.trim()
-          : deriveName(req.file.originalname);
+        // The photo's filename is not the Thing's name. Blank means "unnamed":
+        // it is stored as a placeholder and filled in from the description job.
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
         const category = typeof body.category === 'string' && body.category.trim() !== ''
           ? body.category.trim()
           : null;
@@ -453,7 +453,7 @@ export function buildThingsRouter(bearerAuth: RequestHandler): Router {
           toolName: 'REST:my_things.upload',
           op: 'create',
           user,
-          input: { name, hasDescription: description !== '', size: req.file.size },
+          input: { hasName: name !== '', hasDescription: description !== '', size: req.file.size },
           result: { content: [], isError: false },
           startedAtMs,
           source: 'api',
@@ -658,9 +658,4 @@ function isTerminal(status: string): boolean {
 
 function statusSignature(view: { status: string; stage: string | null; progress: number | null }): string {
   return `${view.status}|${view.stage ?? ''}|${view.progress ?? ''}`;
-}
-
-function deriveName(originalFilename: string): string {
-  const base = originalFilename.replace(/\.[^.]+$/, '').trim();
-  return base === '' ? 'Untitled' : base.slice(0, 60);
 }

@@ -38,6 +38,7 @@ import { getThingRow } from '../app/services/thingService.js';
 import { browseDocumentsFolder } from './documentsShelf.js';
 import { updateNote } from './services/notesService.js';
 import { startAgentPresenceTracking, sweepStaleAgents } from './agentPresence.js';
+import { startMobilePresenceTracking } from './mobilePresence.js';
 import * as presence from './presence.js';
 import {
   getSpaceByKey,
@@ -62,6 +63,7 @@ let presenceTimer: NodeJS.Timeout | null = null;
 let unsubscribeAudit: (() => void) | null = null;
 let unsubscribeSnapshot: (() => void) | null = null;
 let unsubscribeAgentPresence: (() => void) | null = null;
+let unsubscribeMobilePresence: (() => void) | null = null;
 
 /**
  * Space keys whose scene needs rebuilding on the next tick.
@@ -511,6 +513,8 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
   // Agents appear as occupants purely from their own MCP tool-call activity —
   // no new connection type, see agentPresence.ts.
   unsubscribeAgentPresence = startAgentPresenceTracking();
+  // Phones appear while their app is open — see mobilePresence.ts.
+  unsubscribeMobilePresence = startMobilePresenceTracking();
 
   // Bind all interfaces inside the container: a 127.0.0.1 bind is unreachable
   // through Docker's port mapping (502 from Caddy). Host exposure is limited by
@@ -526,6 +530,8 @@ export function startWorldServer(): ReturnType<typeof createServer> | null {
     unsubscribeSnapshot = null;
     unsubscribeAgentPresence?.();
     unsubscribeAgentPresence = null;
+    unsubscribeMobilePresence?.();
+    unsubscribeMobilePresence = null;
     stopTicking();
   });
 

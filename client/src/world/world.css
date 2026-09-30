@@ -26,6 +26,7 @@
 
   --w-human: #2f6fed;
   --w-agent: #d97706;
+  --w-mobile: #0d9488;
 
   --w-book: #92400e;
   --w-book-hover: #b45309;
@@ -160,7 +161,9 @@ button:hover:not(:disabled) { background: var(--w-surface-sunken); border-color:
 
 .avatar circle { fill: var(--w-human); opacity: 0.9; }
 .avatar--agent circle { fill: var(--w-agent); }
+.avatar--mobile circle { fill: var(--w-mobile); }
 .avatar__name { font-size: 0.34px; fill: var(--w-text-dim); pointer-events: none; }
+.avatar__status { font-size: 0.28px; fill: var(--w-text-dim); pointer-events: none; }
 
 /* ---- book spines (bookshelf furniture) ---- */
 

@@ -87,9 +87,18 @@ export function useWorldSocket(initialSpaceKey: string | null, enabled = true): 
   const [browse, setBrowse] = useState<DocumentsBrowseLevel | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  // The access-token cookie expires and is renewed behind this page's back (by
+  // the terminal), so whether a token exists has to be watched rather than read
+  // once at render — otherwise a page loaded in the gap between expiry and
+  // renewal would never connect.
+  const [hasToken, setHasToken] = useState(() => accessToken() != null);
+  useEffect(() => {
+    const id = setInterval(() => setHasToken(accessToken() != null), 2000);
+    return () => clearInterval(id);
+  }, []);
   // `enabled` is false while the login gate is still up: no token has been
   // issued yet, so there is nothing to connect with and no error to show.
-  const authed = enabled && accessToken() != null;
+  const authed = enabled && hasToken;
 
   // Held in a ref so the socket's onopen can rejoin the current room after a
   // reconnect without the effect needing to tear the socket down.
@@ -114,7 +123,11 @@ export function useWorldSocket(initialSpaceKey: string | null, enabled = true): 
     function connect() {
       if (destroyed) return;
       const url = worldWsUrl();
-      if (!url) return;
+      if (!url) {
+        // The token lapsed between retries; a renewed one is on its way.
+        timer = setTimeout(connect, 2000);
+        return;
+      }
 
       const ws = new WebSocket(url);
       wsRef.current = ws;

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { db } from '../../core/db/index.js';
 import { myThings, thingFolders } from '../db/schema.js';
 import { regenerateFolderCover } from './folderCoverService.js';
+import { emitThingsChanged } from '../things/events.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,6 +116,10 @@ export interface ThingListEntry {
    *  timestamp). The client uses it to know its cached image is stale and
    *  to bust local image caching that's otherwise keyed by a fixed path. */
   coverVersion: string | null;
+  /** `kind: 'thing'` only — when the row last changed. The phone keys its
+   *  image cache on it (once the Thing is `ready`), because regenerating a
+   *  sprite rewrites the same file and leaves `hasProcessed` unchanged. */
+  updatedAt?: string | null;
 }
 
 function formatTimestamp(value: Date | string): string {
@@ -148,6 +153,7 @@ function shapeThingEntry(r: typeof myThings.$inferSelect): Omit<ThingListEntry, 
     mainObject: extractMainObject(r.metadata),
     hasCover: false,
     coverVersion: null,
+    updatedAt: r.updated_at.toISOString(),
   };
 }
 
@@ -347,6 +353,7 @@ export async function createThingFolder(params: {
     .values({ user_id: params.userId, parent_id: params.folderId, name: trimmed })
     .returning();
 
+  emitThingsChanged(params.userId);
   return { id: folder.id, kind: 'folder', name: folder.name, modifiedAt: formatTimestamp(folder.updated_at) };
 }
 
@@ -375,6 +382,7 @@ export async function updateThingEntry(params: {
       .where(and(eq(thingFolders.id, params.id), eq(thingFolders.user_id, params.userId)))
       .returning();
     if (!folder) throw new Error('Folder not found');
+    emitThingsChanged(params.userId);
     return { id: folder.id, kind: 'folder', name: folder.name, modifiedAt: formatTimestamp(folder.updated_at) };
   }
 
@@ -422,6 +430,7 @@ export async function updateThingEntry(params: {
     }
   }
 
+  emitThingsChanged(params.userId);
   return { ...shapeThingEntry(row), kind: 'thing' };
 }
 
@@ -459,6 +468,7 @@ export async function deleteThingEntry(params: {
     await db
       .delete(thingFolders)
       .where(and(eq(thingFolders.user_id, params.userId), inArray(thingFolders.id, ids)));
+    emitThingsChanged(params.userId);
     return;
   }
 
@@ -521,6 +531,7 @@ export async function createThing(params: {
     })
     .returning();
 
+  emitThingsChanged(params.userId);
   return shape(row) as unknown as Record<string, unknown>;
 }
 
@@ -547,6 +558,7 @@ export async function updateThing(params: {
     .returning();
 
   if (!row) throw new Error('Thing not found or not owned by you');
+  emitThingsChanged(params.userId);
   return shape(row) as unknown as Record<string, unknown>;
 }
 
@@ -561,6 +573,7 @@ export async function deleteThing(params: { id: number; userId: number }): Promi
   // Files last: a failed unlink must not leave a row pointing at nothing.
   // thing_jobs rows go with the row itself via ON DELETE CASCADE.
   await rm(thingDirectory(params.userId, params.id), { recursive: true, force: true });
+  emitThingsChanged(params.userId);
 
   // Don't make the delete wait on a cover rebuild — the folder's item set
   // just changed, so the next check will see a different signature and
@@ -601,16 +614,23 @@ export async function createThingFromUpload(params: {
 
   // The row is inserted first because the storage path contains the id —
   // the Thing is what owns the directory, not the other way round.
+  // No name given = unnamed: store a placeholder and remember it, so the
+  // description job can name the Thing without ever overwriting a user's name
+  // (see applyDescribeResult). `originalFilename` only decides the file type;
+  // it is never used as a name.
+  const unnamed = params.name.trim() === '';
+  const storedName = unnamed ? UNNAMED_THING : params.name.trim();
   const [row] = await db
     .insert(myThings)
     .values({
       user_id: params.userId,
       folder_id: params.folderId ?? null,
-      name: params.name.trim() || 'Untitled',
+      name: storedName,
       description: params.description,
       category: params.category,
       status: 'draft',
       source_mime: mimeType,
+      metadata: unnamed ? { autoName: storedName } : null,
     })
     .returning();
 
@@ -624,6 +644,7 @@ export async function createThingFromUpload(params: {
     .where(eq(myThings.id, row.id))
     .returning();
 
+  emitThingsChanged(params.userId);
   return { id: updated.id, name: updated.name, status: updated.status };
 }
 
@@ -644,7 +665,12 @@ export async function setThingStatus(params: {
   if (params.progress !== undefined) patch.progress = params.progress;
   if (params.blockedReason !== undefined) patch.blocked_reason = params.blockedReason;
 
-  await db.update(myThings).set(patch).where(eq(myThings.id, params.thingId));
+  const [row] = await db
+    .update(myThings)
+    .set(patch)
+    .where(eq(myThings.id, params.thingId))
+    .returning({ user_id: myThings.user_id });
+  if (row) emitThingsChanged(row.user_id);
 }
 
 export async function setThingProcessedImage(params: {
@@ -672,22 +698,73 @@ export async function setThingProcessedImage(params: {
       updated_at: new Date(),
     })
     .where(eq(myThings.id, params.thingId));
+
+  emitThingsChanged(params.userId);
+}
+
+/** Name of a Thing uploaded without one, until the description job names it. */
+export const UNNAMED_THING = 'Untitled';
+
+const MAX_GENERATED_NAME = 120;
+const MAX_GENERATED_DESCRIPTION = 500;
+
+function generatedText(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1).trimEnd()}…` : trimmed;
 }
 
 /**
- * Merge object-extraction results into a Thing's metadata. Deliberately the
- * only thing this touches — status/stage/progress belong to the sprite job's
- * lifecycle, not the description job's, so a description rerun never makes a
- * `ready` Thing look busy again.
+ * Record the description job's object extraction on a Thing, and use it to
+ * fill in what the user left blank: the description when it is empty, and the
+ * name when it is still the filename-derived placeholder chosen at upload
+ * (`metadata.autoName`). Anything the user typed or later edited is left
+ * alone — a renamed Thing no longer equals its placeholder.
+ *
+ * Deliberately never touches status/stage/progress: those belong to the sprite
+ * job's lifecycle, so a description rerun never makes a `ready` Thing look busy.
  */
-export async function setThingMetadata(params: {
+export async function applyDescribeResult(params: {
   thingId: number;
-  metadata: Record<string, unknown>;
+  mainObject: Record<string, unknown>;
 }): Promise<void> {
-  await db
-    .update(myThings)
-    .set({ metadata: params.metadata, updated_at: new Date() })
+  const [current] = await db
+    .select({
+      user_id: myThings.user_id,
+      name: myThings.name,
+      description: myThings.description,
+      metadata: myThings.metadata,
+    })
+    .from(myThings)
     .where(eq(myThings.id, params.thingId));
+  if (!current) return;
+
+  const existing =
+    current.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+      ? (current.metadata as Record<string, unknown>)
+      : {};
+  const { autoName, ...rest } = existing;
+
+  const patch: Record<string, unknown> = {
+    metadata: { ...rest, mainObject: params.mainObject },
+    updated_at: new Date(),
+  };
+
+  const generatedName =
+    generatedText(params.mainObject.name, MAX_GENERATED_NAME) ??
+    generatedText(params.mainObject.genericName, MAX_GENERATED_NAME);
+  if (generatedName && typeof autoName === 'string' && current.name === autoName) {
+    patch.name = generatedName;
+  }
+
+  const generatedDescription = generatedText(params.mainObject.description, MAX_GENERATED_DESCRIPTION);
+  if (generatedDescription && (current.description ?? '').trim() === '') {
+    patch.description = generatedDescription;
+  }
+
+  await db.update(myThings).set(patch).where(eq(myThings.id, params.thingId));
+  emitThingsChanged(current.user_id);
 }
 
 /** Raw row including absolute file paths — for the byte-serving routes only. */

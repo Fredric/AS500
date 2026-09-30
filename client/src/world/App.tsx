@@ -35,6 +35,8 @@ interface TerminalStatus {
 export default function App() {
   const [spaces, setSpaces] = useState<WorldSpace[]>([]);
   const [spacesError, setSpacesError] = useState<string | null>(null);
+  // Distinguishes "loaded, and there are none" from "not loaded yet".
+  const [spacesLoaded, setSpacesLoaded] = useState(false);
 
   // Auth state is driven entirely by the embedded terminal, which resumes any
   // existing session from its cookie on mount. Until it reports back, the login
@@ -88,23 +90,42 @@ export default function App() {
 
   // The space list comes over HTTP rather than the socket: it is needed to pick
   // a room before entering one, and it never changes while you are standing in it.
+  // It retries until it succeeds, and waits for an access token to exist: the
+  // token can be missing for a moment while it is being renewed.
   useEffect(() => {
-    if (!authed) return;
-    const url = worldApiUrl('/api/spaces');
-    if (!url) return;
+    if (!authed || !world.authed) return;
 
     let cancelled = false;
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((body: { spaces: WorldSpace[] }) => {
-        if (cancelled) return;
-        setSpaces(body.spaces);
-        if (!requestedSpace() && body.spaces.length > 0) enterSpace(body.spaces[0].key);
-      })
-      .catch((err: Error) => !cancelled && setSpacesError(err.message));
+    let retry: ReturnType<typeof setTimeout> | null = null;
 
-    return () => { cancelled = true; };
-  }, [authed, enterSpace]);
+    function load() {
+      const url = worldApiUrl('/api/spaces');
+      if (!url) {
+        retry = setTimeout(load, 2000);
+        return;
+      }
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((body: { spaces: WorldSpace[] }) => {
+          if (cancelled) return;
+          setSpaces(body.spaces);
+          setSpacesLoaded(true);
+          setSpacesError(null);
+          if (!requestedSpace() && body.spaces.length > 0) enterSpace(body.spaces[0].key);
+        })
+        .catch((err: Error) => {
+          if (cancelled) return;
+          setSpacesError(err.message);
+          retry = setTimeout(load, 5000);
+        });
+    }
+    load();
+
+    return () => {
+      cancelled = true;
+      if (retry) clearTimeout(retry);
+    };
+  }, [authed, world.authed, enterSpace]);
 
   const selected = opened ?? null;
 
@@ -183,7 +204,7 @@ export default function App() {
 
         {(error || spacesError) && <div className="banner">{error ?? spacesError}</div>}
 
-        {spaces.length === 0 && !spacesError && (
+        {spacesLoaded && spaces.length === 0 && (
           <div className="banner banner--hint">
             No spaces yet. In the terminal: <strong>MAIN MENU → Virtual Office → Spaces</strong>,
             press F6 to create one, then <strong>T</strong> on it to place objects.

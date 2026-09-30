@@ -186,12 +186,14 @@ export interface ResolvedScene {
 export interface Presence {
   actorId: number;
   username: string;
-  kind: 'human' | 'agent';
+  kind: 'human' | 'agent' | 'mobile';
   spaceKey: string;
   /** Thing the actor is at or seated at, when any. */
   atThingId: number | null;
   pose: { x: number; y: number; rot: number };
   activity: 'idle' | 'walking' | 'reading' | 'typing';
+  /** What a phone is doing (`kind: 'mobile'` only) — reported by the app. */
+  status?: 'browsing' | 'capturing' | 'uploading';
   since: string;
 }
 

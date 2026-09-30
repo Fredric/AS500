@@ -15,7 +15,8 @@ import { db } from '../../core/db/index.js';
 import { myThings, thingJobs, jobRunners } from '../db/schema.js';
 import { currentQwenParams, QWEN_PROCESSOR } from './qwenDefaults.js';
 import { currentDescribeParams, DESCRIBE_PROCESSOR } from './describeDefaults.js';
-import { setThingMetadata, setThingProcessedImage, setThingStatus } from '../services/thingService.js';
+import { applyDescribeResult, setThingProcessedImage, setThingStatus } from '../services/thingService.js';
+import { emitThingsChanged } from './events.js';
 
 /**
  * How long a runner may be silent before we treat it as gone. Runners poll for
@@ -77,6 +78,7 @@ export async function enqueueQwenJob(params: {
     })
     .where(eq(myThings.id, params.thingId));
 
+  emitThingsChanged(params.userId);
   return jobId;
 }
 
@@ -377,7 +379,10 @@ export async function completeDescribeJob(params: {
 
   const mainObject = params.result.mainObject;
   if (mainObject !== null && typeof mainObject === 'object' && !Array.isArray(mainObject)) {
-    await setThingMetadata({ thingId: job.thing_id, metadata: { mainObject } });
+    await applyDescribeResult({
+      thingId: job.thing_id,
+      mainObject: mainObject as Record<string, unknown>,
+    });
   }
 
   await db

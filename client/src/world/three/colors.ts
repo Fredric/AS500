@@ -30,6 +30,7 @@ export const DOOR_COLOR = new THREE.Color('#dcfce7');
 
 export const HUMAN_COLOR = new THREE.Color('#2f6fed');
 export const AGENT_COLOR = new THREE.Color('#d97706');
+export const MOBILE_COLOR = new THREE.Color('#0d9488');
 
 export const SELECTED_EMISSIVE = new THREE.Color('#2f6fed');
 export const EDGE_COLOR = new THREE.Color('#cbd0da');

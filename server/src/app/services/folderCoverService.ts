@@ -21,6 +21,7 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import sharp from 'sharp';
 import { db } from '../../core/db/index.js';
 import { myThings, thingFolders } from '../db/schema.js';
+import { emitThingsChanged } from '../things/events.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -127,6 +128,8 @@ async function setFolderCover(params: {
       updated_at: new Date(),
     })
     .where(eq(thingFolders.id, params.folderId));
+
+  emitThingsChanged(params.userId);
 }
 
 function pegboardSvg(size: number): Buffer {
@@ -240,6 +243,7 @@ export async function regenerateFolderCover(params: {
         .update(thingFolders)
         .set({ cover_path: null, cover_mime: null, cover_width: null, cover_height: null, cover_signature: null })
         .where(eq(thingFolders.id, params.folderId));
+      emitThingsChanged(params.userId);
       return true;
     }
     return false;

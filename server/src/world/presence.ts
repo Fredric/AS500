@@ -31,7 +31,7 @@ export function get(conn: symbol): Presence | null {
 
 export function update(
   conn: symbol,
-  patch: Partial<Pick<Presence, 'pose' | 'activity' | 'atThingId'>>,
+  patch: Partial<Pick<Presence, 'pose' | 'activity' | 'atThingId' | 'status'>>,
 ): Presence | null {
   const current = byConnection.get(conn);
   if (!current) return null;

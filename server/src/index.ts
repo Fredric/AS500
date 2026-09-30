@@ -329,6 +329,39 @@ async function startServer() {
     });
   }, PING_INTERVAL);
 
+  interface RenewedTokens {
+    accessToken: string;
+    refreshToken: string;
+    accessExpiresAt: string;
+    refreshExpiresAt: string;
+  }
+
+  /** Exchange the client's refresh token for a new pair — only when it belongs
+   *  to `userId`, the user the live session is signed in as. null on any
+   *  failure: the caller keeps working with the tokens it has. */
+  async function refreshTokensForSession(request: ClientRequest, userId: number | null): Promise<RenewedTokens | null> {
+    if (!request.refreshToken || userId == null) return null;
+    if (!tokenRefreshRateLimiter.check(`refresh:${request.refreshToken.substring(0, 8)}`)) return null;
+    const result = await refreshAuthTokens(request.refreshToken, {
+      deviceId: request.deviceId || 'unknown',
+      deviceName: DEFAULT_DEVICE_NAME,
+    });
+    if (!result || result.user.id !== userId) return null;
+    return {
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      accessExpiresAt: result.accessExpiresAt.toISOString(),
+      refreshExpiresAt: result.refreshExpiresAt.toISOString(),
+    };
+  }
+
+  /** Fresh tokens for a resumed live session whose access token is missing or
+   *  no longer valid; nothing when the one it presented still works. */
+  async function renewTokensIfLapsed(request: ClientRequest, userId: number | null): Promise<RenewedTokens | null> {
+    if (request.accessToken && (await validateAccessToken(request.accessToken))) return null;
+    return refreshTokensForSession(request, userId);
+  }
+
   /** Extract the real client IP, respecting reverse-proxy forwarding headers. */
   function extractClientIp(req: IncomingMessage): string | null {
     const fwd = req.headers['x-forwarded-for'];
@@ -356,6 +389,23 @@ async function startServer() {
       try {
         const request: ClientRequest = JSON.parse(data.toString());
 
+        // Handle TOKEN_REFRESH — the page asks for new tokens while its session
+        // is live, so the access-token cookie (and with it the virtual office)
+        // never lapses under an active terminal. Not a screen update: the
+        // reply is its own message type and the current screen is untouched.
+        if (request.key === 'TOKEN_REFRESH') {
+          const session = request.sessionId ? getSession(request.sessionId) : null;
+          if (!session || !session.authenticated || !request.refreshToken) {
+            ws.send(JSON.stringify({ type: 'TOKEN_REFRESH_FAILED', reason: 'no_session' }));
+            return;
+          }
+          const tokens = await refreshTokensForSession(request, session.viserId ?? null);
+          ws.send(JSON.stringify(
+            tokens ? { type: 'TOKEN_REFRESH', ...tokens } : { type: 'TOKEN_REFRESH_FAILED', reason: 'refresh_rejected' },
+          ));
+          return;
+        }
+
         // Handle RESUME - client trying to restore a session (or auto-login via tokens)
         if (request.key === 'RESUME') {
           const existingSession = request.sessionId ? getSession(request.sessionId) : null;
@@ -381,11 +431,20 @@ async function startServer() {
             // when building the resumed screen.
             await ensurePermissionsLoaded(existingSession);
 
+            // A live session resumes without a login, but the browser's access
+            // token may have lapsed meanwhile (it lasts an hour; the session is
+            // kept alive by activity). The virtual office authenticates with
+            // that token, so hand out a fresh one here — otherwise a reload
+            // "works" for the terminal and leaves the office permanently
+            // unable to connect.
+            const renewed = await renewTokensIfLapsed(request, existingSession.viserId ?? null);
+
             const response: ScreenResponse = {
               ...(await getCurrentScreenResponse(existingSession)),
               sessionId: existingSession.id,
               message: `Welcome back, ${existingSession.username}`,
               messageType: 'info',
+              ...renewed,
             };
 
             ws.send(JSON.stringify(response));

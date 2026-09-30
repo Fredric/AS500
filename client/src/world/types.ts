@@ -88,11 +88,13 @@ export interface ResolvedScene {
 export interface Presence {
   actorId: number;
   username: string;
-  kind: 'human' | 'agent';
+  kind: 'human' | 'agent' | 'mobile';
   spaceKey: string;
   atThingId: number | null;
   pose: { x: number; y: number; rot: number };
   activity: 'idle' | 'walking' | 'reading' | 'typing';
+  /** What a phone is doing (`kind: 'mobile'` only). */
+  status?: 'browsing' | 'capturing' | 'uploading';
   since: string;
 }
 

@@ -44,6 +44,7 @@ import { buildApiRouter } from '../api/index.js';
 import { buildAuthRouter } from '../api/auth.js';
 import { buildDocumentsUploadRouter } from '../../app/api/documentsBearerUpload.js';
 import { buildThingsRouter } from '../../app/things/api/index.js';
+import { attachEventsSocket } from '../../app/things/events.js';
 import { buildAs500OAuthProvider, issueAuthorizationCodeAfterConsent } from './oauth/provider.js';
 import { initJwtSecret } from './oauth/tokens.js';
 import { hasLiveConsent, recordConsent } from './oauth/store.js';
@@ -384,6 +385,9 @@ export function startMcpServer(opts: StartMcpServerOptions = {}): HttpServer {
         `OAuth 2.1 + DCR enabled.`
     );
   });
+
+  // Live "Things changed" socket for the phone (ws://…/api/events).
+  attachEventsSocket(httpServer);
 
   return httpServer;
 }

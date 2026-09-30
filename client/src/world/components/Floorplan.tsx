@@ -90,8 +90,13 @@ export default function Floorplan({ things, actors, selectedId, onSelect, onOpen
         <g key={`${a.actorId}-${a.since}`} className={`avatar avatar--${a.kind}`}>
           <circle cx={a.pose.x} cy={a.pose.y} r="0.42" />
           <text x={a.pose.x} y={a.pose.y - 0.7} textAnchor="middle" className="avatar__name">
-            {a.username}
+            {a.kind === 'mobile' ? `${a.username} (phone)` : a.username}
           </text>
+          {a.kind === 'mobile' && a.status ? (
+            <text x={a.pose.x} y={a.pose.y + 0.95} textAnchor="middle" className="avatar__status">
+              {a.status}
+            </text>
+          ) : null}
         </g>
       ))}
     </svg>
