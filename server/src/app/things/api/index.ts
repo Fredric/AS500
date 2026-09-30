@@ -13,16 +13,18 @@ import { Router as createRouter } from 'express';
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import multer from 'multer';
-import { PERMISSIONS, loadUserPermissions } from '../../../core/services/access.js';
-import { isAdminForUser } from '../../../core/mcp/oauth/userFacts.js';
+import { PERMISSIONS } from '../../../core/services/access.js';
 import { apiCallRateLimiter } from '../../../core/utils/rateLimiter.js';
 import { writeAuditRow } from '../../../core/mcp/audit.js';
 import type { McpCallUser } from '../../../core/mcp/contextSynth.js';
 import { createThingFromUpload, getThingRow, listActiveThings } from '../../services/thingService.js';
+import { getFolderCoverRow } from '../../services/folderCoverService.js';
 import {
   LeaseError,
   claimJob,
+  completeDescribeJob,
   completeJob,
+  enqueueDescribeJob,
   enqueueQwenJob,
   failJob,
   getJobById,
@@ -30,6 +32,7 @@ import {
   heartbeatJob,
   touchRunner,
 } from '../jobQueue.js';
+import { authorize, deny, parseId, routeParam } from './apiHelpers.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -49,64 +52,48 @@ function rateLimit(req: Request, res: Response, next: () => void): void {
   res.status(429).json({ error: { code: 'rate_limited', message: 'Rate limit exceeded' } });
 }
 
-async function resolveUser(req: Request): Promise<McpCallUser> {
-  const auth = req.auth!;
-  const extra = auth.extra as { userId?: unknown; username?: unknown; jti?: unknown } | undefined;
-  const userId = Number(extra?.userId ?? NaN);
-  const username = String(extra?.username ?? '');
-  const jtiRaw = extra?.jti;
-
-  const [isAdmin, permissions] = await Promise.all([
-    isAdminForUser(userId),
-    loadUserPermissions(userId),
-  ]);
-
-  return {
-    userId,
-    username,
-    isAdmin,
-    permissions: permissions as Set<string>,
-    clientId: auth.clientId,
-    jti: typeof jtiRaw === 'string' ? jtiRaw : undefined,
-  };
-}
-
-function deny(res: Response, status: number, code: string, message: string): void {
-  res.status(status).json({ error: { code, message } });
-}
-
-/** Resolve the caller and assert one permission, or answer and return null. */
-async function authorize(
-  req: Request,
-  res: Response,
-  permission: string,
-): Promise<McpCallUser | null> {
-  const user = await resolveUser(req);
-  if (!Number.isFinite(user.userId) || user.userId <= 0) {
-    deny(res, 401, 'unauthenticated', 'Invalid token');
-    return null;
-  }
-  if (!user.isAdmin && !user.permissions.has(permission)) {
-    deny(res, 403, 'permission_denied', `Requires ${permission}`);
-    return null;
-  }
-  return user;
-}
-
-function routeParam(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) return value[0] ?? '';
-  return value ?? '';
-}
-
-function parseId(raw: string | string[] | undefined): number | null {
-  const n = Number(routeParam(raw));
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function buildThingsRouter(bearerAuth: RequestHandler): Router {
   const router = createRouter();
+
+  // Folder box-art cover — deterministic composite, no GPU worker involved.
+  // See folderCoverService.ts.
+  router.get('/folders/:id/cover', bearerAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await authorize(req, res, PERMISSIONS.THINGS_READ);
+      if (!user) return;
+
+      const id = parseId(req.params.id);
+      if (id === null) {
+        deny(res, 400, 'validation_failed', 'Invalid id');
+        return;
+      }
+
+      const folder = await getFolderCoverRow(id);
+      if (!folder || folder.user_id !== user.userId) {
+        deny(res, 404, 'not_found', 'Folder not found');
+        return;
+      }
+      if (!folder.cover_path) {
+        deny(res, 404, 'not_found', 'No cover generated yet');
+        return;
+      }
+
+      const info = await stat(folder.cover_path).catch(() => null);
+      if (!info) {
+        deny(res, 404, 'not_found', 'Cover image missing on disk');
+        return;
+      }
+
+      res.setHeader('Content-Type', folder.cover_mime ?? 'image/png');
+      res.setHeader('Content-Length', String(info.size));
+      res.setHeader('Cache-Control', 'private, max-age=60');
+      createReadStream(folder.cover_path).pipe(res);
+    } catch (error) {
+      deny(res, 500, 'internal', error instanceof Error ? error.message : 'Cover fetch failed');
+    }
+  });
 
   // ==========================================
   // Worker lease protocol
@@ -324,6 +311,41 @@ export function buildThingsRouter(bearerAuth: RequestHandler): Router {
     },
   );
 
+  // JSON-only, unlike /complete: a description job never produces an image,
+  // so there is nothing for multer to parse and no reason to require it.
+  router.post('/jobs/:jobId/complete-describe', bearerAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await authorize(req, res, PERMISSIONS.THING_JOB_RUN);
+      if (!user) return;
+
+      const body = req.body as { runnerId?: unknown; result?: unknown };
+      const runnerId = typeof body.runnerId === 'string' ? body.runnerId : '';
+      if (!runnerId) {
+        deny(res, 400, 'validation_failed', 'runnerId is required');
+        return;
+      }
+
+      const result =
+        body.result !== null && typeof body.result === 'object' && !Array.isArray(body.result)
+          ? (body.result as Record<string, unknown>)
+          : {};
+
+      const { thingId } = await completeDescribeJob({
+        jobId: routeParam(req.params.jobId),
+        runnerId,
+        result,
+      });
+
+      res.json({ ok: true, thingId });
+    } catch (error) {
+      if (error instanceof LeaseError) {
+        deny(res, 409, 'lease_lost', error.message);
+        return;
+      }
+      deny(res, 500, 'internal', error instanceof Error ? error.message : 'Complete failed');
+    }
+  });
+
   router.post('/jobs/:jobId/fail', bearerAuth, async (req: Request, res: Response) => {
     try {
       const user = await authorize(req, res, PERMISSIONS.THING_JOB_RUN);
@@ -417,6 +439,7 @@ export function buildThingsRouter(bearerAuth: RequestHandler): Router {
         });
 
         await enqueueQwenJob({ thingId: thing.id, userId: user.userId });
+        await enqueueDescribeJob({ thingId: thing.id, userId: user.userId });
 
         res.status(201).json({
           ok: true,
@@ -592,6 +615,37 @@ export function buildThingsRouter(bearerAuth: RequestHandler): Router {
       res.status(202).json({ ok: true, thingId: id, jobId });
     } catch (error) {
       deny(res, 500, 'internal', error instanceof Error ? error.message : 'Regenerate failed');
+    }
+  });
+
+  // Independent of /regenerate: reruns just the object-info extraction, e.g.
+  // once a newer vision model is in place, without touching the sprite.
+  router.post('/:id/describe', bearerAuth, rateLimit, async (req: Request, res: Response) => {
+    try {
+      const user = await authorize(req, res, PERMISSIONS.THINGS_WRITE);
+      if (!user) return;
+
+      const id = parseId(req.params.id);
+      if (id === null) {
+        deny(res, 400, 'validation_failed', 'Invalid id');
+        return;
+      }
+
+      const thing = await getThingRow({ id, userId: user.userId });
+      if (!thing) {
+        deny(res, 404, 'not_found', 'Thing not found');
+        return;
+      }
+      if (!thing.source_path) {
+        deny(res, 400, 'validation_failed', 'Thing has no source image to describe');
+        return;
+      }
+
+      const jobId = await enqueueDescribeJob({ thingId: id, userId: user.userId });
+
+      res.status(202).json({ ok: true, thingId: id, jobId });
+    } catch (error) {
+      deny(res, 500, 'internal', error instanceof Error ? error.message : 'Describe failed');
     }
   });
 

@@ -14,7 +14,8 @@ import { randomUUID } from 'crypto';
 import { db } from '../../core/db/index.js';
 import { myThings, thingJobs, jobRunners } from '../db/schema.js';
 import { currentQwenParams, QWEN_PROCESSOR } from './qwenDefaults.js';
-import { setThingProcessedImage, setThingStatus } from '../services/thingService.js';
+import { currentDescribeParams, DESCRIBE_PROCESSOR } from './describeDefaults.js';
+import { setThingMetadata, setThingProcessedImage, setThingStatus } from '../services/thingService.js';
 
 /**
  * How long a runner may be silent before we treat it as gone. Runners poll for
@@ -79,6 +80,30 @@ export async function enqueueQwenJob(params: {
   return jobId;
 }
 
+/**
+ * Queue object-info extraction for a Thing, independent of sprite
+ * generation. Callable on any Thing that has a source photo — including one
+ * that already has a `ready` sprite and a previous description — so a better
+ * model can be re-run later without touching the sprite at all.
+ */
+export async function enqueueDescribeJob(params: {
+  thingId: number;
+  userId: number;
+}): Promise<string> {
+  const describe = currentDescribeParams();
+  const jobId = randomUUID();
+
+  await db.insert(thingJobs).values({
+    id: jobId,
+    thing_id: params.thingId,
+    user_id: params.userId,
+    processor: DESCRIBE_PROCESSOR,
+    params: { ...describe },
+  });
+
+  return jobId;
+}
+
 // ============================================
 // Runner registry
 // ============================================
@@ -138,7 +163,7 @@ export async function lastSeenFor(processor: string): Promise<Date | null> {
  * the worker's own polling drives the sweep — no separate timer.
  */
 async function retireExhaustedJobs(): Promise<void> {
-  const rows = await db.execute<{ thing_id: number }>(sql`
+  const rows = await db.execute<{ thing_id: number; processor: string }>(sql`
     UPDATE thing_jobs
     SET state = 'failed',
         finished_at = now(),
@@ -146,10 +171,14 @@ async function retireExhaustedJobs(): Promise<void> {
     WHERE state = 'processing'
       AND lease_expires_at < now()
       AND attempts >= max_attempts
-    RETURNING thing_id
+    RETURNING thing_id, processor
   `);
 
   for (const row of rows.rows) {
+    // Describe jobs never drive the Thing's visible status — a Thing with a
+    // ready sprite must not flip to `failed` because a description rerun
+    // exhausted its attempts.
+    if (row.processor !== QWEN_PROCESSOR) continue;
     await setThingStatus({
       thingId: row.thing_id,
       status: 'failed',
@@ -213,13 +242,15 @@ export async function claimJob(params: {
   const row = rows.rows[0];
   if (!row) return null;
 
-  await setThingStatus({
-    thingId: row.thing_id,
-    status: 'processing',
-    stage: 'starting',
-    progress: 0,
-    blockedReason: null,
-  });
+  if (row.processor === QWEN_PROCESSOR) {
+    await setThingStatus({
+      thingId: row.thing_id,
+      status: 'processing',
+      stage: 'starting',
+      progress: 0,
+      blockedReason: null,
+    });
+  }
 
   return {
     id: row.id,
@@ -285,11 +316,13 @@ export async function heartbeatJob(params: {
     RETURNING lease_expires_at
   `);
 
-  await setThingStatus({
-    thingId: job.thing_id,
-    stage: params.stage ?? null,
-    progress: params.progress ?? null,
-  });
+  if (job.processor === QWEN_PROCESSOR) {
+    await setThingStatus({
+      thingId: job.thing_id,
+      stage: params.stage ?? null,
+      progress: params.progress ?? null,
+    });
+  }
 
   return { leaseExpiresAt: new Date(rows.rows[0].lease_expires_at).toISOString() };
 }
@@ -311,6 +344,41 @@ export async function completeJob(params: {
     width: params.width,
     height: params.height,
   });
+
+  await db
+    .update(thingJobs)
+    .set({
+      state: 'completed',
+      stage: null,
+      progress: 100,
+      error: null,
+      traceback: null,
+      result: params.result,
+      finished_at: new Date(),
+    })
+    .where(eq(thingJobs.id, params.jobId));
+
+  return { thingId: job.thing_id };
+}
+
+/**
+ * Complete a description job. Deliberately separate from `completeJob`: it
+ * never touches status/stage/progress or any file, only `myThings.metadata`,
+ * and only when the worker's result actually looks like the expected shape —
+ * an object-extraction failure is silently absent metadata, not a job error
+ * (the worker already reports those failures via `fail`).
+ */
+export async function completeDescribeJob(params: {
+  jobId: string;
+  runnerId: string;
+  result: Record<string, unknown>;
+}): Promise<{ thingId: number }> {
+  const job = await requireLease(params.jobId, params.runnerId);
+
+  const mainObject = params.result.mainObject;
+  if (mainObject !== null && typeof mainObject === 'object' && !Array.isArray(mainObject)) {
+    await setThingMetadata({ thingId: job.thing_id, metadata: { mainObject } });
+  }
 
   await db
     .update(thingJobs)
@@ -354,12 +422,14 @@ export async function failJob(params: {
       })
       .where(eq(thingJobs.id, params.jobId));
 
-    await setThingStatus({
-      thingId: job.thing_id,
-      status: 'processing',
-      stage: 'retrying',
-      progress: 0,
-    });
+    if (job.processor === QWEN_PROCESSOR) {
+      await setThingStatus({
+        thingId: job.thing_id,
+        status: 'processing',
+        stage: 'retrying',
+        progress: 0,
+      });
+    }
   } else {
     await db
       .update(thingJobs)
@@ -371,12 +441,16 @@ export async function failJob(params: {
       })
       .where(eq(thingJobs.id, params.jobId));
 
-    await setThingStatus({
-      thingId: job.thing_id,
-      status: 'failed',
-      stage: null,
-      blockedReason: 'generation failed',
-    });
+    // A description job exhausting its retries is not a sprite failure — the
+    // Thing keeps whatever status its sprite job already gave it.
+    if (job.processor === QWEN_PROCESSOR) {
+      await setThingStatus({
+        thingId: job.thing_id,
+        status: 'failed',
+        stage: null,
+        blockedReason: 'generation failed',
+      });
+    }
   }
 
   return { willRetry };
@@ -420,10 +494,13 @@ export async function getThingStatus(params: {
 
   if (!thing) return null;
 
+  // Filtered to the sprite processor: a describe job may be newer (e.g. a
+  // manual rerun on an already-ready Thing), but the `job` field here is
+  // consumed as sprite-generation progress, not a generic job log.
   const [job] = await db
     .select()
     .from(thingJobs)
-    .where(eq(thingJobs.thing_id, thing.id))
+    .where(and(eq(thingJobs.thing_id, thing.id), eq(thingJobs.processor, QWEN_PROCESSOR)))
     .orderBy(sql`created_at DESC`)
     .limit(1);
 

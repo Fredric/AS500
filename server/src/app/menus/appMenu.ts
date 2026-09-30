@@ -31,6 +31,13 @@ registerMenuItems([
     initContext: initMyThingsContext,
   },
   {
+    type: 'crudtable',
+    key: 'folder_covers',
+    name: 'Folder Covers',
+    requirePermission: PERMISSIONS.THINGS_READ,
+    configId: 'folder_covers',
+  },
+  {
     type: 'menu',
     key: 'garage',
     name: 'My Garage',

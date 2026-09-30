@@ -43,6 +43,11 @@ import { startMonitorServer } from './monitor/index.js';
 import { bootstrapWorld } from './world/bootstrap.js';
 import { startWorldServer } from './world/index.js';
 
+// Folder box-art scheduler: periodically checks every folder for a stale
+// cover and enqueues a regen. Same process as everything else here — no new
+// infra, just a timer next to the other ones below.
+import { checkFoldersForCoverRefresh } from './app/things/folderCoverScheduler.js';
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 const MCP_PORT = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT) : DEFAULT_MCP_PORT;
 const MCP_ENABLED = process.env.MCP_ENABLED !== 'false'; // default on
@@ -302,6 +307,16 @@ async function startServer() {
   } catch (err) {
     console.error('Failed to start world server:', err);
   }
+
+  // Folder box-art scheduler. enqueueFolderBoxJob is itself cheap to no-op,
+  // so a few minutes between ticks is plenty — "Run now" (folder_cover_jobs
+  // admin action) is the escape hatch when someone doesn't want to wait.
+  const FOLDER_COVER_CHECK_MS = 5 * 60 * 1000;
+  void checkFoldersForCoverRefresh().catch((err) => console.error('[folder-cover] initial check failed:', err));
+  const folderCoverInterval = setInterval(() => {
+    void checkFoldersForCoverRefresh().catch((err) => console.error('[folder-cover] check failed:', err));
+  }, FOLDER_COVER_CHECK_MS);
+  folderCoverInterval.unref();
 
   // Ping/pong keepalive for Heroku (55s idle timeout)
   const pingInterval = setInterval(() => {

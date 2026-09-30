@@ -9,6 +9,7 @@ import { dirname, extname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { db } from '../../core/db/index.js';
 import { myThings, thingFolders } from '../db/schema.js';
+import { regenerateFolderCover } from './folderCoverService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -102,11 +103,31 @@ export interface ThingListEntry {
   hasSource: boolean;
   hasProcessed: boolean;
   parentFolderId: number | null;
+  /** Qwen3-VL's object-extraction result, from the `vision.qwen3vl_describe`
+   *  job — see `jobQueue.ts#completeDescribeJob`. Absent until that job has
+   *  run and produced a usable result. */
+  mainObject: Record<string, unknown> | null;
+  /** `kind: 'folder'` only — whether a box-art cover has been generated yet.
+   *  See `folderCoverService.ts` / `folderCoverScheduler.ts`. */
+  hasCover: boolean;
+  /** `kind: 'folder'` only — changes whenever the cover is actually
+   *  regenerated (it's the cover's own signature, not a general folder
+   *  timestamp). The client uses it to know its cached image is stale and
+   *  to bust local image caching that's otherwise keyed by a fixed path. */
+  coverVersion: string | null;
 }
 
 function formatTimestamp(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
   return date.toISOString().slice(0, 16).replace('T', ' ');
+}
+
+function extractMainObject(metadata: unknown): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const mainObject = (metadata as Record<string, unknown>).mainObject;
+  return mainObject && typeof mainObject === 'object' && !Array.isArray(mainObject)
+    ? (mainObject as Record<string, unknown>)
+    : null;
 }
 
 /** camelCase view of a `my_things` row, shared by the list, read and update
@@ -124,6 +145,9 @@ function shapeThingEntry(r: typeof myThings.$inferSelect): Omit<ThingListEntry, 
     hasSource: Boolean(r.source_path),
     hasProcessed: Boolean(r.processed_path),
     parentFolderId: r.folder_id,
+    mainObject: extractMainObject(r.metadata),
+    hasCover: false,
+    coverVersion: null,
   };
 }
 
@@ -220,6 +244,9 @@ export async function listThingFolderContents(params: {
       hasSource: false,
       hasProcessed: false,
       parentFolderId: current.parent_id,
+      mainObject: null,
+      hasCover: false,
+      coverVersion: null,
     });
   }
 
@@ -248,6 +275,9 @@ export async function listThingFolderContents(params: {
       hasSource: false,
       hasProcessed: false,
       parentFolderId: folder.parent_id,
+      mainObject: null,
+      hasCover: Boolean(folder.cover_path),
+      coverVersion: folder.cover_signature,
     });
   }
 
@@ -355,6 +385,14 @@ export async function updateThingEntry(params: {
     if (!target) throw new Error('Target folder not found');
   }
 
+  // Needed only to know which folder(s) a move affects — the update itself
+  // doesn't report the pre-move value.
+  const [existing] = await db
+    .select({ folder_id: myThings.folder_id })
+    .from(myThings)
+    .where(and(eq(myThings.id, params.id), eq(myThings.user_id, params.userId)));
+  const oldFolderId = existing?.folder_id ?? null;
+
   const patch: Record<string, unknown> = {
     name: params.name.trim(),
     description: params.description ?? null,
@@ -369,6 +407,20 @@ export async function updateThingEntry(params: {
     .where(and(eq(myThings.id, params.id), eq(myThings.user_id, params.userId)))
     .returning();
   if (!row) throw new Error('Thing not found or not owned by you');
+
+  // A move affects both ends: the folder the thing left and the one it
+  // landed in. Fire-and-forget, same as the delete path — don't make the
+  // move wait on a cover rebuild.
+  if (params.folderId !== undefined && params.folderId !== oldFolderId) {
+    const affectedFolderIds = [oldFolderId, params.folderId].filter(
+      (id): id is number => id !== null,
+    );
+    for (const folderId of affectedFolderIds) {
+      void regenerateFolderCover({ folderId, userId: params.userId }).catch((err) => {
+        console.error(`[folder-cover] regenerate after move failed for folder ${folderId}:`, err);
+      });
+    }
+  }
 
   return { ...shapeThingEntry(row), kind: 'thing' };
 }
@@ -502,13 +554,24 @@ export async function deleteThing(params: { id: number; userId: number }): Promi
   const rows = await db
     .delete(myThings)
     .where(and(eq(myThings.id, params.id), eq(myThings.user_id, params.userId)))
-    .returning({ id: myThings.id });
+    .returning({ id: myThings.id, folder_id: myThings.folder_id });
 
   if (rows.length === 0) throw new Error('Thing not found or not owned by you');
 
   // Files last: a failed unlink must not leave a row pointing at nothing.
   // thing_jobs rows go with the row itself via ON DELETE CASCADE.
   await rm(thingDirectory(params.userId, params.id), { recursive: true, force: true });
+
+  // Don't make the delete wait on a cover rebuild — the folder's item set
+  // just changed, so the next check will see a different signature and
+  // regenerate; this just does it immediately instead of on the next
+  // scheduler tick (up to 5 minutes later).
+  const folderId = rows[0].folder_id;
+  if (folderId !== null) {
+    void regenerateFolderCover({ folderId, userId: params.userId }).catch((err) => {
+      console.error(`[folder-cover] regenerate after delete failed for folder ${folderId}:`, err);
+    });
+  }
 }
 
 // ============================================
@@ -608,6 +671,22 @@ export async function setThingProcessedImage(params: {
       blocked_reason: null,
       updated_at: new Date(),
     })
+    .where(eq(myThings.id, params.thingId));
+}
+
+/**
+ * Merge object-extraction results into a Thing's metadata. Deliberately the
+ * only thing this touches — status/stage/progress belong to the sprite job's
+ * lifecycle, not the description job's, so a description rerun never makes a
+ * `ready` Thing look busy again.
+ */
+export async function setThingMetadata(params: {
+  thingId: number;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  await db
+    .update(myThings)
+    .set({ metadata: params.metadata, updated_at: new Date() })
     .where(eq(myThings.id, params.thingId));
 }
 
